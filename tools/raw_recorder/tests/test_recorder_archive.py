@@ -217,3 +217,36 @@ def test_iter_archive_orders_by_receive_time_across_sources(tmp_path):
     a.write("in", "x", "k2", recv_ts_ms=T0 + 3)
     w.close()
     assert [f["frame"] for f in iter_archive(tmp_path)] == ["n1", "k1", "k2"]
+
+
+def test_torn_journal_tail_is_repaired_before_recovery_appends(tmp_path):
+    """Review finding 1: a crash mid-append leaves an unterminated journal line."""
+    w = writer(tmp_path, Clock(T0))
+    w.stream("src", "a").write("in", "c", "first")
+    w.close()
+    day = tmp_path / "src" / "2026-10-07"
+    torn = b'{"bytes":123,"file":"b.0001.jsonl.gz","frame_co'
+    with (day / JOURNAL).open("ab") as f:
+        f.write(torn)
+    (day / "b.0001.jsonl.part").write_bytes(encode_line(T0, "c", "in", "orphan"))
+
+    (entry,) = recover_orphans(tmp_path, session_id="next")
+    assert entry.journal_tail_repaired_bytes == len(torn)
+    entries = read_journal(day)                      # parses: no JSONDecodeError
+    assert [e["file"] for e in entries] == ["a.0001.jsonl.gz", "b.0001.jsonl.gz"]
+    assert verify(tmp_path) == []
+
+    w2 = writer(tmp_path, Clock(T0 + 1))             # later seals still work
+    w2.stream("src", "c").write("in", "c", "later")
+    w2.close()
+    assert len(read_journal(day)) == 3 and verify(tmp_path) == []
+
+
+def test_verify_flags_an_unrepaired_torn_journal_tail(tmp_path):
+    w = writer(tmp_path, Clock(T0))
+    w.stream("src", "a").write("in", "c", "x")
+    w.close()
+    day = tmp_path / "src" / "2026-10-07"
+    with (day / JOURNAL).open("ab") as f:
+        f.write(b'{"torn')
+    assert any("torn" in p for p in verify(tmp_path))

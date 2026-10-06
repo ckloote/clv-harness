@@ -27,6 +27,7 @@ import base64
 import json
 import random
 import time
+import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
@@ -41,6 +42,9 @@ from .signing import NovigSigner
 
 CHANNEL_WEIGHT = {"lifecycle": 1, "trades": 4, "bbo": 8, "book": 16}
 UPGRADE_COST = 32
+# Failures of an established socket (a write to a reset transport, a dropped
+# connection): recorded, then the connection is replaced.
+IO_ERRORS = (aiohttp.ClientError, ConnectionError, OSError, asyncio.TimeoutError)
 
 
 class TokenBudget:
@@ -99,14 +103,24 @@ class NovigStream:
     # ------------------------------------------------------------------ run
 
     async def run(self) -> None:
-        """Runs until cancelled."""
+        """Runs until cancelled; no failure of one connection ends it."""
         backoff = self.params.reconnect_backoff_initial_s
         while True:
             if not self.markets_fn():
                 await asyncio.sleep(1)
                 continue
             started = self.mono()
-            stream = await self._connection()
+            conn_id = str(uuid.uuid4())
+            stream = self.archive.stream("novig", conn_id)
+            try:
+                await self._connection(stream, conn_id)
+            except asyncio.CancelledError:
+                self.archive.release(stream)
+                raise
+            except Exception as exc:  # a bug must not leave the channel silently dead
+                stream.event(conn_id, "ws_unexpected_error", error_type=type(exc).__name__,
+                             error=redact.scrub(str(exc)),
+                             traceback=redact.scrub(traceback.format_exc()))
             if self.mono() - started >= self.params.reconnect_backoff_max_s:
                 backoff = self.params.reconnect_backoff_initial_s
             if not self.markets_fn():
@@ -118,11 +132,8 @@ class NovigStream:
             await asyncio.sleep(delay)
             backoff = min(backoff * 2, self.params.reconnect_backoff_max_s)
 
-    async def _connection(self) -> Stream:
-        """One connection attempt and its lifetime. Returns the (unreleased)
-        stream so the caller can log the reconnect wait into it."""
-        conn_id = str(uuid.uuid4())
-        stream = self.archive.stream("novig", conn_id)
+    async def _connection(self, stream: Stream, conn_id: str) -> None:
+        """One connection attempt and its lifetime, archived into `stream`."""
         desired = self.markets_fn()
         stream.event(conn_id, "ws_connect_attempt", url=self.ws_url, channel=self.channel,
                      markets=sorted(desired))
@@ -135,15 +146,16 @@ class NovigStream:
         except aiohttp.WSServerHandshakeError as exc:
             stream.event(conn_id, "ws_handshake_failed", status=exc.status,
                          response_headers=redact.headers(list((exc.headers or {}).items())),
-                         message=exc.message)
+                         message=redact.scrub(str(exc.message)))
             if self.on_handshake_failure is not None:
                 # The handshake error drops the body; a signed REST request
                 # through the envelope captures the refusal body as evidence.
                 await self.on_handshake_failure()
-            return stream
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            stream.event(conn_id, "ws_connect_failed", error=f"{type(exc).__name__}: {exc}")
-            return stream
+            return
+        except IO_ERRORS as exc:
+            stream.event(conn_id, "ws_connect_failed", error_type=type(exc).__name__,
+                         error=redact.scrub(str(exc)))
+            return
 
         resp = getattr(ws, "_response", None)
         stream.event(conn_id, "ws_connected", status=getattr(resp, "status", 101),
@@ -151,9 +163,12 @@ class NovigStream:
         conn = _Connection(self, ws, stream, conn_id)
         try:
             await conn.serve(desired)
+        except IO_ERRORS as exc:
+            stream.event(conn_id, "ws_io_error", error_type=type(exc).__name__,
+                         error=redact.scrub(str(exc)))
+            conn.close_reason = "io_error"
         finally:
             await conn.close()
-        return stream
 
 
 class _Connection:
@@ -208,16 +223,18 @@ class _Connection:
                         self.last_activity[market_id] = now
 
     async def serve(self, desired: frozenset[str]) -> None:
+        """Receive and maintain until either stops; a failure in either one
+        (e.g. a write to a reset socket) ends the connection and propagates."""
         await self.subscribe(set(desired))
-        maintainer = asyncio.create_task(self.maintain())
+        tasks = {asyncio.create_task(self.receive_loop()), asyncio.create_task(self.maintain())}
         try:
-            await self.receive_loop()
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
-            maintainer.cancel()
-            try:
-                await maintainer
-            except (asyncio.CancelledError, Exception):
-                pass
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for t in done:
+            t.result()
 
     async def receive_loop(self) -> None:
         ev = self.stream.event

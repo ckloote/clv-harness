@@ -156,3 +156,71 @@ async def test_second_recorder_refuses_to_share_the_archive(tmp_path):
         await task
     finally:
         await srv.close()
+
+
+def assert_every_request_completed(root):
+    exchanges = rest_exchanges(iter_archive(root)).values()
+    assert exchanges
+    for ex in exchanges:
+        assert ex.start is not None and ex.complete is not None, ex.request_id
+
+
+async def test_shutdown_mid_request_still_completes_every_envelope(tmp_path):
+    """Review finding 4 at the process level: stop while a body is stalled."""
+    app = web.Application()
+
+    async def stalled(request):
+        resp = web.StreamResponse(status=200, headers={"Content-Length": "1000"})
+        await resp.prepare(request)
+        await resp.write(b"{")
+        await asyncio.sleep(30)
+        return resp
+
+    async def ok(request):
+        return web.json_response({})
+
+    app.router.add_get("/markets/{t}/orderbook", stalled)
+    app.router.add_get("/{tail:.*}", ok)
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        cfg = config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        await run_for(cfg, [game(7, time.time_ns() // 1_000_000 + 60_000)], 0.8)
+    finally:
+        await srv.close()
+    assert_every_request_completed(cfg.archive_root)
+    cancelled = [ex for ex in rest_exchanges(iter_archive(cfg.archive_root)).values()
+                 if ex.failure == "cancelled"]
+    assert cancelled and all(ex.complete["status"] == 200 for ex in cancelled)
+    assert verify(cfg.archive_root) == []
+
+
+async def test_dead_source_task_is_recorded_and_restarted(tmp_path, monkeypatch):
+    """Defense in depth for review finding 2: no source may die silently."""
+    srv = TestServer(fake_vendors())
+    await srv.start_server()
+    calls = {"n": 0}
+
+    async def flaky_source():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("boom at https://x.test/odds?apiKey=TOPSECRETVALUE")
+        await asyncio.Event().wait()
+
+    original = Recorder.source_specs
+    monkeypatch.setattr(Recorder, "source_specs",
+                        lambda self, http: original(self, http) + [("flaky", flaky_source)])
+    try:
+        cfg = config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        await run_for(cfg, [game(9, time.time_ns() // 1_000_000 + 60_000)], 1.0)
+    finally:
+        await srv.close()
+    frames = list(iter_archive(cfg.archive_root))
+    events = [json.loads(f["frame"]) for f in frames if f["dir"] == "event"]
+    died = [e for e in events if e["type"] == "task_died"]
+    assert len(died) == 1 and died[0]["task"] == "flaky" and died[0]["error_type"] == "RuntimeError"
+    assert any(e["type"] == "task_restart" and e["task"] == "flaky" for e in events)
+    assert calls["n"] == 2                                   # restarted after the backoff
+    assert "TOPSECRETVALUE" not in json.dumps(died)          # URL queries scrubbed from tracebacks
+    polls = [ex for ex in rest_exchanges(frames).values() if ex.start["path"].endswith("/orderbook")]
+    assert len(polls) >= 4                                   # Kalshi kept polling throughout

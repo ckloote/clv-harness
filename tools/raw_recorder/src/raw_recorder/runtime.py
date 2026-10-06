@@ -12,7 +12,7 @@ from pathlib import Path
 
 import aiohttp
 
-from . import RECORDER_VERSION, kalshi, mlb
+from . import RECORDER_VERSION, kalshi, mlb, redact
 from .archive import ArchiveWriter, Stream, find_parts, iter_file, now_ms, recover_orphans
 from .config import Config, Game
 from .novig import public as novig_public
@@ -66,12 +66,23 @@ class Recorder:
         self.stop = asyncio.Event()
         self.archive: ArchiveWriter | None = None
         self.rec: Stream | None = None
+        # Known secret values, scrubbed from any free text we archive or print.
+        self.secrets = {v for v in (cfg.env(cfg.odds_api, "key_env"),) if v}
 
     # ------------------------------------------------------------- helpers
 
     def note(self, type_: str, **fields) -> None:
         assert self.rec is not None
         self.rec.event(self.rec.stream_id, type_, **fields)
+
+    def scrub(self, text: str) -> str:
+        return redact.scrub(text, self.secrets)
+
+    def note_exception(self, type_: str, name: str, exc: BaseException) -> None:
+        tb = "".join(traceback.format_exception(exc))
+        self.note(type_, task=name, error_type=type(exc).__name__,
+                  error=self.scrub(str(exc)), traceback=self.scrub(tb))
+        print(f"[{name}] {type_}: {type(exc).__name__}: {self.scrub(str(exc))}", file=sys.stderr)
 
     async def every(self, name: str, interval_s: float, fn: Callable[[], Awaitable[None]]) -> None:
         loop = asyncio.get_running_loop()
@@ -82,9 +93,7 @@ class Recorder:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # keep capturing; make the failure visible
-                self.note("task_error", task=name, error=repr(exc),
-                          traceback=traceback.format_exc())
-                print(f"[{name}] {exc!r}", file=sys.stderr)
+                self.note_exception("task_error", name, exc)
             next_t += interval_s
             delay = next_t - loop.time()
             if delay < 0:
@@ -134,16 +143,54 @@ class Recorder:
 
     async def _serve(self) -> None:
         async with aiohttp.ClientSession() as http:
-            tasks = [asyncio.create_task(self.housekeeping(), name="housekeeping")]
-            tasks += self.start_sources(http)
-            await self.stop.wait()
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            specs = [("housekeeping", self.housekeeping)] + self.source_specs(http)
+            await self.supervise(specs)
 
-    def start_sources(self, http: aiohttp.ClientSession) -> list[asyncio.Task]:
+    async def supervise(self, specs: list[tuple[str, Callable[[], Awaitable[None]]]]) -> None:
+        """Run every task until stop. A task that ends early (a bug, an
+        unexpected exception) is recorded as task_died and restarted with the
+        stream.reconnect_backoff_s schedule, so no source stays silently dead
+        while the others keep recording."""
+        p = self.p
+        loop = asyncio.get_running_loop()
+        state = {name: p.reconnect_backoff_initial_s for name, _ in specs}
+
+        async def delayed(delay: float, factory) -> None:
+            await asyncio.sleep(delay)
+            await factory()
+
+        tasks = {asyncio.create_task(factory(), name=name): (name, factory, loop.time())
+                 for name, factory in specs}
+        stopper = asyncio.create_task(self.stop.wait())
+        try:
+            while True:
+                done, _ = await asyncio.wait(set(tasks) | {stopper},
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if self.stop.is_set():
+                    break
+                for t in done:
+                    name, factory, started = tasks.pop(t)
+                    if loop.time() - started >= p.reconnect_backoff_max_s:
+                        state[name] = p.reconnect_backoff_initial_s
+                    delay = state[name]
+                    state[name] = min(delay * 2, p.reconnect_backoff_max_s)
+                    exc = None if t.cancelled() else t.exception()
+                    if exc is not None:
+                        self.note_exception("task_died", name, exc)
+                    else:
+                        self.note("task_died", task=name, error_type=None, error="returned early")
+                    self.note("task_restart", task=name, delay_s=delay)
+                    tasks[asyncio.create_task(delayed(delay, factory), name=name)] = (
+                        name, factory, loop.time())
+        finally:
+            for t in [*tasks, stopper]:
+                t.cancel()
+            await asyncio.gather(*tasks, stopper, return_exceptions=True)
+
+    def source_specs(self, http: aiohttp.ClientSession) -> list[tuple[str, Callable[[], Awaitable[None]]]]:
+        """(name, coroutine factory) for every source; supervise() runs them."""
         cfg, p = self.cfg, self.p
-        tasks = []
+        specs = []
 
         # Kalshi order books, with catalog evidence when a ticker becomes active.
         k_rest = self.rest(http, "kalshi", "kalshi")
@@ -156,7 +203,7 @@ class Recorder:
                 await kalshi.fetch_markets(k_rest, cfg.kalshi["base_url"], new)
                 seen_tickers.update(new)
             await kalshi.poll_orderbooks(k_rest, cfg.kalshi["base_url"], tickers)
-        tasks.append(asyncio.create_task(self.every("kalshi", p.kalshi_poll_interval_s, kalshi_round)))
+        specs.append(("kalshi", lambda: self.every("kalshi", p.kalshi_poll_interval_s, kalshi_round)))
 
         # The Odds API, only inside odds windows, stopping at the credit floor.
         o_rest = self.rest(http, "odds_api", "odds")
@@ -170,7 +217,7 @@ class Recorder:
                 if self.schedule.odds_active(now_ms()):
                     await odds.poll()
             await self.every("odds_api", p.odds_poll_interval_s, odds_round)
-        tasks.append(asyncio.create_task(odds_loop()))
+        specs.append(("odds_api", odds_loop))
 
         # MLB feeds when each capture window ends (re-fetch later with `mlb-feed`).
         m_rest = self.rest(http, "mlb_statsapi", "mlb")
@@ -181,7 +228,7 @@ class Recorder:
             for w in self.schedule.ended_between(last_check[0], t):
                 await mlb.fetch_game(m_rest, cfg.mlb["base_url"], w.game.game_pk)
             last_check[0] = t
-        tasks.append(asyncio.create_task(self.every("mlb", 30, mlb_round)))
+        specs.append(("mlb", lambda: self.every("mlb", 30, mlb_round)))
 
         # Novig: stream with a read key; otherwise (or additionally) the public book.
         signer = load_signer(cfg)
@@ -194,22 +241,22 @@ class Recorder:
             if new:
                 await novig_public.fetch_markets(n_rest, cfg.novig["host"], frozenset(new))
                 seen_markets.update(new)
-        tasks.append(asyncio.create_task(self.every("novig_catalog", 30, novig_catalog_round)))
+        specs.append(("novig_catalog", lambda: self.every("novig_catalog", 30, novig_catalog_round)))
 
         if signer is None:
             self.note("novig_stream_disabled", reason="no read key configured "
                       f"(${cfg.novig['key_id_env']}, ${cfg.novig['key_path_env']})")
         else:
-            tasks.append(asyncio.create_task(self.novig_streams(http, signer, n_rest)))
+            specs.append(("novig_streams", lambda: self.novig_streams(http, signer, n_rest)))
         if mode == "always" or (mode == "auto" and signer is None):
             async def public_round() -> None:
                 markets = self.schedule.novig_markets(now_ms())
                 if markets:
                     await novig_public.poll_books(n_rest, cfg.novig["host"], markets,
                                                   int(cfg.novig.get("public_book_depth", 20)))
-            tasks.append(asyncio.create_task(
-                self.every("novig_public_book", p.novig_public_book_poll_interval_s, public_round)))
-        return tasks
+            specs.append(("novig_public_book", lambda: self.every(
+                "novig_public_book", p.novig_public_book_poll_interval_s, public_round)))
+        return specs
 
     async def novig_streams(self, http: aiohttp.ClientSession, signer: NovigSigner,
                             n_rest: RestRecorder) -> None:
@@ -251,8 +298,7 @@ class Recorder:
             self.archive.tick()
             errors = self.archive.seal_errors
             for exc in errors[reported_errors:]:
-                self.note("seal_error", error=repr(exc))
-                print(f"[seal] {exc!r}", file=sys.stderr)
+                self.note_exception("seal_error", "sealer", exc)
             reported_errors = len(errors)
 
             active = self.schedule.any_active(now_ms())

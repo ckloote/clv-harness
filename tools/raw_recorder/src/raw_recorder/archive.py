@@ -104,6 +104,7 @@ class SealedEntry:
     unclean_close: bool
     dropped_tail_bytes: int
     sealed_ts_ms: int
+    journal_tail_repaired_bytes: int = 0
 
     def to_json(self) -> str:
         return json.dumps(self.__dict__, separators=(",", ":"), sort_keys=True)
@@ -129,9 +130,39 @@ def read_journal(day_dir: Path) -> list[dict]:
         for raw in f:
             if raw.endswith(b"\n"):
                 entries.append(json.loads(raw))
-            # A torn final journal line (crash mid-append) is ignored; the
-            # segment it described is still a .part and is re-sealed.
+            # A torn final journal line (crash mid-append) is not a record:
+            # the segment it described is still a .part and is re-sealed,
+            # after repair_journal_tail() removes the fragment.
     return entries
+
+
+def journal_tail_is_torn(day_dir: Path) -> bool:
+    path = day_dir / JOURNAL
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    with path.open("rb") as f:
+        f.seek(-1, os.SEEK_END)
+        return f.read(1) != b"\n"
+
+
+def repair_journal_tail(day_dir: Path) -> int:
+    """Truncate an unterminated final journal line; return the bytes dropped.
+
+    Appending after a torn fragment would fuse it with the next entry and make
+    the journal unreadable. The fragment was never a committed entry (its
+    segment is still a `.part`), so removing it rewrites no history; the count
+    is recorded in the next entry. Callers hold the archive lock.
+    """
+    if not journal_tail_is_torn(day_dir):
+        return 0
+    path = day_dir / JOURNAL
+    data = path.read_bytes()
+    keep = data.rfind(b"\n") + 1
+    with path.open("r+b") as f:
+        f.truncate(keep)
+        f.flush()
+        os.fsync(f.fileno())
+    return len(data) - keep
 
 
 def _fsync_dir(path: Path) -> None:
@@ -193,13 +224,14 @@ def seal_part(part: Path, *, session_id: str | None, unclean: bool = False,
     os.chmod(tmp, 0o444)
     os.replace(tmp, gz_path)
 
+    repaired = repair_journal_tail(day_dir)
     entry = SealedEntry(
         file=gz_name, stream_id=stream_id, segment_id=segment_id,
         sha256=hashlib.sha256(sealed).hexdigest(), bytes=len(sealed),
         frame_count=frames, first_recv_ts_ms=first, last_recv_ts_ms=last,
         recorder_version=RECORDER_VERSION, redaction_policy=REDACTION_POLICY,
         session_id=session_id, unclean_close=unclean, dropped_tail_bytes=dropped,
-        sealed_ts_ms=clock(),
+        sealed_ts_ms=clock(), journal_tail_repaired_bytes=repaired,
     )
     with (day_dir / JOURNAL).open("ab") as f:
         f.write(entry.to_json().encode("ascii") + b"\n")
@@ -460,6 +492,8 @@ def verify(root: Path) -> list[str]:
     for day_dir in day_dirs:
         rel = day_dir.relative_to(root) if day_dir != root else Path(".")
         entries = read_journal(day_dir)
+        if journal_tail_is_torn(day_dir):
+            problems.append(f"{rel}/{JOURNAL}: torn final line (repaired by the next seal)")
         listed = set()
         for e in entries:
             name = e["file"]

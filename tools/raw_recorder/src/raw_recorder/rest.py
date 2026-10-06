@@ -76,6 +76,7 @@ class RestRecorder:
         if signer is not None:
             req_headers.update(signer(method, path, raw_query, payload))
 
+        secrets = redact.secret_values(raw_query, req_headers)
         parts = redact.url_parts(url_text)
         self.stream.event(
             request_id, "rest_request", request_id=request_id, method=method,
@@ -99,15 +100,30 @@ class RestRecorder:
                 status = resp.status
                 resp_headers = list(resp.raw_headers)
                 data = await resp.read()
+        except asyncio.CancelledError:
+            # Shutdown cancels in-flight requests: still close the envelope with
+            # whatever arrived, then let the cancellation propagate.
+            self._complete(request_id, status, resp_headers, None, headers_ts, start_mono, "cancelled")
+            raise
         except asyncio.TimeoutError:
             failure = "timeout"
+        except aiohttp.ClientResponseError as exc:
+            # str() of this error embeds the full request URL: record fields.
+            failure = (f"response_error: {type(exc).__name__}: status={exc.status} "
+                       f"message={redact.scrub(str(exc.message), secrets)}")
         except aiohttp.ClientConnectionError as exc:
-            failure = f"connect_error: {type(exc).__name__}: {exc}"
+            failure = f"connect_error: {type(exc).__name__}: {redact.scrub(str(exc), secrets)}"
         except aiohttp.ClientError as exc:
-            failure = f"client_error: {type(exc).__name__}: {exc}"
+            failure = f"client_error: {type(exc).__name__}: {redact.scrub(str(exc), secrets)}"
 
         if data is not None:
             self.stream.write("in", request_id, data.decode("utf-8", "surrogateescape"))
+        decoded = self._complete(request_id, status, resp_headers, data, headers_ts, start_mono, failure)
+        return RestResult(request_id, status, {k.lower(): v for k, v in decoded}, data, failure)
+
+    def _complete(self, request_id: str, status: int | None, resp_headers: list,
+                  data: bytes | None, headers_ts: int | None, start_mono: int,
+                  failure: str | None) -> list[tuple[str, str]]:
         decoded = [(k.decode("latin-1"), v.decode("latin-1")) for k, v in resp_headers]
         self.stream.event(
             request_id, "rest_complete", request_id=request_id, status=status,
@@ -117,4 +133,4 @@ class RestRecorder:
             headers_ts_ms=headers_ts, complete_ts_ms=time.time_ns() // 1_000_000,
             elapsed_mono_ns=time.monotonic_ns() - start_mono, failure=failure,
         )
-        return RestResult(request_id, status, {k.lower(): v for k, v in decoded}, data, failure)
+        return decoded

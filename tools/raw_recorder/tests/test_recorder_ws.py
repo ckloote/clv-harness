@@ -166,3 +166,53 @@ async def test_unaffordable_probe_is_recorded_as_skipped(tmp_path):
     skipped = [e for e in conn.events if e["type"] == "probe_skipped"]
     assert skipped and skipped[0]["reason"] == "stream_budget" and skipped[0]["markets"] == [MARKET]
     assert not [r for r in state["requests"] if "snapshot" in r]
+
+
+def fail_once(monkeypatch, method, when=lambda *a: True):
+    """Make ClientWebSocketResponse.<method> raise a connection reset once."""
+    original = getattr(aiohttp.ClientWebSocketResponse, method)
+    state = {"failed": False}
+
+    async def flaky(self, *args, **kwargs):
+        if not state["failed"] and when(*args):
+            state["failed"] = True
+            raise aiohttp.ClientConnectionResetError("Cannot write to closing transport")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(aiohttp.ClientWebSocketResponse, method, flaky)
+    return state
+
+
+def io_errors(frames):
+    return [e for c in ws_evidence(frames).values() for e in c.events if e["type"] == "ws_io_error"]
+
+
+async def test_subscribe_write_failure_reconnects(tmp_path, monkeypatch):
+    """Review finding 2: a reset during the initial subscribe killed the channel."""
+    state = new_state()
+    failed = fail_once(monkeypatch, "send_str")
+    frames = await record(tmp_path, state, seconds=1.0)
+    assert failed["failed"]
+    assert len(state["upgrades"]) >= 2                     # it came back
+    (err,) = io_errors(frames)
+    assert err["error_type"] == "ClientConnectionResetError"
+    evs = [e for c in ws_evidence(frames).values() for e in c.events]
+    assert any(e["type"] == "reconnect_wait" for e in evs)
+    assert any(r.get("subscribe") for r in state["requests"])   # resubscribed on the new socket
+
+
+async def test_pong_write_failure_reconnects(tmp_path, monkeypatch):
+    state = new_state()
+    failed = fail_once(monkeypatch, "pong")
+    frames = await record(tmp_path, state, seconds=1.5)
+    assert failed["failed"] and len(state["upgrades"]) >= 2
+    assert len(io_errors(frames)) == 1
+
+
+async def test_probe_write_failure_ends_the_connection_and_reconnects(tmp_path, monkeypatch):
+    """A failure inside maintain() used to be swallowed while receiving carried on."""
+    state = new_state()
+    failed = fail_once(monkeypatch, "send_str", when=lambda text: '"snapshot"' in text)
+    frames = await record(tmp_path, state, seconds=3.0)
+    assert failed["failed"] and len(state["upgrades"]) >= 2
+    assert len(io_errors(frames)) == 1

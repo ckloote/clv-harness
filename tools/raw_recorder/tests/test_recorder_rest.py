@@ -162,3 +162,79 @@ def test_odds_poller_without_key_records_why(archive):
     assert poller.stopped
     ev = [json.loads(f["frame"]) for f in iter_archive(archive.root)]
     assert ev[0]["type"] == "odds_disabled" and "ODDS_API_KEY" in ev[0]["reason"]
+
+
+REVIEW_SECRET = "DUMMY_REVIEW_SECRET"
+
+
+async def test_exception_text_never_carries_query_secrets(archive):
+    """Review finding 3: ClientResponseError's str() embeds the request URL."""
+    async def bad_response(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\nbody")
+        await writer.drain()
+        writer.close()
+
+    srv = await asyncio.start_server(bad_response, "127.0.0.1", 0)
+    port = srv.sockets[0].getsockname()[1]
+    try:
+        async with aiohttp.ClientSession() as http:
+            rest = RestRecorder(http, archive.stream("odds_api", "odds-test"), timeout_s=2)
+            res = await rest.request("GET", f"http://127.0.0.1:{port}", "/v4/sports/x/odds",
+                                     params={"apiKey": REVIEW_SECRET, "regions": "us"})
+    finally:
+        srv.close()
+        await srv.wait_closed()
+    archive.close()
+    assert res.failure is not None and "ClientResponseError" in res.failure
+    assert REVIEW_SECRET not in res.failure
+    raw = b"".join(gzip.decompress(p.read_bytes()) for p in archive.root.rglob("*.jsonl.gz"))
+    assert REVIEW_SECRET.encode() not in raw
+    assert b"regions=us" in raw
+
+
+def test_scrub_redacts_urls_and_known_values_only():
+    from raw_recorder import redact
+    text = ("400, message='Invalid header', url='https://api.example.com/v4/odds?apiKey=s3cr3t&regions=us' "
+            "and wss://x.test/ws?token=abcd plus bare s3cr3t and harmless words")
+    out = redact.scrub(text, {"s3cr3t"})
+    assert "s3cr3t" not in out and "abcd" not in out
+    assert "regions=us" in out and "harmless words" in out and "https://api.example.com/v4/odds?" in out
+    assert redact.scrub("nothing secret here", {"ab"}) == "nothing secret here"   # short values ignored
+    assert redact.secret_values("apiKey=k1&x=1", {"Novig-Signature": "sig", "Accept": "a"}) == {"k1", "sig"}
+
+
+async def test_cancelled_request_still_writes_rest_complete(archive):
+    """Review finding 4: shutdown cancels an in-flight body read."""
+    headers_sent = asyncio.Event()
+
+    async def stalled(request):
+        resp = web.StreamResponse(status=200, headers={"Content-Length": "100"})
+        await resp.prepare(request)
+        await resp.write(b"partial")
+        headers_sent.set()
+        await asyncio.sleep(10)
+        return resp
+
+    app = web.Application()
+    app.router.add_get("/stalled", stalled)
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        async with aiohttp.ClientSession() as http:
+            rest = RestRecorder(http, archive.stream("kalshi", "kalshi-test"), timeout_s=30)
+            task = asyncio.create_task(rest.request("GET", base(srv), "/stalled",
+                                                    subjects=["kalshi:market:X"]))
+            await headers_sent.wait()
+            await asyncio.sleep(0.1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+    finally:
+        await srv.close()
+    archive.close()
+    (ex,) = rest_exchanges(iter_archive(archive.root)).values()
+    assert ex.complete is not None
+    assert ex.complete["failure"] == "cancelled" and ex.complete["status"] == 200
+    assert ex.subjects == ["kalshi:market:X"]
+    assert verify(archive.root) == []
