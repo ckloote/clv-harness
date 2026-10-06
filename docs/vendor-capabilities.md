@@ -11,7 +11,7 @@ Facts the harness depends on, each with a verification status. Implement against
 
 ## Novig (v3 API) — primary reference
 
-Source: `docs.novig.com`, read 2026-10-04.
+Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corrections checked 2026-10-05. **Verified** means documented, not exercised with a live credential.
 
 ### Keys and signing
 
@@ -51,21 +51,29 @@ Source: `docs.novig.com`, read 2026-10-04.
 
 | Fact | Status |
 |---|---|
-| One websocket at `GET /v3/ws` carries every channel. Subscribe messages carry a nonce and select `markets`, `events` (which also covers markets that open later) or `private`. | Verified 2026-10-04 |
-| Each subscription starts with a snapshot. | Verified 2026-10-04 |
-| Channels: `book` (every order-book change; includes lifecycle), `lifecycle` (market status transitions), `tape` (every execution), `private` (own orders and positions; unused). | Verified 2026-10-04 |
-| Messages carry sequence numbers, and the connection docs define gap handling. Read that page in full before A1. | Verified (existence) |
-| Sequence scope: per connection or per subject. | Unverified — R0 |
-| Heartbeat interval and liveness expectations. | Unverified — R0 |
+| `GET /v3/ws` supports the public and private channels. Subscribe selections use `markets`/`events` maps from ID to a **single channel name**, plus a `private` channel list. Confirm simultaneous book/trades subscription behavior; use separate connections if needed. | Verified 2026-10-05 ([connection](https://docs.novig.com/api/streaming/connection)); actual subscription combination unverified — R0 |
+| A subscription starts with a snapshot. A market opening later under an event subscription is an exception: it starts with `OPEN`, channel sequence 0 and first delta 1. | Verified 2026-10-05 ([connection](https://docs.novig.com/api/streaming/connection)) |
+| Public wire channels: `book`, `trades`, `bbo`, `lifecycle`; book/trades/bbo include lifecycle. The page titled “Tape” describes the **`trades`** channel. `private` is a selection/subject for `orders` and `positions`, not the trade-tape channel; the harness does not subscribe to private data. | Verified 2026-10-05 ([connection](https://docs.novig.com/api/streaming/connection), [tape](https://docs.novig.com/api/streaming/tape)) |
+| Public `seq` is per market, per channel; private `seq` is per subaccount, per channel. There is no global sequence. Never compare sequences across connections. Apply each batch atomically; snapshot carries its sequence and the first subsequent delta is next. | Verified 2026-10-05 ([connection](https://docs.novig.com/api/streaming/connection)); live confirmation — R0/A1 |
+| `snapshot` returns authoritative state and sequence without changing subscriptions. After a reconnect, subscribe again; after a gap, take a snapshot and discard buffered deltas it covers. | Verified 2026-10-05 ([connection](https://docs.novig.com/api/streaming/connection)) |
+| Server sends WebSocket control Pings every 15 s and drops a client that sends no Pong between two Pings. These are transport health evidence; capture explicitly since text receive loops may hide control frames. | Verified 2026-10-05 ([connection](https://docs.novig.com/api/streaming/connection)); observed cadence — R0 |
+| The endpoint page describes sequence heartbeats for private channels; that does not establish subject-level liveness for public books. The harness requires public-channel evidence or authoritative snapshot probes under DESIGN.md §7.2. | Verified 2026-10-05 ([endpoint](https://docs.novig.com/api-reference/streaming/open-the-websocket)); public evidence/probe behavior unverified — R0/A1 |
 | Lifecycle status values, and whether any transition reliably marks the off. | Unverified — R0 |
 | `X-Novig-WS-Compress: deflate` on the upgrade request switches to compressed binary frames. Not used by the R0 recorder. | Verified 2026-10-04 |
+
+### Prices and quantities
+
+| Fact | Status |
+|---|---|
+| Native quantity is an integer contract count; each winning contract pays **$0.01**. `price` is a three-decimal probability string, so cost in USD is `price * qty * 0.01`. A displayed quantity of 110 at 0.665 costs $0.73150 and pays $1.10. | Verified 2026-10-05 ([monetary representations](https://docs.novig.com/api/concepts/money)) |
+| Money/balances use five decimal places in USD; documentation specifies half-up rounding. Native price-grid increments vary by price band. Preserve strings and the contract multiplier; do not infer depth dollars directly from contract count. | Verified 2026-10-05 ([monetary representations](https://docs.novig.com/api/concepts/money)); parser/quantity fixtures — V0 |
 
 ### Fees
 
 | Fact | Status |
 |---|---|
 | Takers pay a fee on each fill; game and futures markets have separate schedules. A Maker Credit Program exists. Never register Novig as zero-fee. | Verified 2026-10-04 |
-| Exact fee values and their precision. | Unverified — before any fee-adjusted EV |
+| Monetary precision is $0.00001, also used for fees, with no one-cent minimum. Exact applicable fee values/schedules still need verification before fee-adjusted EV. | Precision verified 2026-10-05 ([monetary representations](https://docs.novig.com/api/concepts/money)); applicable fee schedule unverified |
 
 ### Public exchange data
 
@@ -111,6 +119,7 @@ Source: `docs.novig.com`, read 2026-10-04.
 | A public market-data connector exists in the edge scanner; R0 adapts it to poll game-winner order books. | Own work |
 | Sports event contracts carry explicit fees; the edge scanner holds a fee formula checked in prior work. | Own work |
 | Public market-data endpoints need no authentication; rate limits apply (a third-party guide cites about 10 requests per second). | Reported — confirm in R0 |
+| The single-market order-book response has an `orderbook_fp` object with YES/NO price/quantity arrays and does not include the requested ticker. Archive the request path/ticker with a request ID; the response body alone cannot establish market identity. | Verified 2026-10-05 ([order-book endpoint](https://docs.kalshi.com/api-reference/market/get-market-orderbook)); archive-envelope fixture — R0 |
 | Shape of the history endpoints (bid/ask candles, trades or both), their resolution, and coverage of 2026 MLB game-winner markets. | Unverified — P0/B0 |
 
 ---
@@ -149,4 +158,8 @@ Source: `docs.novig.com`, read 2026-10-04.
 
 | Date | Entry | Expected | Observed | Action |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-10-05 | Novig wire channels | Table named `tape` and `private` as channels | Tape page specifies `trades`; `private` selects orders/positions; connection page also lists `bbo` | Corrected names; R0 checks subscription acknowledgements and simultaneous feeds |
+| 2026-10-05 | Novig sequencing and heartbeat | Scope/cadence left wholly unverified | Docs specify per-market/per-channel sequence, no cross-connection comparisons and 15 s transport Pings | Recorded documented contract; retain live confirmation and public-channel probe gate |
+| 2026-10-05 | Novig subscription snapshots | Every new covered market assumed to arrive with a snapshot | Newly opened markets under event subscriptions start with OPEN/sequence initialization | Recorded exception for A1 reconstruction fixtures |
+| 2026-10-05 | Novig native monetary units | Contract payout and precision unresolved | Native payout $0.01, three-place probabilities and five-place USD money | Recorded multiplier/precision; depth target is payout USD under DESIGN.md §2.4 |
+| 2026-10-05 | Kalshi archive identity | REST body plus status/quota metadata sufficient | Documented single-market book body omits ticker | Require sanitized request envelope, request ID and explicit response/failure association |

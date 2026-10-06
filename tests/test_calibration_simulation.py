@@ -1,4 +1,4 @@
-"""Committed calibration simulation (DESIGN.md §9.2, §9.4 items 1, 2, 11–19).
+"""Committed calibration simulation (DESIGN.md §9.2, §9.4 items 1, 2, 11–22).
 
 This file is the authority for what the calibration checks can and cannot
 detect. §9.2 may not be changed, and the §10 control margins may not be
@@ -10,7 +10,9 @@ import numpy as np
 import pytest
 
 from clv.score.controls import (
+    MIN_CLUSTERS,
     Estimate,
+    InsufficientCalibrationData,
     agreement_gate,
     agreement_test,
     binned_lack_of_fit,
@@ -32,6 +34,7 @@ OUTLIER = 0.08             # controls.agreement_outlier_pp = 8 pp
 MAX_VERIFIED_RATE = 0.01   # controls.agreement_max_verified_rate = 1%
 N_EVENTS = 1_500           # controls.sample_events
 OC_REPLICATES = 1_000      # replicates behind every operating-characteristic assertion
+MIN_CLUSTERS_SPEC = 30     # controls.min_clusters (fixed in code as MIN_CLUSTERS)
 
 # Planning assumptions about the reference series (replace with B1/A1 measurements).
 OFFSETS = ("24h", "6h", "1h", "15m")
@@ -107,7 +110,7 @@ def simulate(
 
 def run_check1(sim):
     return check1(sim["by_offset"], MARGIN_INTERCEPT, MARGIN_SLOPE,
-                  MARGIN_CURVATURE, CURVATURE_RADIUS)
+                  MARGIN_CURVATURE, CURVATURE_RADIUS, expected_offsets=OFFSETS)
 
 
 def run_check2(sim, resolved=()):
@@ -132,15 +135,30 @@ def test_interval_that_includes_zero_is_not_a_pass():
     assert Estimate(0.0, 0.001).within(MARGIN_INTERCEPT)
 
 
+def test_min_clusters_matches_specification():
+    assert MIN_CLUSTERS == MIN_CLUSTERS_SPEC
+
+
 def test_too_few_clusters_refuses_to_produce_an_interval():
-    with pytest.raises(ValueError):
+    with pytest.raises(InsufficientCalibrationData):
         ols_cluster(np.zeros(20), np.ones((20, 1)), np.arange(20) % 10)
 
 
 def test_rank_deficient_regression_is_rejected():
     x = np.ones(100)
-    with pytest.raises(ValueError, match="rank-deficient"):
+    with pytest.raises(InsufficientCalibrationData, match="rank-deficient"):
         ols_cluster(np.zeros(100), np.column_stack([x, x]), np.arange(100))
+
+
+@pytest.mark.parametrize("prices", [np.full(100, 0.5), np.tile([0.45, 0.55], 50)])
+def test_check1_without_price_variation_is_insufficient_evidence(prices):
+    with pytest.raises(InsufficientCalibrationData, match="rank-deficient"):
+        check1({"1h": (prices, prices, np.arange(100))}, MARGIN_INTERCEPT, MARGIN_SLOPE,
+               MARGIN_CURVATURE, CURVATURE_RADIUS, expected_offsets=("1h",))
+
+
+def test_insufficient_data_is_not_a_value_error():
+    assert not issubclass(InsufficientCalibrationData, ValueError)
 
 
 def test_intercept_is_sample_average_drift_even_when_prices_are_skewed():
@@ -200,17 +218,38 @@ def test_reference_instrument_flip_fails_check2_only():
 
 # ------------------------------------------------------------------ §9.4 item 11
 
-def test_level_drift_fails_check1_and_random_side_residual_misses_it():
+def test_level_drift_fails_check1_and_symmetric_population_residual_misses_it():
     rng = np.random.default_rng(5)
     ok1, res = run_check1(simulate(rng, level_drift=0.02))
     assert not ok1
     assert all(abs(r.intercept.value - 0.02) < 0.003 for r in res)
 
-    # Same drift, large sample: the random-side residual stays near zero.
+    # Same drift, large symmetric price population: the EV residual nearly cancels.
     big = simulate(rng, n=50_000, level_drift=0.02)
     resid = random_side_residual(*big["residual"])
     print(f"\nlevel drift +2.00 pp -> random-side mean residual {resid.value*100:+.3f} pp")
     assert abs(resid.value) < 0.002
+
+
+def test_random_side_ev_residual_does_not_cancel_with_asymmetric_prices():
+    sim = simulate(np.random.default_rng(501), n=50_000, p_range=(0.42, 0.70),
+                   level_drift=0.02)
+    passed, results = run_check1(sim)
+    assert not passed
+    assert all(abs(r.intercept.value - 0.02) < 0.001 for r in results)
+    resid = random_side_residual(*sim["residual"])
+    p, pc, _ = sim["by_offset"]["6h"]
+    conditional_mean = np.mean((pc - p) * (1 / p - 1 / (1 - p)) / 2)
+    print(f"\nasymmetric prices, +2 pp drift: EV residual {resid.value*100:+.3f} pp")
+    assert resid.hi < -0.004
+    assert resid.value == pytest.approx(conditional_mean, abs=0.001)
+
+    # Both sides of every event isolate the identity from randomization noise.
+    paired = random_side_residual(
+        np.r_[p, 1-p], np.r_[pc, 1-pc], np.r_[1/p, 1/(1-p)],
+        np.tile(np.arange(len(p)), 2),
+    )
+    assert paired.value == pytest.approx(conditional_mean, abs=1e-12)
 
 
 def test_linear_price_dependent_drift_fails_check1_via_slope():
@@ -349,7 +388,8 @@ def test_verified_difference_ceiling_fails_gate_even_when_every_outlier_is_revie
 def test_binned_diagnostic_catches_localized_drift_that_check1_usually_misses():
     # +2.5 pp drift confined to entry prices 0.56-0.60. Check 1 sees only its
     # small effect on the three fitted terms and passes most samples; the bins
-    # see it almost always, and only in the bin that contains the band.
+    # see it almost always, and only in bins overlapping the band (a property
+    # of this fixture: projection can spread other faults across bins).
     rng = np.random.default_rng(14)
     reps = 200
     check1_pass, bin_flag, localized = [], [], []
@@ -372,3 +412,93 @@ def test_binned_diagnostic_rarely_flags_a_correct_pipeline():
     any_flag = np.mean([bool(flagged_bins(simulate(rng))) for _ in range(reps)])
     print(f"\nbinned diagnostic, correct pipeline: any flag in {any_flag:.1%} of {reps} replicates")
     assert any_flag <= 0.02
+
+
+# ------------------------------------------------------------------ §9.4 items 20–22
+
+@pytest.mark.parametrize("offsets", [(), ("15m",), OFFSETS[:-1]])
+def test_check1_missing_required_offsets_is_insufficient_evidence(offsets):
+    sim = simulate(np.random.default_rng(20))
+    sim["by_offset"] = {label: sim["by_offset"][label] for label in offsets}
+    with pytest.raises(InsufficientCalibrationData, match="missing required offsets"):
+        run_check1(sim)
+
+
+def test_check1_rejects_unexpected_offsets_and_invalid_specifications():
+    sim = simulate(np.random.default_rng(21))
+    sim["by_offset"]["typo"] = sim["by_offset"]["15m"]
+    with pytest.raises(ValueError, match="unexpected offsets"):
+        run_check1(sim)
+    for expected in ((), ("15m", "15m"), ("",), "15m"):
+        with pytest.raises(ValueError, match="expected_offsets"):
+            check1({}, MARGIN_INTERCEPT, MARGIN_SLOPE, MARGIN_CURVATURE,
+                   CURVATURE_RADIUS, expected_offsets=expected)
+
+
+def test_check1_empty_leg_with_populated_others_is_an_error():
+    sim = simulate(np.random.default_rng(23))
+    p, pc, ev = sim["by_offset"]["24h"]
+    sim["by_offset"]["24h"] = (p[:0], pc, ev)
+    with pytest.raises(ValueError, match="same length"):
+        run_check1(sim)
+
+
+@pytest.mark.parametrize("n", [0, 1, 2, 3, 10])
+def test_check1_unavailable_offset_cannot_be_a_statistical_pass(n):
+    sim = simulate(np.random.default_rng(22))
+    sim["by_offset"]["24h"] = tuple(x[:n] for x in sim["by_offset"]["24h"])
+    with pytest.raises(InsufficientCalibrationData):
+        run_check1(sim)
+
+
+def test_check1_returns_results_in_specification_order():
+    sim = simulate(np.random.default_rng(1))
+    sim["by_offset"] = dict(reversed(list(sim["by_offset"].items())))
+    passed, results = run_check1(sim)
+    assert passed
+    assert tuple(r.offset for r in results) == OFFSETS
+
+
+def test_binned_intervals_have_nominal_coverage_with_events_spanning_bins():
+    # Fixed prices, correlated errors: the same event contributes observations
+    # to different bins. Coverage must include the full-sample fitted-curve
+    # uncertainty and cross-bin event covariance, not just within-bin residuals.
+    rng = np.random.default_rng(617)
+    events = np.repeat(np.arange(600), 2)
+    p = rng.uniform(0.30, 0.70, len(events))
+    covered = np.zeros(PRICE_BINS)
+    for _ in range(OC_REPLICATES):
+        error = np.repeat(rng.normal(0, 0.025, 600), 2) + rng.normal(0, 0.01, len(p))
+        bins = binned_lack_of_fit(p, p + error, events, CURVATURE_RADIUS,
+                                 PRICE_BINS, BIN_TRIGGER)
+        covered += [b.residual.lo <= 0 <= b.residual.hi for b in bins]
+    rates = covered / OC_REPLICATES
+    print(f"\n90% bin interval coverage, {OC_REPLICATES} replicates: {rates}")
+    # Monte Carlo tolerance; old within-bin-only intervals overcover especially
+    # in the edge bins and fail this check.
+    assert np.all((rates >= 0.865) & (rates <= 0.935))
+
+
+def test_binned_diagnostic_requires_enough_events_in_each_bin():
+    p = np.linspace(0.30, 0.70, 100)
+    with pytest.raises(InsufficientCalibrationData, match="bin"):
+        binned_lack_of_fit(p, p, np.arange(len(p)), CURVATURE_RADIUS,
+                          PRICE_BINS, BIN_TRIGGER)
+
+
+def test_binned_membership_is_independent_of_row_order_with_tied_prices():
+    rng = np.random.default_rng(24)
+    p = np.round(rng.uniform(0.30, 0.70, N_EVENTS), 2)    # coarse grid: many ties
+    pc = np.clip(p + rng.normal(0, 0.02, N_EVENTS), 0, 1)
+    events = np.arange(N_EVENTS)
+    perm = rng.permutation(N_EVENTS)
+    a = binned_lack_of_fit(p, pc, events, CURVATURE_RADIUS, PRICE_BINS, BIN_TRIGGER)
+    b = binned_lack_of_fit(p[perm], pc[perm], events[perm], CURVATURE_RADIUS,
+                           PRICE_BINS, BIN_TRIGGER)
+    assert [(x.price_lo, x.price_hi, x.n_rows) for x in a] == \
+           [(x.price_lo, x.price_hi, x.n_rows) for x in b]
+    for x, y in zip(a, b):
+        assert x.residual.value == pytest.approx(y.residual.value, abs=1e-12)
+        assert x.residual.se == pytest.approx(y.residual.se, abs=1e-12)
+    for lo_bin, hi_bin in zip(a, a[1:]):
+        assert lo_bin.price_hi < hi_bin.price_lo             # no price in two bins

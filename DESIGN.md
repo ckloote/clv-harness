@@ -11,7 +11,7 @@
 | `docs/RESEARCH_PROTOCOL.md` | Model-evaluation protocol. Inactive until a signal model exists. The harness preserves the evidence it needs (§11) but does not implement it. |
 | `config/params.toml` | Every tunable parameter. Created in V0 from §10, authoritative thereafter. |
 
-**Code that ships with this design:** `src/clv/score/controls.py` and `tests/test_calibration_simulation.py` (§9.2, §9.4).
+**Code that ships with this design:** `src/clv/score/controls.py` and `tests/test_calibration_simulation.py` (§9.2, §9.4), plus `tests/test_research_bound_specification.py` (arithmetic fixtures for the inactive research protocol).
 
 **Schema:** grown in stages (§8.5): the V0 table set first, then each table when the phase that writes to it begins, each stage with its §8.4 tests. Do not write the complete DDL up front.
 
@@ -97,13 +97,24 @@ Name the column `fee_adjusted_close_ev`, not a generic "net EV": it is a modeled
 For each eligible live close compute, when the data permit:
 
 1. Unweighted best bid/ask midpoint (`mid_top`).
-2. Depth-walk midpoint at **prespecified** notionals, initially `$100`, `$500`, and `$1,000` (`mid_depth_*`). The $500 result is a candidate *primary* benchmark, subject to an early liquidity pilot, not an immutable truth.
+2. Depth-walk midpoint at **prespecified payout notionals**, initially `$100`, `$500`, and `$1,000` (`mid_depth_*`). The $500 result is a candidate *primary* benchmark, subject to an early liquidity pilot, not an immutable truth.
 3. The executable acquisition price for the measured side and the executable disposal price where those operations are defined. These bound what the market actually offers; they are not equivalent to a midpoint probability.
 4. Aligned quotes from the independent reference venue, reported separately with cross-venue difference and time alignment.
 
 If insufficient depth exists on either side at a required notional, that benchmark is unavailable with reason `insufficient_depth`; never extrapolate through an empty book. If the bid exceeds the ask, status is inappropriate, or price/depth is internally inconsistent, quarantine the observation.
 
 **Primary estimate selection is preregistered** after an initial liquidity/coverage pilot and *before* examining candidate-model CLV. Preserve every alternative for sensitivity analyses; do not switch to the benchmark that produces the best result. Starting notionals and the provisional primary benchmark are in §10.
+
+**Depth measurement contract.** Normalize each level's quantity to USD paid if the contract wins: `level_payout_usd = native_qty * payout_usd_per_native_contract`. Retain both the native quantity and the versioned contract multiplier. Novig documents a $0.01 native payout; do not assume every venue's contract pays $1. Canonical bids are walked highest price first and asks lowest first. For a target payout notional `N`, consume exactly `N` on **each** side, including a proportional fraction of the final level for this benchmark calculation:
+
+```text
+side_vwap = sum(price_j * consumed_payout_usd_j) / N
+mid_depth_N = (bid_vwap_N + ask_vwap_N) / 2
+```
+
+Require at least `N` of actual payout depth on both sides; never renormalize a short ladder to `N`. A fractional final level is an integration convention for the benchmark, not a claim that a fractional native contract can be executed. Cash-budget acquisition/disposal estimates use separate execution assumptions and native size increments. Polarity normalization precedes the walk: reversing a complete complementary ladder gives `mid_complement_N = 1 - mid_N` at the same payout notional.
+
+**V0 worked fixture:** with canonical bid levels `(0.40, $300), (0.35, $400)` and ask levels `(0.60, $200), (0.65, $500)`, where quantities are payout dollars, `N = $500` consumes $300/$200 on the bid and $200/$300 on the ask. Bid VWAP is 0.38, ask VWAP 0.63, midpoint 0.505; the complemented midpoint is 0.495. The $500 target corresponds to 50,000 native contracts at a $0.01 payout. Cash proceeds/cost are $190/$315 before fees, so this is not a $500 cash-budget trade. At `N = $1,000` both ladders are insufficient. V0 tests must reproduce these values, unit conversion, partial final levels and complement identity.
 
 ### 2.5 De-vigging
 
@@ -142,7 +153,7 @@ Novig integration is v3-only and read-only, subject to confirmation at first con
 
 Record which capabilities were actually verified, when, and with which API/docs version. If any critical capability is missing, stop that part of the plan and evaluate Kalshi as primary instead of manufacturing continuity assumptions.
 
-**Already-verified capabilities.** The key model and creation path, signing scheme and test vectors, throttle buckets and the 2,048-market subscription cap, location-check semantics, the HTML-body edge `403`, the channel set, fee structure and public-data layout were verified against Novig's documentation on 2026-10-04 and are recorded in `docs/vendor-capabilities.md`. Implement against those values and re-verify them at first contact (R0, A1). Do not rediscover them from scratch, and do not trust them blindly either: any discrepancy becomes a dated entry in that file's log.
+**Already-verified capabilities.** The key model and creation path, signing scheme and test vectors, throttle buckets and the 2,048-market subscription cap, location-check semantics, the HTML-body edge `403`, fee structure and public-data layout are recorded in `docs/vendor-capabilities.md`. The wire-channel names (`trades`, not `tape`), per-market/per-channel sequencing, 15-second transport Pings and native payout units were checked in the 2026-10-05 correction pass. Implement against the dated entries and re-verify them at first contact (R0, A1). Do not rediscover them from scratch, and do not trust them blindly either: any discrepancy becomes a dated entry in that file's log.
 
 ### 3.3 Historical-data cost assumptions
 
@@ -307,18 +318,24 @@ Fee-adjusted hypothetical EV must identify every modeled cost (entry, possible h
 **Archive format** — shared by the R0 recorder and the harness, so R0 captures replay without conversion:
 
 ```text
-archive/<source>/<YYYY-MM-DD, UTC>/<connection_id>.jsonl.gz
+archive/<source>/<YYYY-MM-DD, UTC>/<connection_id>.<segment_id>.jsonl.gz
   one line per frame:
   {"recv_ts_ms": <int>, "conn_id": "<str>", "dir": "in" | "out" | "event",
    "frame": "<exactly the received text, as a JSON string>"}
 archive/<source>/<YYYY-MM-DD, UTC>/manifest.json
-  per file: sha256, bytes, frame_count, first/last recv_ts_ms,
+  per sealed file: conn_id, segment_id, sha256, bytes, frame_count, first/last recv_ts_ms,
   recorder_version, redaction_policy
 ```
 
 **`frame` is always a JSON string holding exactly the received text — never the parsed message re-embedded as an object.** Re-serializing a parsed message changes bytes (key order, whitespace, number formatting), which breaks the file hashes and the byte-for-byte golden replay in §9.4. Decoding the string returns the original text exactly.
 
-`in` frames are verbatim vendor messages. `out` frames are our own subscribe and unsubscribe messages, with credentials and signatures redacted. `event` frames mark connect, disconnect, error and process start/stop. REST responses (catalog and market lists, Kalshi order books, The Odds API responses) are archived the same way under their own `<source>`, with the HTTP status and any quota headers in an adjacent `event` frame. Do not enable vendor-side compression in the recorder: text frames keep the archive greppable and the replay path simple.
+`in` frames are verbatim vendor text messages. `out` frames are our own subscribe, unsubscribe and snapshot-probe messages, with credentials and signatures redacted. `event` frames hold JSON-encoded recorder metadata as a string and mark connect, disconnect, error, process start/stop and transport Ping/Pong observations. Every process start has a new recorder session ID; an unclean previous session is recorded on restart, since a killed process cannot emit its own stop event. Do not enable vendor-side compression in the recorder: text messages keep replay simple.
+
+**REST envelope.** Each attempted request, including failures and timeouts, has a globally unique `request_id`. Before sending, archive an `event` with that ID, method, sanitized origin/path/query, requested native subjects, request-start UTC time and recorder-session monotonic time. Use a request-specific `conn_id = request_id` for its archive records, even when the HTTP client reuses a physical connection. Archive the response body verbatim as an `in` frame under the same ID, then a completion `event` carrying receive/completion times, elapsed monotonic duration, HTTP status, content type, quota headers and failure reason where applicable. No response is associated by adjacency alone. Empty bodies, non-JSON errors, and timeouts retain the original request identity. Remove API keys, signatures, authorization/cookie values and other secrets from request metadata before writing it. Kalshi's single-market book response does not carry its ticker; the envelope is required to identify it during replay.
+
+**Transport and channel evidence.** Hook WebSocket control-frame handling explicitly: a text-message receive loop may never see Ping/Pong. Archive control direction, observation time and session monotonic time as `event` records; do not pretend a control frame is vendor JSON text. Preserve application-level heartbeat payloads verbatim. Transport Ping/Pong proves connection health only. Record every public-channel probe's nonce, requested markets/channels, send/receive times and raw reply so §7.2 can establish subject-level freshness. Successful probes with unchanged books are evidence; silence is not.
+
+R0 archive verification includes interleaved REST requests with identical response bodies, a timeout, and a quiet WebSocket market with control Pings and a snapshot probe. Replay must recover the correct subject/request association and distinguish transport health from channel evidence. Manifests used by a derived run reference sealed files; rotate an active segment before hashing it into a run, preserving earlier manifest versions.
 
 Derived close and score runs declare the raw/normalized fact snapshot, parser version, off-resolver version, benchmark definition, fee version and scorer code/version. Reprocessing new facts creates a new run instead of silently changing previously reported numbers.
 
@@ -333,9 +350,13 @@ For each subscription/channel, maintain documented sequence state, snapshot sync
 
 A healthy socket is not proof that every subscribed channel is live. Check per-channel/per-subject liveness as the provider permits. Never infer “unchanged” from an absent tick without independent proof that the relevant feed or poll scheduler was functioning.
 
+**Quiet public channels.** Recent contiguous subject/channel messages or a documented heartbeat naming that subject/channel are admissible liveness evidence. Otherwise send an authoritative `snapshot` probe at `stream.channel_probe_interval_s`, with response timeout `stream.probe_timeout_s`; a subscription-list/status acknowledgement alone is insufficient. Novig probes use the documented per-market/per-channel sequence within the same connection. Reconcile the reply with buffered deltas under the provider's ordering contract: a sequence equal to the last contiguous sequence confirms an unchanged channel; a jump without the intervening deltas exposes a gap. A delayed snapshot already covered by contiguous deltas is superseded and must not roll state back. A new snapshot can establish fresh state after a gap but never retrospectively prove the missing interval was continuous. R0 only archives these probes/replies; A1 implements interpretation and resynchronization. Validate that all required channels remain subscribed after probing. If the API or quota cannot provide this evidence at the configured cadence, record `feed_stalled` or `collection_gap`; revise the policy through a dated decision rather than treating socket Pings as channel proof.
+
 **Periodic full snapshots:** in addition to change-driven ticks, persist complete ladders at a measured interval and after every resync. Select that interval using a one-week storage/pipeline pilot. Preserve at least enough depth for the largest prespecified benchmark notional; fail closed if the sampled ladder is truncated before the required notional.
 
 **Exactly three book representations.** (1) The raw archive holds every received message, including every delta, and is authoritative for replay. (2) `tick` holds normalized top-N book state, written when that state changes, for queries and close computation. (3) `book_snapshot` holds complete ladders at the periodic interval and after every resync. There is no normalized delta table: when deltas are needed, replay them from the raw archive.
+
+Probe replies always remain in the raw archive; they do not require a new normalized `tick` when state is unchanged. A successful unchanged probe refreshes channel evidence, not the book's last economic-change timestamp or quote-age clock. Persist normalized full ladders at the configured storage cadence and after resync independently of the probe cadence.
 
 ### 7.3 Poll continuity
 
@@ -366,7 +387,7 @@ Table names below are conceptual; exact naming can vary if the behavior and cons
 | `event` | Stable internal identity; immutable basic identity only; avoid date/team-derived collisions |
 | `event_alias`, `event_schedule_observation` | Provider-ID history, schedule revisions, league identifiers and mapping corrections |
 | `outcome`, `contract_rule_observation` | Precisely defined outcomes and provider-specific settlement/void conditions |
-| `venue_instrument`, `instrument_mapping_observation` | Stable native instruments and versioned mapping/polarity/equivalence decisions |
+| `venue_instrument`, `instrument_mapping_observation` | Stable native instruments and versioned mapping/polarity/equivalence decisions, including payout currency, USD payout per native contract and quantity increment for depth conversion |
 | `raw_artifact` / archive manifest | Payload location, content hash, source, parser version, receive time and redaction policy |
 | `book_snapshot`, `tick` | Normalized book state: full ladders (periodic and after resync) and top-N state on change, with complete-ladder flags, sequence, native/observed time and status. Deltas live only in the raw archive (§7.2) |
 | `poll_attempt`, `poll_result` | Successful unchanged polls and failures, expected/received subject set and quota data |
@@ -470,7 +491,7 @@ The harness must pass **mechanical correctness** first, **causal/time integrity*
 | Fixed-side martingale test (§9.2, check 1) | Level drift, linear favorite/longshot drift, prespecified symmetric quadratic curvature; close-leg polarity and close-selection errors | Does **not** prove absence of arbitrary nonlinear drift (the binned diagnostic covers localized shapes); cannot see a mapping error that flips entry-time and close reference prices together (check 2 does); blind to in-play leakage (§9.3) |
 | Binned lack-of-fit (§9.2, check 1 diagnostic) | Localized or non-quadratic drift that the three-term fit misses | Resolution limited by bin count and trigger; every flag needs a decision record |
 | Entry-to-reference agreement (§9.2, check 2) | Mapping and polarity disagreements between entry venue and reference, whichever side is wrong; odds-format errors; wrong-game joins; misaligned entry times | Genuine cross-venue disagreement produces a tail; needs the entry venue's two-way price |
-| Random-side residual (§9.2, summary) | Close-leg polarity flips | **Not a gate.** Side randomization cancels side-antisymmetric effects, so it is nearly blind to reference drift |
+| Random-side residual (§9.2, summary) | Close-leg polarity flips; price/payout-dependent response to drift | **Not a gate.** It may cancel in symmetric populations; payout weighting prevents general cancellation |
 | Outcome-aware oracle buffer sweep | Late/in-play contamination and off-resolver problems | No kink is **not** proof of zero contamination; late pregame news can create abrupt moves |
 | Artificial contamination injection | Whether controls detect **known** post-start leakage | Synthetic path may not represent every real-game pattern |
 | Cross-reference/price-basis sensitivity | Thin or distorted primary venue, benchmark choice artifacts | Two venues may share information or errors |
@@ -513,13 +534,17 @@ Both terms are centered on the sample, so `α` is the sample-average drift even 
 
 To pass, at every offset all three 90% intervals must lie entirely inside their prespecified equivalence margins: `α` within ±`controls.martingale_margin_intercept_pp`, `β` within ±`controls.martingale_margin_slope`, and `γ` within ±`controls.martingale_margin_curvature_pp`. These are two one-sided equivalence tests at 5% each. An interval that merely includes zero is not a pass: that rewards noise. Check 1 needs only reference data, so it gates the close machinery in Track B before any soft-book history is bought (§13, B2).
 
-This is a **prespecified functional-form check, not a theorem that all predictable drift is absent**. A **binned lack-of-fit diagnostic** covers shapes outside the three terms: at every offset, the mean residual from the fitted curve is reported in `controls.martingale_price_bins` equal-count entry-price bins, with event-clustered intervals. A bin is **flagged** when its whole 90% interval lies outside ±`controls.martingale_bin_trigger_pp`. Each flag blocks benchmark sign-off until a decision record explains it; a structural pattern is then either added to a new prespecified gate with simulation coverage, or the reference is abandoned. Do not add basis terms after seeing model CLV. In the committed simulation, a +2.5 pp drift confined to entry prices 0.56–0.60 passes check 1 in about three samples of four, and the bins flag it in about 98%, always in the bin that contains it.
+The caller supplies the complete ordered `controls.martingale_offsets` as `expected_offsets`, independently of available observations. An empty/partial offset map, empty observations, fewer than `controls.min_clusters` events, or too little price variation to fit the three terms raises `InsufficientCalibrationData` (deliberately not a `ValueError`); misaligned input lengths remain errors; the orchestration layer records `insufficient_data`, never `passed` or a statistical rejection. Duplicate/empty configured labels and unexpected supplied offsets are configuration errors. Never drop a difficult or unavailable offset to make a gate pass. A legitimate change to the required set creates a new prespecified calibration definition.
+
+This is a **prespecified functional-form check, not a theorem that all predictable drift is absent**. A **binned lack-of-fit diagnostic** covers shapes outside the three terms: at every offset, the mean residual from the fitted curve is reported in `controls.martingale_price_bins` equal-count entry-price bins, with event-clustered intervals. A bin is **flagged** when its whole 90% interval lies outside ±`controls.martingale_bin_trigger_pp`. Each flag blocks benchmark sign-off until a decision record explains it; a structural pattern is then either added to a new prespecified gate with simulation coverage, or the reference is abandoned. Do not add basis terms after seeing model CLV. In the committed simulation, a +2.5 pp drift confined to entry prices 0.56–0.60 passes check 1 in about three samples of four, and the bins flag it in 99% of samples, always in a bin overlapping the band. This localization is a property of that fixture; projection onto the fitted curve can spread other faults across bins.
+
+**Binned interval calculation.** Condition on the observed prices and equal-count bin membership. Tied prices always share a bin (each takes the rank of its lowest tied position), so membership is independent of row order and counts are approximately equal. If `w_b` is `1/n_b` inside bin `b` and zero outside, its fitted mean residual is the full-sample contrast `a_b' Δp`, where `a_b = w_b - X (X'X)^(-1) X' w_b`. With full-model residuals `e_i`, compute event scores `S_g = sum_{i in event g} a_bi * e_i` over **all** rows and `SE_b² = G/(G-1) * (n-1)/(n-k) * sum_g S_g²`, with `k = 3`. This accounts for fitting the curve on the same data and for events spanning bins. Running an intercept regression on only a bin's fitted residuals is not this covariance estimator. Each bin still needs at least `controls.min_clusters` distinct events. The simulation checks nominal 90% coverage under the fixed-design model with correlated observations across bins; unsupported/sparse bins yield `insufficient_data`.
 
 Margins are in probability points, but what they cost a model depends on the prices it bets: the same drift costs more CLV at longshot payouts. Every model claim must therefore clear the drift-bias bound in `docs/RESEARCH_PROTOCOL.md` §6, computed from these margins over the model's own entries.
 
 A failure stops model claims for that reference and close definition. If the cause is genuine predictable drift rather than a bug, the reference is a defective benchmark: a finding to report, never an offset to subtract.
 
-*Why a fixed side.* In a two-outcome market every move is antisymmetric across sides: if home firms by two points, away fades by two. Randomizing sides therefore cancels drift in expectation. In the committed simulation, a +2 pp level drift leaves the random-side residual near zero while the fixed-side intercept recovers the drift.
+*Why a fixed side.* In a two-outcome market every probability move is antisymmetric across sides: if home firms by two points, away fades by two. Fair side randomization cancels that **unweighted probability move** in expectation. The EV residual multiplies by a side-dependent payout, however: conditional on home-side move `Δp`, its expectation is `Δp * (d_home - d_away) / 2`. Cancellation therefore depends on the price/payout population. In the committed symmetric-price simulation a +2 pp drift leaves the EV residual near zero; with initial home prices in 0.42–0.70 it is about −0.55 pp. The fixed-side probability regression measures the drift directly in both cases.
 
 **Check 2 — entry-to-reference agreement: the entry leg (hard gate).** Compare `q_e` with `p_e` entry by entry, using random-control entries priced at the entry venue.
 
@@ -547,7 +572,7 @@ Only `verified_market_difference` counts as resolved **within the current run**.
 
 Separately, mean `null_ev` should be consistent with the entry venue's own quoted margin in those markets — that venue's margin, not a universal −4.5%. A mismatch points to odds-format or payout-convention errors.
 
-**Summary, never a gate — random-side residual.** Report the mean `residual` over random-side controls. It catches close-leg polarity flips strongly but is nearly blind to drift, for the reason above. It must never be promoted to a gate; §9.4 asserts its blindness so that property cannot be lost by accident.
+**Summary, never a gate — random-side residual.** Report the mean `residual` over random-side controls, with the price and payout distribution. Its response to drift depends on that distribution; a near-zero mean does not establish a sound reference, and a nonzero mean alone does not diagnose a pipeline fault. §9.4 exercises both symmetric cancellation and asymmetric noncancellation, as well as the separate gating checks.
 
 Neither gating check sees in-play contamination, because a contaminated close is still a martingale. That is §9.3's job.
 
@@ -573,7 +598,7 @@ Synthetic event-book fixtures should include:
 8. A valid but wide pregame spread and a thin ladder: width is reported; required-notional benchmark is unavailable rather than manufactured.
 9. A correction to mapping, settlement or schedule: original observations remain intact; new derived runs show the revised result and lineage.
 10. A quote posted before a signal but *received* after it: the causal as-of policy rejects the quote as known at decision time.
-11. Injected reference drift of two kinds — a level drift independent of price, and a **linear** price-dependent drift — fails check 1 through the intercept and the linear slope respectively. On the level drift, the random-side residual does **not** move. Assert all three outcomes.
+11. Injected reference drift of two kinds — a level drift independent of price, and a **linear** price-dependent drift — fails check 1 through the intercept and the linear slope respectively. On the level drift in the specified symmetric-price population, the random-side EV residual nearly cancels. Assert all three outcomes; item 22 tests the asymmetric case.
 12. Operating characteristics at the §10 sample target, over 1,000 replicates: a correct pipeline passes the full three-component check 1 in at least 95% of replicates; a level drift equal to the intercept margin fails it in at least 90%; and a symmetric quadratic drift equal to the curvature margin fails it in at least 90%. The test prints all three rates. True rates must clear these thresholds comfortably, not by sampling luck; a rate near its threshold means the margin or the sample target is wrong.
 13. A systematic polarity flip among near-coin-flip games (entry prices 0.48–0.52): fewer than 1% of entries exceed the per-entry outlier threshold, and the check 2 slope still fails.
 14. A centered symmetric quadratic reference drift large enough to matter, which an intercept-and-slope-only fit passes: the curvature component fails at every offset.
@@ -581,9 +606,12 @@ Synthetic event-book fixtures should include:
 16. The Check-2 de-vig path is fixed: proportional normalization of a two-way market exactly recovers the fair side when the same multiplicative overround is applied to both sides.
 17. Repeating identical rows within an event does not create fake precision: event-clustered Check-2 point estimates are unchanged and standard errors do not collapse as if duplicates were independent games.
 18. Every outlier validly resolved, but verified differences above `controls.agreement_max_verified_rate`: check 2 fails. Below the ceiling it passes.
-19. The binned diagnostic: a localized drift band that check 1 passes in most replicates is flagged in at least 95% of them, only in the bin containing the band; a correct pipeline is flagged in at most 2% of replicates.
+19. The binned diagnostic: a localized drift band that check 1 passes in most replicates is flagged in at least 95% of them, only in bins overlapping the band in this fixture; a correct pipeline is flagged in at most 2% of replicates.
+20. Check 1 cannot pass an empty/partial offset map or an offset with empty/insufficient observations. The configured offset set is explicit; duplicate/empty labels and unexpected offsets are errors, and result ordering follows the specification.
+21. Binned intervals account for the full-sample curve fit and events spanning bins: over 1,000 fixed-design correlated-error replicates, each nominal 90% interval has coverage between 86.5% and 93.5% (Monte Carlo tolerance). A bin with fewer than `controls.min_clusters` events refuses an interval.
+22. Random-side EV residuals under asymmetric prices do not generally cancel level drift. A paired-side calculation reproduces `mean(Δp * (d_home - d_away) / 2)` exactly; the randomized sample is consistent with it and clearly nonzero.
 
-Items 1, 2 and 11–19 are implemented in `tests/test_calibration_simulation.py` against `src/clv/score/controls.py`. Both ship with this design and must keep passing; the simulation's reference-series assumptions are replaced with B1 and A1 measurements when those exist.
+Items 1, 2 and 11–22 are implemented in `tests/test_calibration_simulation.py` against `src/clv/score/controls.py`. Both ship with this design and must keep passing; the simulation's reference-series assumptions are replaced with B1 and A1 measurements when those exist.
 
 Tests should assert not only that scores differ, but that the **expected exclusion or diagnostic reason** is emitted. Establish an audited “golden game” containing raw messages, transformations, start resolution, entry, close and score; replay it byte-for-byte in CI.
 
@@ -609,7 +637,10 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | `r0.odds_poll_interval_s` | 1,200 (20 min), game windows only | provisional | R0: free-tier credit budget |
 | `r0.odds_quota_floor` | 50 credits: stop polling below this | provisional | R0 |
 | **Streams and books** | | | |
-| `stream.liveness_max_s` | 30 since last message or heartbeat on the channel | provisional | R0: 3× observed heartbeat interval |
+| `stream.liveness_max_s` | 30 since admissible subject/channel evidence, including a successful unchanged snapshot probe | provisional | R0/A1: subject-level evidence and probe latency |
+| `stream.transport_liveness_max_s` | 45 since received traffic, including received control Ping/Pong; local sends do not refresh it | provisional | R0: 3× documented Novig 15 s Ping interval; independent of channel liveness |
+| `stream.channel_probe_interval_s` | 15 for selected channels lacking a documented subject heartbeat | provisional | R0/A1: subscription semantics and actual quota |
+| `stream.probe_timeout_s` | 5 from send to authoritative reply | provisional | R0/A1: measured latency; timeout records a coverage failure |
 | `stream.max_venue_lag_ms` | 5,000 (receive time minus venue time) | provisional | R0/A1: about 2× observed p99 |
 | `stream.reconnect_backoff_s` | 1 doubling to 60, with jitter | provisional | Vendor docs, A1 |
 | `book.tick_levels` | 10 per side | provisional | R0: must cover the largest benchmark notional; fail closed if truncated |
@@ -625,7 +656,8 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | **Close** | | | |
 | `close.buffer_s` | 60 | provisional | G2: conservative side of the oracle kink and contamination-injection tests |
 | `close.buffer_sweep_s` | 0, 30, 60, 120, 600 | fixed | — |
-| `close.depth_notionals_usd` | 100, 500, 1,000 | provisional | A3 liquidity pilot, before any model data |
+| `close.depth_notional_basis` | USD payout on a win, equal target on both canonical sides; proportional final level | fixed | §2.4; contract multiplier retained per instrument |
+| `close.depth_notionals_usd` | 100, 500, 1,000 of payout | provisional | A3 liquidity pilot, before any model data |
 | `close.primary_benchmark` | `mid_depth_500` | provisional | Locked at G2 on development data |
 | `close.max_quote_age_s` | 1,800; beyond it, `stale_book`; all ages below are stratified | provisional | A3, per sport |
 | `close.hist_vwap_window_s` | 600 before cutoff | provisional | B2 coverage |
@@ -637,6 +669,7 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | `mapping.primary_cohort` | `exact` or `manual_verified`, with confirmed settlement equivalence | fixed | — |
 | **Controls and acceptance** | | | |
 | `controls.sample_events` | About 1,500 independent events per close family | provisional | §9.4 item 12, then observed dispersion |
+| `controls.min_clusters` | 30 distinct events per fit and per diagnostic bin | fixed | Normal-approximation floor, the code constant `MIN_CLUSTERS` in `controls.py`; not read from `params.toml`, changed only with the code and a simulation rerun; not the sample target |
 | `controls.equivalence_ci` | 90% event-clustered interval, entirely inside the margin (two one-sided tests at 5%) | fixed | — |
 | `controls.martingale_offsets` | 24 h, 6 h, 1 h, 15 min before the trusted start bound | provisional | B2 |
 | `controls.martingale_margin_intercept_pp` | 0.5 pp, about 1 pp of CLV at even odds | provisional | §9.4 item 12; tighter needs more events |
@@ -733,7 +766,8 @@ A one-week collector pilot should measure raw archive growth, normalized row siz
 
 - `NOVIG-V3` signing, validated against Novig's published sample signatures and `POST /v3/echo`, using the read key only.
 - Select MLB postseason moneyline markets (a hand-maintained list is acceptable) and archive the catalog responses used.
-- Subscribe to book, lifecycle and tape for those markets. Write every frame in the §7.1 archive format with receive timestamps, from as early as practical before first pitch through at least 30 minutes after it.
+- Subscribe to `book` and `trades` for those markets, retaining their included `lifecycle` data. Confirm the actual subscription acknowledgements: selection values name one channel per subject, so use separate connections if needed to retain both feeds without replacing a subscription. Archive acknowledgements and every frame in the §7.1 format, from as early as practical before first pitch through at least 30 minutes after it.
+- Capture transport Ping/Pong evidence, and send/archive scheduled authoritative snapshot probes for quiet public channels using the §10 cadence and timeout. These are evidence collection only; R0 does not interpret sequences or repair gaps. Archive every REST request envelope and response/failure under its request ID.
 - Log connection events. Reconnect with backoff and resubscribe, but never attempt gap repair: later replay detects gaps from the raw sequence numbers.
 - **Kalshi:** poll the matching game-winner markets' order books through Kalshi's public market-data endpoints (no authentication; adapt the edge scanner's connector) every `r0.kalshi_poll_interval_s` during the same windows, archiving every response.
 - **The Odds API:** poll `h2h`, region `us`, for MLB every `r0.odds_poll_interval_s` during game windows only, archiving every response and its quota headers. At 20 minutes over about six hours per game day that is 18 credits a day; across the remaining postseason it stays inside the 500-credit free tier, but with little margin, so stop polling below `r0.odds_quota_floor` and record why in an `event` frame.
@@ -743,7 +777,7 @@ A one-week collector pilot should measure raw archive growth, normalized row siz
 
 **Out of scope:** parsing, book reconstruction, SQLite and any order route.
 
-**Gate R0:** at least one game captured end to end from all three sources, every restart and disconnect logged as an `event` frame, all manifests verifying, and The Odds API credit spend recorded. Written answers, recorded in `docs/vendor-capabilities.md`: does `trading::read` streaming work on an unfunded subaccount; the observed heartbeat interval; sequence scope (per connection or per subject); lifecycle status values around first pitch; the distribution of receive time minus venue time.
+**Gate R0:** at least one game captured end to end from all three sources; connection/restart/control-frame events and REST request associations preserved; the §7.1 archive verification fixtures pass; sealed manifests verify; and The Odds API credit spend is recorded. Written answers in `docs/vendor-capabilities.md`: does `trading::read` streaming work on an unfunded subaccount; observed transport Ping cadence and usable public-channel evidence; confirmation of per-market/per-channel sequencing and simultaneous book/trades subscriptions; lifecycle status values around first pitch; the distribution of receive time minus venue time. A live mismatch with the documented contract is recorded explicitly.
 
 **If R0 misses the window:** V0 uses one historical game or a live game in another sport. Nothing else depends on R0.
 
@@ -884,7 +918,8 @@ clv-harness/
     test_close_depth_and_candle.py
     test_entry_execution.py
     test_controls_and_fault_injection.py
-    test_calibration_simulation.py   # §9.4 items 1, 2, 11–19; gates any change to §9.2
+    test_calibration_simulation.py   # §9.4 items 1, 2, 11–22; gates any change to §9.2
+    test_research_bound_specification.py # executable arithmetic fixtures; no model pipeline
 ```
 
 Have the CI suite prove that a deliberately broken pipeline **fails** the relevant control. Include deterministic property-based tests where possible (polarity involution, no post-cutoff source use, append-only supersession). Keep manual golden-game checks as a documented acceptance artifact, not a one-off debugging exercise. `test_cohort_statistics.py` arrives with the research protocol.

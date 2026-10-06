@@ -1,7 +1,7 @@
 # Research Protocol — Model Evaluation
 
 **Status:** inactive. Activates when a signal model exists.  
-**Relationship to the harness:** the harness implements nothing in this document. It preserves the evidence this protocol needs (`DESIGN.md` §11.4). When this protocol activates, its tables and tests are added as a new schema stage (`DESIGN.md` §8.5).
+**Relationship to the harness:** the harness preserves the evidence this protocol needs (`DESIGN.md` §11.4); it does not implement model evaluation. Pure arithmetic fixtures for §6's bound already live in `tests/test_research_bound_specification.py` to validate the specification. The production cohort logic, tables and remaining tests are added when this protocol activates (`DESIGN.md` §8.5).
 
 ---
 
@@ -43,19 +43,30 @@ Downstream analysis: track information-time provenance for large pregame reprici
 
 Beyond harness gates G1–G3, a model-performance claim requires a frozen holdout policy with the corresponding sample collected; event-clustered uncertainty and a prespecified statistical summary on that holdout; and tracking of every model version and threshold, so that no inspected holdout is reused.
 
-**Drift-bias bound.** Harness check 1 certifies that reference drift lies within its margins, not that it is zero, and the same probability-point drift costs more CLV at longshot payouts. Before any claim, compute the largest mean CLV that drift inside the certified margins could produce over the model's own entries. For each entry `i`, using the calibration offset nearest its entry time:
+**Drift-bias bound.** A passing Check 1 provides statistical evidence of equivalence within its prespecified coefficient margins, not a guarantee of zero drift. The same probability-point drift costs more CLV at longshot payouts. Before any claim, compute the largest mean CLV that coefficients inside those margins could produce over the model's own entries under the calibrated three-term model.
+
+Group entries by the calibration fit `g` that supports them: reference/close definition, calibration population/run and entry offset. Coefficients at different offsets are independently constrained; they need not share a sign. Each entry must have supported timing and price coverage in its assigned fit. The initial policy requires the calibrated offset and its exact as-of quote-selection rule. Do not assign arbitrary entry times to the nearest offset or interpolate coefficient bounds without a separately prespecified and validated calibration policy. Unsupported entries block that population's claim; any restriction to supported entries must be frozen and reflected in the coverage waterfall.
+
+Use the **same normalized nonnegative weights** as the headline mean CLV: `sum_i w_i = 1`. Entry weighting has `w_i = 1/N`; equal event weighting with equal weighting inside each event has `w_i = 1/(G_events * n_entries_in_event_i)`. A different within-event policy must specify its weights explicitly. For each supported entry:
 
 ```text
 s_i = +1 if the entry backs the fixed canonical side (home), -1 otherwise
 p_i = reference probability of the canonical side at entry
-x_i = (p_i - 0.5) - x_center
-q_i = ((p_i - 0.5) / r)^2 - q_center      # centering constants recorded by that calibration run
+x_i = (p_i - 0.5) - x_center_g
+q_i = ((p_i - 0.5) / r_g)^2 - q_center_g  # constants from its calibration fit
 d_i = entry payout factor
 
-B = ( m_a * |sum s_i*d_i| + m_b * |sum s_i*d_i*x_i| + m_g * |sum s_i*d_i*q_i| ) / N
+A_g = sum_{i in g} w_i*s_i*d_i
+L_g = sum_{i in g} w_i*s_i*d_i*x_i
+Q_g = sum_{i in g} w_i*s_i*d_i*q_i
+B = sum_g (m_alpha_g*|A_g| + m_beta_g*|L_g| + m_gamma_g*|Q_g|)
 ```
 
-`m_a`, `m_b` and `m_g` are the check 1 margins for intercept, slope and curvature, and `r` is the curvature radius (`DESIGN.md` §10). Drift moves the backed side's probability by `s_i * (α + β*x_i + γ*q_i)`, so `B` is the exact maximum of drift's contribution to mean CLV anywhere inside the certified margins. A positive claim requires the lower bound of its CLV interval to exceed `B`: an edge inside the bound cannot be distinguished from reference drift. `B` covers only drift the three-term model describes; any binned-diagnostic flag accepted by decision record must state its own bound.
+The `m_*_g` values are the Check-1 margins for that fit and `r_g` is its curvature radius (`DESIGN.md` §10). Drift contributes `s_i * d_i * (alpha_g + beta_g*x_i + gamma_g*q_i)` to entry CLV. Taking absolute values **inside the sum over fits** maximizes this weighted contribution over the product of their coefficient boxes. `B` is the exact maximum over that box; it is not a simultaneous confidence bound on arbitrary reference error, nor proof that the functional form holds for a model-selected population. Additional probability constraints can only reduce the box maximum, so it remains conservative for that restricted model.
+
+**Counterexample to pooling offsets:** two equally weighted entries with identical payout factors of 2 and centered regressors, backing opposite sides at different offsets, cancel in every pooled exposure sum. Yet allowed home-side intercepts of +0.004 at the first offset and −0.004 at the second give both selected entries +0.008 CLV. The grouped intercept contribution to the bound is 0.010 at the default 0.005 margin; other coefficient contributions may enlarge it. Grouping prevents this false zero bound. Cancellation remains legitimate among entries that share one fit and its coefficients.
+
+A positive claim requires the lower bound of its CLV interval to exceed `B`: an edge inside the bound cannot be distinguished from drift allowed by this sensitivity model. `B` covers only drift the three-term model describes; any binned-diagnostic flag accepted by decision record must state its own additional bound. Arithmetic fixtures check the counterexample, agreement with exhaustive coefficient-box corners, and consistency with event weights. Production implementation must additionally test unsupported timing/price support, fit lineage and weight validation.
 
 ## 7. Open questions
 
@@ -67,4 +78,4 @@ B = ( m_a * |sum s_i*d_i| + m_b * |sum s_i*d_i*x_i| + m_g * |sum s_i*d_i*q_i| ) 
 
 ## 8. Tests this protocol adds
 
-`test_cohort_statistics.py`, plus tests for any `analysis_cohort` and `real_fill` invariants.
+`test_cohort_statistics.py`, plus tests for any `analysis_cohort` and `real_fill` invariants. The existing `test_research_bound_specification.py` remains the arithmetic reference: register the production bound in its `BOUND_IMPLEMENTATIONS` so every fixture runs against it.

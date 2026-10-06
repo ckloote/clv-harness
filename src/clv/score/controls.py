@@ -28,21 +28,30 @@ import numpy as np
 
 Z90 = 1.6448536269514722   # two-sided 90% == two one-sided tests at 5%
 MIN_CLUSTERS = 30          # below this the normal approximation is not trusted
+                           # fixed in code, not read from params.toml (DESIGN.md §10)
 
 
-def _float_1d(values, name: str) -> np.ndarray:
+class InsufficientCalibrationData(Exception):
+    """No statistical verdict is available; callers must not record a pass.
+
+    Deliberately not a ValueError, so `except ValueError` handlers for
+    configuration/pipeline errors cannot absorb it (or vice versa).
+    """
+
+
+def _float_1d(values, name: str, allow_empty: bool = False) -> np.ndarray:
     arr = np.asarray(values, dtype=float)
     if arr.ndim != 1:
         raise ValueError(f"{name} must be one-dimensional")
-    if len(arr) == 0:
+    if len(arr) == 0 and not allow_empty:
         raise ValueError(f"{name} must not be empty")
     if not np.all(np.isfinite(arr)):
         raise ValueError(f"{name} contains non-finite values")
     return arr
 
 
-def _prob_1d(values, name: str) -> np.ndarray:
-    arr = _float_1d(values, name)
+def _prob_1d(values, name: str, allow_empty: bool = False) -> np.ndarray:
+    arr = _float_1d(values, name, allow_empty)
     if np.any((arr < 0.0) | (arr > 1.0)):
         raise ValueError(f"{name} must lie in [0, 1]")
     return arr
@@ -73,6 +82,22 @@ class Estimate:
         return -margin <= self.lo and self.hi <= margin
 
 
+def _cluster_index(clusters) -> tuple[np.ndarray, int]:
+    """Event index per row and cluster count G, enforcing MIN_CLUSTERS."""
+    _, idx = np.unique(clusters, return_inverse=True)
+    G = int(idx.max()) + 1 if len(idx) else 0
+    if G < MIN_CLUSTERS:
+        raise InsufficientCalibrationData(
+            f"{G} clusters < MIN_CLUSTERS={MIN_CLUSTERS}; interval not trusted"
+        )
+    return idx, G
+
+
+def _cr1_factor(G: int, n: int, k: int) -> float:
+    """CR1 small-sample correction G/(G-1) * (n-1)/(n-k)."""
+    return (G / (G - 1)) * ((n - 1) / (n - k))
+
+
 def ols_cluster(y, X, clusters) -> tuple[np.ndarray, np.ndarray]:
     """OLS with event-clustered (CR1) standard errors. Returns (beta, se)."""
     y = _float_1d(y, "y")
@@ -87,15 +112,13 @@ def ols_cluster(y, X, clusters) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError("y, X, and clusters must have the same row count")
 
     n, k = X.shape
-    if n <= k:
-        raise ValueError(f"need more observations than regressors: n={n}, k={k}")
-    if np.linalg.matrix_rank(X) < k:
-        raise ValueError("X is rank-deficient")
-
-    _, idx = np.unique(clusters, return_inverse=True)
-    G = len(np.unique(idx))
-    if G < MIN_CLUSTERS:
-        raise ValueError(f"{G} clusters < MIN_CLUSTERS={MIN_CLUSTERS}; interval not trusted")
+    idx, G = _cluster_index(clusters)
+    # Every design here is built from the data (e.g. too little price variation),
+    # so a rank-deficient or too-wide X is missing evidence, not a config error.
+    if n <= k or np.linalg.matrix_rank(X) < k:
+        raise InsufficientCalibrationData(
+            f"X is rank-deficient or has too few rows (n={n}, k={k})"
+        )
 
     xtx_inv = np.linalg.inv(X.T @ X)
     beta = xtx_inv @ (X.T @ y)
@@ -103,7 +126,7 @@ def ols_cluster(y, X, clusters) -> tuple[np.ndarray, np.ndarray]:
     scores = np.zeros((G, k))
     np.add.at(scores, idx, X * u[:, None])
     cov = xtx_inv @ (scores.T @ scores) @ xtx_inv
-    cov *= (G / (G - 1)) * ((n - 1) / (n - k))
+    cov *= _cr1_factor(G, n, k)
     diag = np.diag(cov)
     if np.any(diag < -1e-15):
         raise ValueError("cluster covariance has materially negative diagonal")
@@ -128,11 +151,13 @@ def _check1_design(p_entry: np.ndarray, curvature_radius: float):
 def _check1_inputs(p_entry, p_close, event_id, curvature_radius):
     if curvature_radius <= 0:
         raise ValueError("curvature_radius must be positive")
-    p_entry = _prob_1d(p_entry, "p_entry")
-    p_close = _prob_1d(p_close, "p_close")
+    p_entry = _prob_1d(p_entry, "p_entry", allow_empty=True)
+    p_close = _prob_1d(p_close, "p_close", allow_empty=True)
     event_id = np.asarray(event_id)
     if len(p_entry) != len(p_close) or len(p_entry) != len(event_id):
         raise ValueError("p_entry, p_close, and event_id must have the same length")
+    if len(p_entry) == 0:
+        raise InsufficientCalibrationData("no observations")
     return p_entry, p_close, event_id
 
 
@@ -161,8 +186,8 @@ def martingale_test(
     """Check 1 at one entry offset.
 
     Inputs must be for ONE FIXED canonical side per event (home), never a
-    randomly chosen side: in a two-outcome market every move is antisymmetric
-    across sides, so side randomization cancels drift in expectation (§9.2).
+    randomly chosen side: side randomization cancels unweighted probability
+    moves. Payout-weighted EV residuals need not cancel (§9.2).
 
     Regressors: x = (p - 0.5) and q = ((p - 0.5) / radius)^2, each centered on
     the sample. The intercept is therefore the sample-average drift; the
@@ -197,16 +222,34 @@ def check1(
     margin_slope: float,
     margin_curvature: float,
     curvature_radius: float,
+    *,
+    expected_offsets: Iterable[str],
 ):
     """Run check 1 at every offset.
 
     by_offset: {label: (p_entry, p_close, event_id)}. Passes only if every
-    offset passes all three equivalence components.
+    configured offset passes all three equivalence components. expected_offsets
+    comes from the analysis specification, never from the available data keys.
+    Missing offsets/observations raise InsufficientCalibrationData; invalid
+    offset configuration or unexpected offsets raise ValueError. Neither is a
+    statistical pass or failure. Results follow the configured offset order.
     """
+    if isinstance(expected_offsets, str):
+        raise ValueError("expected_offsets must be a sequence of labels, not a string")
+    expected = tuple(expected_offsets)
+    if (not expected or any(not isinstance(label, str) or not label for label in expected)
+            or len(set(expected)) != len(expected)):
+        raise ValueError("expected_offsets must be nonempty, unique, nonempty strings")
+    unexpected = set(by_offset) - set(expected)
+    if unexpected:
+        raise ValueError(f"unexpected offsets: {sorted(unexpected)}")
+    missing = set(expected) - set(by_offset)
+    if missing:
+        raise InsufficientCalibrationData(f"missing required offsets: {sorted(missing)}")
     results = [
-        martingale_test(p_e, p_c, ev, label,
+        martingale_test(*by_offset[label], label,
                         margin_intercept, margin_slope, margin_curvature, curvature_radius)
-        for label, (p_e, p_c, ev) in by_offset.items()
+        for label in expected
     ]
     return all(r.passed for r in results), results
 
@@ -225,12 +268,19 @@ def binned_lack_of_fit(p_entry, p_close, event_id, curvature_radius: float,
     """§9.2 lack-of-fit diagnostic at one offset.
 
     Fits the check-1 model, then reports the mean residual in n_bins
-    equal-count entry-price bins with event-clustered intervals. A bin is
+    equal-count entry-price bins (tied prices share a bin, so counts are
+    approximate) with event-clustered intervals. For bin weights
+    w (1/n_bin inside the bin, zero elsewhere), its mean residual is a contrast
+    a' dp, where a = (I - X (X'X)^-1 X') w. Cluster sums of a_i * residual_i
+    over ALL rows propagate the uncertainty from fitting the curve on the
+    same sample, including events spanning bins. Prices/bin membership are
+    conditioned on; coverage is checked under this fixed-design convention.
+    A bin is
     flagged when its whole 90% interval lies outside +/- trigger: evidence of
     material drift the three-term model does not describe. Each flagged bin
     blocks benchmark sign-off until a decision record explains it.
     """
-    if n_bins < 2:
+    if not isinstance(n_bins, (int, np.integer)) or n_bins < 2:
         raise ValueError("n_bins must be at least 2")
     if trigger < 0:
         raise ValueError("trigger must be non-negative")
@@ -239,16 +289,29 @@ def binned_lack_of_fit(p_entry, p_close, event_id, curvature_radius: float,
     dp = p_close - p_entry
     beta, _ = ols_cluster(dp, X, event_id)
     resid = dp - X @ beta
+    n, k = X.shape
+    cluster_idx, n_clusters = _cluster_index(event_id)
+    correction = _cr1_factor(n_clusters, n, k)
+    projection = np.linalg.solve(X.T @ X, X.T)
 
-    order = np.argsort(p_entry, kind="stable")
-    bins = np.empty(len(p_entry), dtype=int)
-    bins[order] = np.arange(len(p_entry)) * n_bins // len(p_entry)
+    # Rank by lowest position among equal prices: tied prices always share a
+    # bin, so membership does not depend on input row order.
+    rank = np.searchsorted(np.sort(p_entry), p_entry, side="left")
+    bins = rank * n_bins // n
 
     out = []
     for b in range(n_bins):
         m = bins == b
-        bb, bs = ols_cluster(resid[m], np.ones((int(m.sum()), 1)), event_id[m])
-        est = Estimate(bb[0], bs[0])
+        if len(np.unique(event_id[m])) < MIN_CLUSTERS:
+            raise InsufficientCalibrationData(
+                f"bin {b} has fewer than {MIN_CLUSTERS} events; interval not trusted"
+            )
+        weights = m.astype(float) / m.sum()
+        contrast = weights - X @ (projection @ weights)
+        scores = np.zeros(n_clusters)
+        np.add.at(scores, cluster_idx, contrast * resid)
+        se = np.sqrt(correction * (scores @ scores))
+        est = Estimate(float(weights @ resid), float(se))
         out.append(BinResult(
             price_lo=float(p_entry[m].min()),
             price_hi=float(p_entry[m].max()),
@@ -369,10 +432,10 @@ def agreement_gate(result: AgreementResult, resolved_entry_ids: Iterable = (), *
 def random_side_residual(p_entry, p_close, d_entry, event_id) -> Estimate:
     """Mean of (p_close - p_entry) * d for the RANDOMLY CHOSEN side.
 
-    Catches close-leg polarity flips strongly but is nearly blind to reference
-    drift, because side randomization cancels antisymmetric moves.
-    tests/test_calibration_simulation.py asserts that blindness so this cannot
-    be promoted to a gate by accident.
+    Diagnostic only: sensitivity to drift depends on prices and payout factors.
+    Conditional on a home-side move dp, equally likely sides have expected EV
+    residual dp * (d_home - d_away) / 2, not generally zero. The simulation
+    exercises both symmetric cancellation and asymmetric price populations.
     """
     p_entry = _prob_1d(p_entry, "p_entry")
     p_close = _prob_1d(p_close, "p_close")
