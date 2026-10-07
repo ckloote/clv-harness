@@ -1,11 +1,13 @@
-# R0 recorder parameters. Every value is copied from DESIGN.md §10; the §10 key
-# is named beside it. Change a value there first (with a dated decision record
-# for provisional values), then here. Secrets never go in this file.
+# Novig PAPER (play-money) configuration, for testing the signer and stream
+# against the real API (docs/decisions/2026-10-07-novig-paper.md). Paper data is
+# never reference evidence: it goes to its own archive and V0 never reads it.
+# Only Novig is recorded; the [r0] and [stream] tables must equal config.toml's
+# (tests enforce this). Use:  raw-recorder --config tools/raw_recorder/config.paper.toml ...
 
-games_file = "games.toml"         # relative to this file
+games_file = "games.paper.toml"   # Paper market IDs differ from Production
 
 [archive]
-root = "../../archive"            # relative to this file: <repo>/archive
+root = "../../archive-paper"      # relative to this file: <repo>/archive-paper
 
 [r0]
 kalshi_poll_interval_s = 10                 # r0.kalshi_poll_interval_s
@@ -27,19 +29,21 @@ transport_liveness_max_s = 45               # stream.transport_liveness_max_s
 reconnect_backoff_s = { initial = 1, max = 60 }   # stream.reconnect_backoff_s
 
 [novig]
-host = "https://api.novig.com"
-ws_url = "wss://api.novig.com/v3/ws"
+host = "https://api.paper.novig.com"
+ws_url = "wss://api.paper.novig.com/v3/ws"
 channels = ["book", "trades"]               # one connection per channel (a selection maps a subject to one channel)
-key_id_env = "NOVIG_READ_KEY_ID"            # trading::read key only
-key_path_env = "NOVIG_READ_KEY_PATH"        # PEM, chmod 600
+key_id_env = "NOVIG_PAPER_READ_KEY_ID"      # Paper trading::read key only
+key_path_env = "NOVIG_PAPER_READ_KEY_PATH"  # PEM, chmod 600
 public_book_poll = "auto"                   # auto: poll the unsigned public book only when no key is configured; always | never
 public_book_depth = 20                      # the endpoint's maximum
 
 [kalshi]
+enabled = false                             # recorded by the Production config
 base_url = "https://external-api.kalshi.com/trade-api/v2"
 series_ticker = "KXMLBGAME"
 
 [odds_api]
+enabled = false                             # recorded by the Production config
 base_url = "https://api.the-odds-api.com"
 sport = "baseball_mlb"
 regions = "us"
@@ -48,4 +52,5 @@ odds_format = "american"
 key_env = "ODDS_API_KEY"
 
 [mlb]
+enabled = false                             # recorded by the Production config
 base_url = "https://statsapi.mlb.com"

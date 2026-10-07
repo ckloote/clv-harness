@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -63,9 +64,10 @@ def _rest(archive: ArchiveWriter, http, source: str, name: str, sid: str, cfg: C
 
 def cmd_run(args) -> int:
     cfg = load_config(args.config)
-    games = load_games(args.games)
+    games_path = args.games or os.environ.get("RAW_RECORDER_GAMES") or cfg.games_path
+    games = load_games(games_path)
     if not games:
-        print("warning: no games in games.toml; only housekeeping will run", file=sys.stderr)
+        print(f"warning: no games in {games_path}; only housekeeping will run", file=sys.stderr)
     asyncio.run(Recorder(cfg, games).run())
     return 0
 
@@ -119,10 +121,13 @@ async def _catalog(cfg: Config, days: int) -> int:
         games = [g for d in json.loads(res.body or b"{}").get("dates", []) for g in d.get("games", [])]
         _, n_markets = await novig_public.fetch_catalog(
             _rest(archive, http, "novig", "catalog", sid, cfg), cfg.novig["host"])
-        k_markets = await kalshi.fetch_series(_rest(archive, http, "kalshi", "catalog", sid, cfg),
-                                              cfg.kalshi["base_url"], cfg.kalshi["series_ticker"])
+        k_markets = []
+        if cfg.enabled(cfg.kalshi):
+            k_markets = await kalshi.fetch_series(_rest(archive, http, "kalshi", "catalog", sid, cfg),
+                                                  cfg.kalshi["base_url"], cfg.kalshi["series_ticker"])
 
-    print("# Suggested games.toml entries. The responses behind them are archived;")
+    print(f"# Suggested entries for {cfg.games_path.name} (Novig host {cfg.novig['host']}).")
+    print("# The responses behind them are archived;")
     print("# check every match by hand before recording.\n")
     for g in games:
         if g.get("status", {}).get("startTimeTBD"):
@@ -148,7 +153,8 @@ async def _catalog(cfg: Config, days: int) -> int:
               + ("" if len(novig) == 1 else f"  # CHECK: {len(novig)} candidates"))
         tickers = [t for ts in k_events.values() for t in sorted(ts)]
         print(f"kalshi_tickers = {json.dumps(tickers)}"
-              + ("" if len(k_events) == 1 else f"  # CHECK: {len(k_events)} candidate events"))
+              + ("" if len(k_events) == 1 or not cfg.enabled(cfg.kalshi)
+                 else f"  # CHECK: {len(k_events)} candidate events"))
         print()
     return 0
 
@@ -311,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("run", help="record every source for the games in games.toml")
-    p.add_argument("--games", type=Path, help="games.toml (default: tools/raw_recorder/games.toml)")
+    p.add_argument("--games", type=Path, help="games file (default: the config's games_file)")
     p.set_defaults(fn=cmd_run)
     sub.add_parser("echo", help="test the Novig read key: signed POST /v3/echo, limits, scope").set_defaults(fn=cmd_echo)
     p = sub.add_parser("catalog", help="archive MLB/Novig/Kalshi catalogs and print games.toml suggestions")

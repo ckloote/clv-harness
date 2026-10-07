@@ -20,12 +20,15 @@ tests/                      calibration simulation and research-bound fixtures; 
 tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp + cryptography only)
   config.toml               recorder parameters, each copied from DESIGN.md §10
   games.toml                the games, Novig markets and Kalshi tickers to record
+  config.paper.toml         Novig Paper (play money) test configuration: own archive, Novig only
+  games.paper.toml          the same games under Paper's market IDs
   src/raw_recorder/
     archive.py              §7.1 archive: append, rotate, seal, journal, read, verify
     rest.py                 REST envelope: every request, body and failure under its request_id
     novig/signing.py        NOVIG-V3 request signing (checked against Novig's 30 published vectors)
     novig/stream.py         Novig WebSocket recorder: control frames, quiet-channel probes, reconnect
     novig/public.py         Novig unsigned catalog and public order book
+    provision.py            `novig-provision`: management key -> trading::read key (trusted machine only)
     kalshi.py, odds_api.py, mlb.py   pollers for Kalshi order books, The Odds API, MLB StatsAPI
     scheduler.py, runtime.py, cli.py capture windows, the long-running process, commands
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
@@ -84,9 +87,18 @@ The recorder reads secrets from environment variables, never from files in the r
 |---|---|---|
 | `NOVIG_READ_KEY_ID` | UUID of a Novig **`trading::read`** key | Novig falls back to the public book poll |
 | `NOVIG_READ_KEY_PATH` | Path to that key's PKCS#8 PEM, `chmod 600` | (same) |
+| `NOVIG_PAPER_READ_KEY_ID`, `NOVIG_PAPER_READ_KEY_PATH` | The same, for a Novig **Paper** key (`config.paper.toml` only) | Paper uses the public book |
 | `ODDS_API_KEY` | The Odds API key (the free tier is enough for R0) | Odds polling is disabled and the reason recorded |
 
-**Provisioning the Novig read key (one time, [DESIGN.md §13](DESIGN.md)).** Creating a `trading::read` key needs a request signed by your management key. Do it on a trusted machine: open a subaccount if none exists, then create a read key for it (`POST /v3/account/subaccounts/{keyId}/keys`, scope `trading::read`). Copy **only the read key** to the recorder host. The management private key never goes on any machine that runs the recorder. Record the read key's ID and creation date in `docs/vendor-capabilities.md`.
+**Getting a Novig read key ([DESIGN.md §13](DESIGN.md)).** You need a management key first. You create it in the web app at Settings → Novig API, which downloads a `.pem`. On **Production**, that entry appears only after Novig enables the API on your account (see `docs/decisions/2026-10-07-novig-paper.md`; ask developers@novig.com). On **Paper** (`paper.novig.com`, play money) it is always there.
+
+Then mint the read key with `novig-provision`. It opens a subaccount, keeping no key that can trade, creates a `trading::read` key, writes it with `chmod 600`, checks it, and prints the environment lines to set:
+
+```bash
+uv run novig-provision --env paper --management-key-id <management key ID> --management-key ~/novig-paper-mgmt.pem --out ~/.config/raw-recorder/novig-paper-read.pem
+```
+
+For Production, run it with `--env production` **on a trusted machine, not the recorder host**, and copy only the read key file to the recorder host. The management private key never goes on a machine that runs the recorder. Record the Production read key's ID and creation date in `docs/vendor-capabilities.md`.
 
 Then check the key:
 
@@ -94,7 +106,17 @@ Then check the key:
 uv run raw-recorder echo
 ```
 
-`echo` sends a signed `POST /v3/echo`, reads `/v3/limits`, and confirms the key is not a management key. Everything it does is archived.
+`echo` sends a signed `POST /v3/echo`, reads `/v3/limits`, and confirms the key is not a management key. Everything it does is archived. For the Paper key, add `--config tools/raw_recorder/config.paper.toml` (it goes before the subcommand).
+
+**Testing on Paper.** `--config tools/raw_recorder/config.paper.toml` switches every command to Paper. It uses Paper's host, `NOVIG_PAPER_READ_KEY_*`, `games.paper.toml`, and its own archive, `archive-paper/`, and it records only Novig. Paper books are play money: they test the signer and stream against the real API, never the measurement. A Paper recorder can run alongside the Production one.
+
+```bash
+uv run raw-recorder --config tools/raw_recorder/config.paper.toml probe-subscriptions --market <paper market id>
+```
+
+```bash
+uv run raw-recorder --config tools/raw_recorder/config.paper.toml run
+```
 
 ### Choosing games
 

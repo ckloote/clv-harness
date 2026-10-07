@@ -14,6 +14,8 @@ dependencies = [
 
 [project.scripts]
 raw-recorder = "raw_recorder.cli:main"
+# Trusted-machine tool; the recorder never imports it.
+novig-provision = "raw_recorder.provision:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/raw_recorder"]
