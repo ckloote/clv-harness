@@ -1,0 +1,39 @@
+# Games to record. Hand-maintained and committed, so the archive's market
+# choices have provenance. Generate candidates with `raw-recorder catalog`
+# (it archives the catalog responses it used) and check every match by hand.
+#
+# Per game: game_pk (MLB StatsAPI), scheduled_start_utc, Novig MONEY market IDs,
+# Kalshi KXMLBGAME tickers. Optional: capture_lead_s / capture_tail_s to
+# override DESIGN.md §10 r0.capture_lead_s / r0.capture_tail_s for this game
+# (e.g. a rain delay, or a deliberate 6 h lead). Past games are ignored.
+
+[[game]]
+game_pk = 849826
+label = "Milwaukee Brewers @ San Diego Padres, NLDS, Tue Oct 06 21:30 ET"
+scheduled_start_utc = "2026-10-07T01:30:00Z"
+novig_markets = ["01a10979-c85a-7773-a716-87ee393b1156"]
+kalshi_tickers = ["KXMLBGAME-26OCT062130MILSD-MIL", "KXMLBGAME-26OCT062130MILSD-SD"]
+
+[[game]]
+game_pk = 849833
+label = "Cleveland Guardians @ Chicago White Sox, ALDS, Wed Oct 07 16:00 ET"
+scheduled_start_utc = "2026-10-07T20:00:00Z"
+novig_markets = ["01a10ebb-8f0b-7203-963c-8a50cd244299"]
+kalshi_tickers = ["KXMLBGAME-26OCT071600CLECWS-CLE", "KXMLBGAME-26OCT071600CLECWS-CWS"]
+
+[[game]]
+game_pk = 849822
+label = "Los Angeles Dodgers @ Atlanta Braves, NLDS, Wed Oct 07 18:00 ET"
+scheduled_start_utc = "2026-10-07T22:00:00Z"
+novig_markets = ["01a1133d-6088-7271-86cc-61d09d455cd4"]
+kalshi_tickers = ["KXMLBGAME-26OCT071800LADATL-ATL", "KXMLBGAME-26OCT071800LADATL-LAD"]
+
+[[game]]
+game_pk = 849838
+label = "Tampa Bay Rays @ New York Yankees, ALDS, Wed Oct 07 20:00 ET"
+scheduled_start_utc = "2026-10-08T00:00:00Z"
+novig_markets = ["01a10f60-88e4-7113-9704-46adcfca0116"]
+kalshi_tickers = ["KXMLBGAME-26OCT072000TBNYY-NYY", "KXMLBGAME-26OCT072000TBNYY-TB"]
+
+# Milwaukee Brewers @ San Diego Padres, NLDS, Wed Oct 07 22:00 ET (game_pk 849827):
+# no Novig or Kalshi market listed yet as of 2026-10-06 23:20 UTC; rerun `catalog`.
