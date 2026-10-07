@@ -1,2 +1,9 @@
 # Python bytecode caches, at any depth.
 __pycache__/
+# Virtual environment managed by uv.
+.venv/
+# Raw evidence archive: large, backed up separately, never committed.
+archive/
+# Secrets must never be committed.
+*.pem
+.env

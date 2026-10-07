@@ -1,0 +1,49 @@
+# R0 recorder parameters. Every value is copied from DESIGN.md §10; the §10 key
+# is named beside it. Change a value there first (with a dated decision record
+# for provisional values), then here. Secrets never go in this file.
+
+[archive]
+root = "../../archive"            # relative to this file: <repo>/archive
+
+[r0]
+kalshi_poll_interval_s = 10                 # r0.kalshi_poll_interval_s
+odds_poll_interval_s = 1200                 # r0.odds_poll_interval_s
+odds_quota_floor = 50                       # r0.odds_quota_floor
+capture_lead_s = 10800                      # r0.capture_lead_s
+capture_tail_s = 5400                       # r0.capture_tail_s
+odds_window_lead_s = 10800                  # r0.odds_window_lead_s
+segment_max_s = 3600                        # r0.segment_max_s
+fsync_interval_s = 5                        # r0.fsync_interval_s
+rest_timeout_s = 10                         # r0.rest_timeout_s
+min_free_disk_mb = 5000                     # r0.min_free_disk_mb
+stream_probe_reserve_fraction = 0.5         # r0.stream_probe_reserve_fraction
+novig_public_book_poll_interval_s = 10      # r0.novig_public_book_poll_interval_s
+
+[stream]
+channel_probe_interval_s = 15               # stream.channel_probe_interval_s
+transport_liveness_max_s = 45               # stream.transport_liveness_max_s
+reconnect_backoff_s = { initial = 1, max = 60 }   # stream.reconnect_backoff_s
+
+[novig]
+host = "https://api.novig.com"
+ws_url = "wss://api.novig.com/v3/ws"
+channels = ["book", "trades"]               # one connection per channel (a selection maps a subject to one channel)
+key_id_env = "NOVIG_READ_KEY_ID"            # trading::read key only
+key_path_env = "NOVIG_READ_KEY_PATH"        # PEM, chmod 600
+public_book_poll = "auto"                   # auto: poll the unsigned public book only when no key is configured; always | never
+public_book_depth = 20                      # the endpoint's maximum
+
+[kalshi]
+base_url = "https://external-api.kalshi.com/trade-api/v2"
+series_ticker = "KXMLBGAME"
+
+[odds_api]
+base_url = "https://api.the-odds-api.com"
+sport = "baseball_mlb"
+regions = "us"
+markets = "h2h"
+odds_format = "american"
+key_env = "ODDS_API_KEY"
+
+[mlb]
+base_url = "https://statsapi.mlb.com"

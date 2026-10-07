@@ -318,24 +318,29 @@ Fee-adjusted hypothetical EV must identify every modeled cost (entry, possible h
 **Archive format** — shared by the R0 recorder and the harness, so R0 captures replay without conversion:
 
 ```text
-archive/<source>/<YYYY-MM-DD, UTC>/<connection_id>.<segment_id>.jsonl.gz
+archive/<source>/<YYYY-MM-DD, UTC>/<stream_id>.<segment_id>.jsonl.gz
   one line per frame:
   {"recv_ts_ms": <int>, "conn_id": "<str>", "dir": "in" | "out" | "event",
    "frame": "<exactly the received text, as a JSON string>"}
+archive/<source>/<YYYY-MM-DD, UTC>/manifest.jsonl
+  append-only journal, one line per sealed file: file, stream_id, segment_id, sha256, bytes,
+  frame_count, first/last recv_ts_ms, recorder_version, redaction_policy, session_id,
+  unclean_close, dropped_tail_bytes
 archive/<source>/<YYYY-MM-DD, UTC>/manifest.json
-  per sealed file: conn_id, segment_id, sha256, bytes, frame_count, first/last recv_ts_ms,
-  recorder_version, redaction_policy
+  a view of the journal, built when the day closes
 ```
+
+A stream is one WebSocket connection (`stream_id = conn_id`) or one REST poller. A poller's lines each carry their own `conn_id = request_id`, so a file holds many request envelopes without merging them. The active segment is written as `.jsonl.part`, flushed per frame and fsynced every `r0.fsync_interval_s`; sealing at `r0.segment_max_s`, UTC midnight or shutdown gzips it, hashes it, appends a journal line and makes the file read-only. A segment orphaned by a killed process is sealed by the next session with `unclean_close` set and any torn final line dropped and counted.
 
 **`frame` is always a JSON string holding exactly the received text — never the parsed message re-embedded as an object.** Re-serializing a parsed message changes bytes (key order, whitespace, number formatting), which breaks the file hashes and the byte-for-byte golden replay in §9.4. Decoding the string returns the original text exactly.
 
 `in` frames are verbatim vendor text messages. `out` frames are our own subscribe, unsubscribe and snapshot-probe messages, with credentials and signatures redacted. `event` frames hold JSON-encoded recorder metadata as a string and mark connect, disconnect, error, process start/stop and transport Ping/Pong observations. Every process start has a new recorder session ID; an unclean previous session is recorded on restart, since a killed process cannot emit its own stop event. Do not enable vendor-side compression in the recorder: text messages keep replay simple.
 
-**REST envelope.** Each attempted request, including failures and timeouts, has a globally unique `request_id`. Before sending, archive an `event` with that ID, method, sanitized origin/path/query, requested native subjects, request-start UTC time and recorder-session monotonic time. Use a request-specific `conn_id = request_id` for its archive records, even when the HTTP client reuses a physical connection. Archive the response body verbatim as an `in` frame under the same ID, then a completion `event` carrying receive/completion times, elapsed monotonic duration, HTTP status, content type, quota headers and failure reason where applicable. No response is associated by adjacency alone. Empty bodies, non-JSON errors, and timeouts retain the original request identity. Remove API keys, signatures, authorization/cookie values and other secrets from request metadata before writing it. Kalshi's single-market book response does not carry its ticker; the envelope is required to identify it during replay.
+**REST envelope.** Each attempted request, including failures and timeouts, has a globally unique `request_id`. Before sending, archive an `event` with that ID, method, sanitized origin/path/query, requested native subjects, request-start UTC time and recorder-session monotonic time. Use a request-specific `conn_id = request_id` for its archive records, even when the HTTP client reuses a physical connection; the records are written into the poller's stream. Archive the response body verbatim as an `in` frame under the same ID, then a completion `event` carrying receive/completion times, elapsed monotonic duration, HTTP status, content type, quota headers and failure reason where applicable. No response is associated by adjacency alone. Empty bodies, non-JSON errors, and timeouts retain the original request identity. Remove API keys, signatures, authorization/cookie values and other secrets from request metadata before writing it. Kalshi's single-market book response does not carry its ticker; the envelope is required to identify it during replay.
 
 **Transport and channel evidence.** Hook WebSocket control-frame handling explicitly: a text-message receive loop may never see Ping/Pong. Archive control direction, observation time and session monotonic time as `event` records; do not pretend a control frame is vendor JSON text. Preserve application-level heartbeat payloads verbatim. Transport Ping/Pong proves connection health only. Record every public-channel probe's nonce, requested markets/channels, send/receive times and raw reply so §7.2 can establish subject-level freshness. Successful probes with unchanged books are evidence; silence is not.
 
-R0 archive verification includes interleaved REST requests with identical response bodies, a timeout, and a quiet WebSocket market with control Pings and a snapshot probe. Replay must recover the correct subject/request association and distinguish transport health from channel evidence. Manifests used by a derived run reference sealed files; rotate an active segment before hashing it into a run, preserving earlier manifest versions.
+R0 archive verification includes interleaved REST requests with identical response bodies, a timeout, and a quiet WebSocket market with control Pings and a snapshot probe. Replay must recover the correct subject/request association and distinguish transport health from channel evidence. Manifests used by a derived run reference sealed files; rotate an active segment before hashing it into a run. The append-only journal preserves every earlier manifest version as a prefix.
 
 Derived close and score runs declare the raw/normalized fact snapshot, parser version, off-resolver version, benchmark definition, fee version and scorer code/version. Reprocessing new facts creates a new run instead of silently changing previously reported numbers.
 
@@ -350,7 +355,7 @@ For each subscription/channel, maintain documented sequence state, snapshot sync
 
 A healthy socket is not proof that every subscribed channel is live. Check per-channel/per-subject liveness as the provider permits. Never infer “unchanged” from an absent tick without independent proof that the relevant feed or poll scheduler was functioning.
 
-**Quiet public channels.** Recent contiguous subject/channel messages or a documented heartbeat naming that subject/channel are admissible liveness evidence. Otherwise send an authoritative `snapshot` probe at `stream.channel_probe_interval_s`, with response timeout `stream.probe_timeout_s`; a subscription-list/status acknowledgement alone is insufficient. Novig probes use the documented per-market/per-channel sequence within the same connection. Reconcile the reply with buffered deltas under the provider's ordering contract: a sequence equal to the last contiguous sequence confirms an unchanged channel; a jump without the intervening deltas exposes a gap. A delayed snapshot already covered by contiguous deltas is superseded and must not roll state back. A new snapshot can establish fresh state after a gap but never retrospectively prove the missing interval was continuous. R0 only archives these probes/replies; A1 implements interpretation and resynchronization. Validate that all required channels remain subscribed after probing. If the API or quota cannot provide this evidence at the configured cadence, record `feed_stalled` or `collection_gap`; revise the policy through a dated decision rather than treating socket Pings as channel proof.
+**Quiet public channels.** Recent contiguous subject/channel messages or a documented heartbeat naming that subject/channel are admissible liveness evidence. Otherwise send an authoritative `snapshot` probe at `stream.channel_probe_interval_s`, with response timeout `stream.probe_timeout_s`; a subscription-list/status acknowledgement alone is insufficient. Novig probes use the documented per-market/per-channel sequence within the same connection. Reconcile the reply with buffered deltas under the provider's ordering contract: a sequence equal to the last contiguous sequence confirms an unchanged channel; a jump without the intervening deltas exposes a gap. A delayed snapshot already covered by contiguous deltas is superseded and must not roll state back. A new snapshot can establish fresh state after a gap but never retrospectively prove the missing interval was continuous. A probe costs the same `stream` tokens as a subscription (Novig: 16 per market on `book`, 4 on `trades`, against a bucket refilling 4 per second), so a recorder never lets probes draw the shared bucket below `r0.stream_probe_reserve_fraction` of capacity and archives each unaffordable probe as a `probe_skipped` event: missing evidence, recorded. R0 only archives these probes/replies; A1 implements interpretation and resynchronization. Validate that all required channels remain subscribed after probing. If the API or quota cannot provide this evidence at the configured cadence, record `feed_stalled` or `collection_gap`; revise the policy through a dated decision rather than treating socket Pings as channel proof.
 
 **Periodic full snapshots:** in addition to change-driven ticks, persist complete ladders at a measured interval and after every resync. Select that interval using a one-week storage/pipeline pilot. Preserve at least enough depth for the largest prespecified benchmark notional; fail closed if the sampled ladder is truncated before the required notional.
 
@@ -636,6 +641,15 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | `r0.kalshi_poll_interval_s` | 10 | provisional | R0: observed Kalshi rate limits |
 | `r0.odds_poll_interval_s` | 1,200 (20 min), game windows only | provisional | R0: free-tier credit budget |
 | `r0.odds_quota_floor` | 50 credits: stop polling below this | provisional | R0 |
+| `r0.capture_lead_s` | 10,800 (3 h) before scheduled start; per-game override allowed | provisional | R0: covers the 1 h and 15 min offsets with margin |
+| `r0.capture_tail_s` | 5,400 (90 min) after scheduled start; per-game override for delays | provisional | R0: at least 30 min after first pitch |
+| `r0.odds_window_lead_s` | 10,800 (3 h) before scheduled start, ending at it | provisional | R0: free-tier credit budget |
+| `r0.segment_max_s` | 3,600; UTC midnight also rotates | provisional | R0/A1 measured volume |
+| `r0.fsync_interval_s` | 5: at most this much received data lost on a crash | provisional | R0/A1 host storage |
+| `r0.rest_timeout_s` | 10, total per request; a timeout is a recorded failure | provisional | R0 observed latency |
+| `r0.min_free_disk_mb` | 5,000: below this, an alert event; recording never stops silently | provisional | R0/A1 measured volume |
+| `r0.stream_probe_reserve_fraction` | 0.5 of the `stream` bucket kept for subscribes and reconnects | provisional | R0/A1 measured probe demand |
+| `r0.novig_public_book_poll_interval_s` | 10: unsigned public book poll, only without a read key | provisional | R0; the public response is cached 5 s |
 | **Streams and books** | | | |
 | `stream.liveness_max_s` | 30 since admissible subject/channel evidence, including a successful unchanged snapshot probe | provisional | R0/A1: subject-level evidence and probe latency |
 | `stream.transport_liveness_max_s` | 45 since received traffic, including received control Ping/Pong; local sends do not refresh it | provisional | R0: 3× documented Novig 15 s Ping interval; independent of channel liveness |
@@ -760,7 +774,7 @@ A one-week collector pilot should measure raw archive growth, normalized row siz
 
 **Why:** live Novig books for MLB games, which have authoritative retrospective first-pitch times, make the best possible golden game for V0, and they are the only such data available before the 2027 season. R0 also answers the top blocking access question (§15, question 3) with evidence rather than documentation.
 
-**Key provisioning (one-time, manual, before R0 runs).** Creating a `trading::read` key requires signing with the management key. Do it once, from a trusted machine: open a subaccount if none exists, create the read key, and copy only the read key's private key to the Pi. **The management private key never touches the Pi**, or any machine that runs the recorder or the harness (§3.2). Record the read key's ID and creation date in `docs/vendor-capabilities.md`.
+**Key provisioning (one-time, manual, before R0 runs).** Creating a `trading::read` key requires signing with the management key. Do it once, from a trusted machine: open a subaccount if none exists, create the read key, and copy only the read key's private key to the recorder host. **The management private key never touches the recorder host**, or any machine that runs the recorder or the harness (§3.2). Record the read key's ID and creation date in `docs/vendor-capabilities.md`.
 
 **Scope:** a standalone tool in `tools/raw_recorder/` with minimal dependencies.
 
@@ -866,6 +880,9 @@ Keep the harness in a separate repository and database from the existing edge sc
 ```text
 clv-harness/
   DESIGN.md                     # this document
+  README.md                     # overview, install (uv), usage
+  pyproject.toml                # uv workspace root: the clv package; tools/raw_recorder is a member
+  uv.lock
   config/
     params.toml                 # created in V0 from §10; authoritative thereafter
   migrations/
@@ -878,8 +895,11 @@ clv-harness/
     calibration-report.md       # fixture and real-data gate results
     decisions/                  # dated decision records (§10, §15)
   tools/
-    raw_recorder/               # R0: standalone; writes the §7.1 archive format
+    raw_recorder/               # R0: standalone uv workspace member; writes the §7.1 archive format
       config.toml               # R0 values copied from §10
+      games.toml                # hand-maintained games, Novig markets and Kalshi tickers to record
+      src/raw_recorder/         # archive, REST envelope, Novig signing/stream, pollers, CLI
+      tests/                    # §7.1 archive verification fixtures, signing vectors
   src/clv/
     config.py                   # loads params.toml; no threshold defined elsewhere
     db.py

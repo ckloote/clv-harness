@@ -27,6 +27,8 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Harness read key: ID and creation date. The management private key is never stored on the Pi. | Own work — fill in at R0 provisioning |
 | Whether a subaccount must be funded before its `trading::read` key can stream. Opening and funding are separate routes. | Unverified — R0 |
 | The docs include an LP-onboarding page about API access for liquidity providers. Whether it gates anything relevant to read-only access. | Unverified — R0 |
+| `GET /v3/keys` and `GET /v3/keys/{id}` accept only `management` and `management::read` keys. A `trading::read` key therefore cannot read its own scope; a 200 on that route means a management key was loaded, which the recorder refuses. | Verified 2026-10-06 ([keys](https://docs.novig.com/api/api-keys)) |
+| A Paper environment (`https://api.paper.novig.com`, play money, no location check) runs the same API with its own keys; a Paper key is rejected by Production. Usable for signer and stream tests without real-money access. | Verified 2026-10-06 ([environments](https://docs.novig.com/api/environments)) |
 
 ### Location checks
 
@@ -60,6 +62,10 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | The endpoint page describes sequence heartbeats for private channels; that does not establish subject-level liveness for public books. The harness requires public-channel evidence or authoritative snapshot probes under DESIGN.md §7.2. | Verified 2026-10-05 ([endpoint](https://docs.novig.com/api-reference/streaming/open-the-websocket)); public evidence/probe behavior unverified — R0/A1 |
 | Lifecycle status values, and whether any transition reliably marks the off. | Unverified — R0 |
 | `X-Novig-WS-Compress: deflate` on the upgrade request switches to compressed binary frames. Not used by the R0 recorder. | Verified 2026-10-04 |
+| Stream costs: the upgrade costs 32 `stream` tokens; `subscribe` and `snapshot` cost the channel weight per market (lifecycle 1, trades 4, bbo 8, book 16); `unsubscribe` 1 per subject; `status` 1. A request above the 512 capacity passes only on a full bucket and empties it. Probing every book market at a 15 s cadence exceeds the 4/s refill beyond about three markets. | Verified 2026-10-06 ([connection](https://docs.novig.com/api/streaming/connection)) |
+| Requests carry an increasing `nonce` per connection (start at 1; repeats or lower values get `STALE_NONCE`), and the snapshot reply echoes it, so probe replies associate by nonce. A frame that fails to parse or hits the throttle gets a reply with no nonce. | Verified 2026-10-06 ([connection](https://docs.novig.com/api/streaming/connection)); live behavior — R0 |
+| Close reasons: `1008 SLOW_CONSUMER` (a write to the client stalled), `1008` with a 451 geolocation code (companion check failed while connected), and a close with no frame when no Pong arrives between two Pings. | Verified 2026-10-06 ([connection](https://docs.novig.com/api/streaming/connection)) |
+| Lifecycle transitions documented as `OPEN`, `CLOSE`, `GRADE`, `START`, `END`, `GOLIVE`, `UNLIVE`; `GOLIVE`/`UNLIVE` can repeat on delays or reviews. Which transition, if any, reliably marks first pitch remains the R0 question above. | Verified 2026-10-06 ([lifecycle](https://docs.novig.com/api/streaming/lifecycle)) |
 
 ### Prices and quantities
 
@@ -84,6 +90,8 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Each file covers midnight to midnight Eastern and publishes around 5 a.m. ET the next day. A day's trades file is withheld if it fails validation; its markets file still publishes. | Verified 2026-10-04 |
 | Columns may be added, so read header rows. Past files are immutable except announced corrections, which republish in place. | Verified 2026-10-04 |
 | Earliest available date. | Unverified — P0/B0 |
+| Unsigned public REST under `/v3/public/...`: catalog events, markets, single market, and order book (`/v3/public/catalog/markets/{id}/book`, `depth` 1–20, with `seq` and an ETag), throttled per IP at the edge. Live on 2026-10-06 the book response carried `cache-control: max-age=5`. | Verified 2026-10-06 (docs and live call) |
+| MLB moneylines are one `MONEY` market per game with two outcomes named by team abbreviation; `startsTs` matched the StatsAPI `gameDate` for every postseason game checked. | Own work 2026-10-06 (live public catalog) |
 
 ### API history and third parties
 
@@ -121,6 +129,7 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Public market-data endpoints need no authentication; rate limits apply (a third-party guide cites about 10 requests per second). | Reported — confirm in R0 |
 | The single-market order-book response has an `orderbook_fp` object with YES/NO price/quantity arrays and does not include the requested ticker. Archive the request path/ticker with a request ID; the response body alone cannot establish market identity. | Verified 2026-10-05 ([order-book endpoint](https://docs.kalshi.com/api-reference/market/get-market-orderbook)); archive-envelope fixture — R0 |
 | Shape of the history endpoints (bid/ask candles, trades or both), their resolution, and coverage of 2026 MLB game-winner markets. | Unverified — P0/B0 |
+| MLB game-winner markets are series `KXMLBGAME`, one YES/NO market per team per game; the event ticker encodes the scheduled start in Eastern time and both teams (`KXMLBGAME-26OCT071800LADATL`). The order-book endpoint accepts `depth`. | Own work 2026-10-06 (live public API) |
 
 ---
 
