@@ -261,3 +261,23 @@ async def test_disabled_sources_do_not_run(tmp_path):
     assert note["sources"] == ["kalshi", "odds_api", "mlb"]
     paths = {ex.start["path"] for ex in rest_exchanges(frames).values()}
     assert "/v3/public/catalog/markets/m5/book" in paths
+
+
+@pytest.mark.parametrize("argv", [
+    ["--config", "X.toml", "verify"],
+    ["verify", "--config", "X.toml"],
+    ["--config", "ignored.toml", "verify", "--config", "X.toml"],   # nearest the command wins
+])
+def test_config_option_is_accepted_before_or_after_the_subcommand(argv, monkeypatch):
+    from raw_recorder import cli
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_verify", lambda args: seen.update(config=args.config) or 0)
+    assert cli.main(argv) == 0
+    assert str(seen["config"]) == "X.toml"
+
+
+def test_config_defaults_to_none_without_the_option(monkeypatch):
+    from raw_recorder import cli
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_verify", lambda args: seen.update(config=args.config) or 0)
+    assert cli.main(["verify"]) == 0 and seen["config"] is None
