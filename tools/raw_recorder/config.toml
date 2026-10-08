@@ -2,6 +2,8 @@
 # is named beside it. Change a value there first (with a dated decision record
 # for provisional values), then here. Secrets never go in this file.
 
+games_file = "games.toml"         # relative to this file
+
 [archive]
 root = "../../archive"            # relative to this file: <repo>/archive
 

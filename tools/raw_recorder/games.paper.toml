@@ -1,0 +1,28 @@
+# Games to record on Novig PAPER (config.paper.toml). Same games as games.toml,
+# but Paper has its own market IDs. Generate with
+#   raw-recorder --config tools/raw_recorder/config.paper.toml catalog
+# and check every match by hand. Only Novig is recorded from Paper.
+
+[[game]]
+game_pk = 849826
+label = "Milwaukee Brewers @ San Diego Padres, NLDS, Tue Oct 06 21:30 ET"
+scheduled_start_utc = "2026-10-07T01:30:00Z"
+novig_markets = ["01a10966-f5b5-7dd0-849f-6a541a60d896"]
+
+[[game]]
+game_pk = 849833
+label = "Cleveland Guardians @ Chicago White Sox, ALDS, Wed Oct 07 16:00 ET"
+scheduled_start_utc = "2026-10-07T20:00:00Z"
+novig_markets = ["01a10eaf-8fb0-7552-a762-67dfc3fae227"]
+
+[[game]]
+game_pk = 849822
+label = "Los Angeles Dodgers @ Atlanta Braves, NLDS, Wed Oct 07 18:00 ET"
+scheduled_start_utc = "2026-10-07T22:00:00Z"
+novig_markets = ["01a11352-17df-7831-9983-69a5b69fd651"]
+
+[[game]]
+game_pk = 849838
+label = "Tampa Bay Rays @ New York Yankees, ALDS, Wed Oct 07 20:00 ET"
+scheduled_start_utc = "2026-10-08T00:00:00Z"
+novig_markets = ["01a10f6f-f1ba-7601-9b24-ff1bc6eed3d7"]

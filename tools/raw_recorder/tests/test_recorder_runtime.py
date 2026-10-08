@@ -224,3 +224,60 @@ async def test_dead_source_task_is_recorded_and_restarted(tmp_path, monkeypatch)
     assert "TOPSECRETVALUE" not in json.dumps(died)          # URL queries scrubbed from tracebacks
     polls = [ex for ex in rest_exchanges(frames).values() if ex.start["path"].endswith("/orderbook")]
     assert len(polls) >= 4                                   # Kalshi kept polling throughout
+
+
+def test_paper_config_differs_only_where_it_must():
+    import tomllib
+    from raw_recorder.config import DEFAULT_DIR
+    prod = tomllib.loads((DEFAULT_DIR / "config.toml").read_text())
+    paper = tomllib.loads((DEFAULT_DIR / "config.paper.toml").read_text())
+    assert paper["r0"] == prod["r0"] and paper["stream"] == prod["stream"]   # same §10 values
+    cfg = load_config(DEFAULT_DIR / "config.paper.toml")
+    assert cfg.archive_root.name == "archive-paper"                        # never the real archive
+    assert cfg.novig["host"] == "https://api.paper.novig.com"
+    assert cfg.novig["ws_url"].startswith("wss://api.paper.novig.com/")
+    assert cfg.novig["key_id_env"] != load_config(DEFAULT_CONFIG).novig["key_id_env"]
+    assert [cfg.enabled(s) for s in (cfg.kalshi, cfg.odds_api, cfg.mlb, cfg.novig)] == [False, False, False, True]
+    games = load_games(cfg.games_path)
+    assert games and all(not g.kalshi_tickers for g in games)
+    prod_markets = {m for g in load_games(load_config(DEFAULT_CONFIG).games_path) for m in g.novig_markets}
+    assert not prod_markets & {m for g in games for m in g.novig_markets}
+
+
+async def test_disabled_sources_do_not_run(tmp_path):
+    srv = TestServer(fake_vendors())
+    await srv.start_server()
+    try:
+        cfg = config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        for section in (cfg.kalshi, cfg.odds_api, cfg.mlb):
+            section["enabled"] = False
+        await run_for(cfg, [game(5, time.time_ns() // 1_000_000 + 60_000)], 0.8)
+    finally:
+        await srv.close()
+    frames = list(iter_archive(cfg.archive_root))
+    assert {p.parent.parent.name for p in cfg.archive_root.rglob("*.jsonl.gz")} == {"novig", "recorder"}
+    events = [json.loads(f["frame"]) for f in frames if f["dir"] == "event"]
+    (note,) = [e for e in events if e["type"] == "sources_disabled"]
+    assert note["sources"] == ["kalshi", "odds_api", "mlb"]
+    paths = {ex.start["path"] for ex in rest_exchanges(frames).values()}
+    assert "/v3/public/catalog/markets/m5/book" in paths
+
+
+@pytest.mark.parametrize("argv", [
+    ["--config", "X.toml", "verify"],
+    ["verify", "--config", "X.toml"],
+    ["--config", "ignored.toml", "verify", "--config", "X.toml"],   # nearest the command wins
+])
+def test_config_option_is_accepted_before_or_after_the_subcommand(argv, monkeypatch):
+    from raw_recorder import cli
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_verify", lambda args: seen.update(config=args.config) or 0)
+    assert cli.main(argv) == 0
+    assert str(seen["config"]) == "X.toml"
+
+
+def test_config_defaults_to_none_without_the_option(monkeypatch):
+    from raw_recorder import cli
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_verify", lambda args: seen.update(config=args.config) or 0)
+    assert cli.main(["verify"]) == 0 and seen["config"] is None
