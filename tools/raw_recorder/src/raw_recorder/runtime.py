@@ -188,11 +188,26 @@ class Recorder:
             await asyncio.gather(*tasks, stopper, return_exceptions=True)
 
     def source_specs(self, http: aiohttp.ClientSession) -> list[tuple[str, Callable[[], Awaitable[None]]]]:
-        """(name, coroutine factory) for every source; supervise() runs them."""
-        cfg, p = self.cfg, self.p
+        """(name, coroutine factory) for every enabled source; supervise() runs them."""
+        cfg = self.cfg
         specs = []
+        if cfg.enabled(cfg.kalshi):
+            specs += self._kalshi_specs(http)
+        if cfg.enabled(cfg.odds_api):
+            specs += self._odds_specs(http)
+        if cfg.enabled(cfg.mlb):
+            specs += self._mlb_specs(http)
+        if cfg.enabled(cfg.novig):
+            specs += self._novig_specs(http)
+        disabled = [n for n, s in (("kalshi", cfg.kalshi), ("odds_api", cfg.odds_api),
+                                   ("mlb", cfg.mlb), ("novig", cfg.novig)) if not cfg.enabled(s)]
+        if disabled:
+            self.note("sources_disabled", sources=disabled, config_path=str(cfg.path))
+        return specs
 
+    def _kalshi_specs(self, http: aiohttp.ClientSession) -> list:
         # Kalshi order books, with catalog evidence when a ticker becomes active.
+        cfg, p, specs = self.cfg, self.p, []
         k_rest = self.rest(http, "kalshi", "kalshi")
         seen_tickers: set[str] = set()
 
@@ -204,8 +219,11 @@ class Recorder:
                 seen_tickers.update(new)
             await kalshi.poll_orderbooks(k_rest, cfg.kalshi["base_url"], tickers)
         specs.append(("kalshi", lambda: self.every("kalshi", p.kalshi_poll_interval_s, kalshi_round)))
+        return specs
 
+    def _odds_specs(self, http: aiohttp.ClientSession) -> list:
         # The Odds API, only inside odds windows, stopping at the credit floor.
+        cfg, p, specs = self.cfg, self.p, []
         o_rest = self.rest(http, "odds_api", "odds")
         odds = OddsPoller(o_rest, o_rest.stream, cfg.odds_api, cfg.env(cfg.odds_api, "key_env"),
                           p.odds_quota_floor)
@@ -218,8 +236,11 @@ class Recorder:
                     await odds.poll()
             await self.every("odds_api", p.odds_poll_interval_s, odds_round)
         specs.append(("odds_api", odds_loop))
+        return specs
 
+    def _mlb_specs(self, http: aiohttp.ClientSession) -> list:
         # MLB feeds when each capture window ends (re-fetch later with `mlb-feed`).
+        cfg, specs = self.cfg, []
         m_rest = self.rest(http, "mlb_statsapi", "mlb")
         last_check = [now_ms()]
 
@@ -229,8 +250,11 @@ class Recorder:
                 await mlb.fetch_game(m_rest, cfg.mlb["base_url"], w.game.game_pk)
             last_check[0] = t
         specs.append(("mlb", lambda: self.every("mlb", 30, mlb_round)))
+        return specs
 
+    def _novig_specs(self, http: aiohttp.ClientSession) -> list:
         # Novig: stream with a read key; otherwise (or additionally) the public book.
+        cfg, p, specs = self.cfg, self.p, []
         signer = load_signer(cfg)
         n_rest = self.rest(http, "novig", "rest")
         mode = cfg.novig.get("public_book_poll", "auto")

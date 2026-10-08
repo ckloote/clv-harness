@@ -7,3 +7,5 @@ archive/
 # Secrets must never be committed.
 *.pem
 .env
+# Novig Paper (play-money) test archive: never evidence, never committed.
+archive-paper/

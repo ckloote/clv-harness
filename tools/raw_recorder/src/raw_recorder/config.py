@@ -59,6 +59,10 @@ class Config:
     kalshi: dict
     odds_api: dict
     mlb: dict
+    games_path: Path = DEFAULT_GAMES
+
+    def enabled(self, section: dict) -> bool:
+        return bool(section.get("enabled", True))
 
     def env(self, section: dict, key: str) -> str | None:
         name = section.get(key)
@@ -104,9 +108,12 @@ def load_config(path: Path | None = None) -> Config:
     root = Path(doc["archive"]["root"])
     if not root.is_absolute():
         root = (path.parent / root).resolve()
+    games = Path(doc.get("games_file", DEFAULT_GAMES.name))
+    if not games.is_absolute():
+        games = (path.parent / games).resolve()
     return Config(path=path, sha256=hashlib.sha256(raw).hexdigest(), archive_root=root,
                   params=params, novig=doc["novig"], kalshi=doc["kalshi"],
-                  odds_api=doc["odds_api"], mlb=doc["mlb"])
+                  odds_api=doc["odds_api"], mlb=doc["mlb"], games_path=games)
 
 
 def load_games(path: Path | None = None) -> list[Game]:
