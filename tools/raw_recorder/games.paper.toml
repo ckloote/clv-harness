@@ -26,3 +26,24 @@ game_pk = 849838
 label = "Tampa Bay Rays @ New York Yankees, ALDS, Wed Oct 07 20:00 ET"
 scheduled_start_utc = "2026-10-08T00:00:00Z"
 novig_markets = ["01a10f6f-f1ba-7601-9b24-ff1bc6eed3d7"]
+
+# CLE @ CWS ALDS G4: schedule conflict, checked 2026-10-08 12:01 UTC (08:01 ET).
+#   MLB StatsAPI gameDate: 2026-10-09T00:00:00Z (Thu Oct 08 20:00 ET) -- used.
+#   Novig Paper startsTs:  2026-10-09T00:00:00Z (20:00 ET), agrees with MLB.
+#   Kalshi ticker time:    2026-10-08T21:00:00Z (17:00 ET) (not recorded here).
+# capture_lead_s matches games.toml so both archives cover the same window
+# (from 14:00 ET, 3 h before the earliest claimed start).
+[[game]]
+game_pk = 849832
+label = "Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET"
+scheduled_start_utc = "2026-10-09T00:00:00Z"
+capture_lead_s = 21600
+novig_markets = ["01a118c1-3f7e-7f61-8886-2ef106b4d045"]
+
+# CWS @ CLE ALDS G5: checked 2026-10-09 12:01 UTC (08:01 ET); MLB StatsAPI and
+# Novig Paper startsTs both say 2026-10-11T00:00:00Z.
+[[game]]
+game_pk = 849831
+label = "Chicago White Sox @ Cleveland Guardians, ALDS G5, Sat Oct 10 20:00 ET"
+scheduled_start_utc = "2026-10-11T00:00:00Z"
+novig_markets = ["01a11f15-59e7-78e0-90a5-543152b9b73b"]
