@@ -9,3 +9,5 @@ archive/
 .env
 # Novig Paper (play-money) test archive: never evidence, never committed.
 archive-paper/
+# B0 feasibility inputs and caches (tools/b0): large, re-fetchable, never committed.
+b0-work/
