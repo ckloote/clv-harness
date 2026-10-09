@@ -37,3 +37,27 @@ kalshi_tickers = ["KXMLBGAME-26OCT072000TBNYY-NYY", "KXMLBGAME-26OCT072000TBNYY-
 
 # Milwaukee Brewers @ San Diego Padres, NLDS, Wed Oct 07 22:00 ET (game_pk 849827):
 # no Novig or Kalshi market listed yet as of 2026-10-06 23:20 UTC; rerun `catalog`.
+
+# CLE @ CWS ALDS G4: schedule conflict, checked 2026-10-08 12:01 UTC (08:01 ET).
+#   MLB StatsAPI gameDate: 2026-10-09T00:00:00Z (Thu Oct 08 20:00 ET) -- used.
+#   Novig startsTs:        2026-10-09T00:00:00Z (20:00 ET), agrees with MLB.
+#   Kalshi ticker time:    26OCT081700 = 2026-10-08T21:00:00Z (17:00 ET);
+#                          its occurrence_datetime says 2026-10-09T00:00:00Z.
+# capture_lead_s = 10800 + 10800 so capture starts 3 h before the earliest
+# claimed start (17:00 ET), i.e. at 14:00 ET.
+[[game]]
+game_pk = 849832
+label = "Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET"
+scheduled_start_utc = "2026-10-09T00:00:00Z"
+capture_lead_s = 21600
+novig_markets = ["01a118b6-4bf3-7c82-b3ca-03b04bea99f2"]
+kalshi_tickers = ["KXMLBGAME-26OCT081700CLECWS-CLE", "KXMLBGAME-26OCT081700CLECWS-CWS"]
+
+# CWS @ CLE ALDS G5: checked 2026-10-09 12:01 UTC (08:01 ET); MLB StatsAPI,
+# Novig startsTs and the Kalshi ticker time all say 2026-10-11T00:00:00Z.
+[[game]]
+game_pk = 849831
+label = "Chicago White Sox @ Cleveland Guardians, ALDS G5, Sat Oct 10 20:00 ET"
+scheduled_start_utc = "2026-10-11T00:00:00Z"
+novig_markets = ["01a11f26-1f44-7073-b458-75ec239f4963"]
+kalshi_tickers = ["KXMLBGAME-26OCT102000CWSCLE-CLE", "KXMLBGAME-26OCT102000CWSCLE-CWS"]

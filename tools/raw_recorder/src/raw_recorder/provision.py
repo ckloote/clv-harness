@@ -1,10 +1,12 @@
 """novig-provision: mint a Novig `trading::read` key with the management key.
 
-DESIGN.md §13 R0 key provisioning. Run this on a TRUSTED machine, never as
-part of the recorder: it is the only code here that loads a management key,
-and the recorder never imports it (tests/test_novig_provision.py checks).
-For Production the management private key must never be on the recorder
-host; on Paper (play money) it may be.
+DESIGN.md §13 R0 key provisioning. Run it by hand, never as part of the
+recorder: it is the only code here that loads a management key, and the
+recorder never imports it (tests/test_novig_provision.py checks). For
+Production the management private key may be on the recorder host only for
+the provisioning session; remove it once the read key works
+(docs/decisions/2026-10-08-single-host-provisioning.md). On Paper (play
+money) it may stay.
 
 Steps, each signed with the management key:
 
@@ -155,8 +157,8 @@ def main(argv: list[str] | None = None) -> int:
 
     host, env_prefix = ENVIRONMENTS[args.env]
     if args.env == "production" and not args.yes:
-        print("Production: this must run on a trusted machine, not the recorder host.\n"
-              "Only the new read key file may be copied to the recorder host.", file=sys.stderr)
+        print("Production: the management key must not stay on a host that runs the recorder.\n"
+              "Remove it once `raw-recorder echo` succeeds with the new read key.", file=sys.stderr)
         if input("Type 'yes' to continue: ").strip() != "yes":
             return 1
     if args.out.exists():
@@ -181,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     print("Recorder environment:")
     print(f"{env_prefix}_ID={p.read_key_id}")
     print(f"{env_prefix}_PATH={p.pem_path.resolve()}")
+    if args.env == "production":
+        print(f"\nOnce `raw-recorder echo` succeeds, remove {args.management_key} from this host.")
     return 0
 
 
