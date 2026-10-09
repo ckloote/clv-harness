@@ -28,7 +28,7 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
     novig/signing.py        NOVIG-V3 request signing (checked against Novig's 30 published vectors)
     novig/stream.py         Novig WebSocket recorder: control frames, quiet-channel probes, reconnect
     novig/public.py         Novig unsigned catalog and public order book
-    provision.py            `novig-provision`: management key -> trading::read key (trusted machine only)
+    provision.py            `novig-provision`: management key -> trading::read key (never part of the recorder)
     kalshi.py, odds_api.py, mlb.py   pollers for Kalshi order books, The Odds API, MLB StatsAPI
     scheduler.py, runtime.py, cli.py capture windows, the long-running process, commands
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
@@ -98,7 +98,7 @@ Then mint the read key with `novig-provision`. It opens a subaccount, keeping no
 uv run novig-provision --env paper --management-key-id <management key ID> --management-key ~/novig-paper-mgmt.pem --out ~/.config/raw-recorder/novig-paper-read.pem
 ```
 
-For Production, run it with `--env production` **on a trusted machine, not the recorder host**, and copy only the read key file to the recorder host. The management private key never goes on a machine that runs the recorder. Record the Production read key's ID and creation date in `docs/vendor-capabilities.md`.
+For Production, run it with `--env production`. The recorder never loads the management key, and the key must not stay on the recorder host. Once `raw-recorder echo` succeeds with the new read key, remove the management `.pem` from the host. Keep it offline if you want it again ([decision record](docs/decisions/2026-10-08-single-host-provisioning.md)). Record the Production read key's ID and creation date in `docs/vendor-capabilities.md`.
 
 Then check the key:
 

@@ -774,7 +774,7 @@ A one-week collector pilot should measure raw archive growth, normalized row siz
 
 **Why:** live Novig books for MLB games, which have authoritative retrospective first-pitch times, make the best possible golden game for V0, and they are the only such data available before the 2027 season. R0 also answers the top blocking access question (§15, question 3) with evidence rather than documentation.
 
-**Key provisioning (one-time, manual, before R0 runs).** Creating a `trading::read` key requires signing with the management key. Do it once, from a trusted machine: open a subaccount if none exists, create the read key, and copy only the read key's private key to the recorder host. **The management private key never touches the recorder host**, or any machine that runs the recorder or the harness (§3.2). Record the read key's ID and creation date in `docs/vendor-capabilities.md`.
+**Key provisioning (one-time, manual, before R0 runs).** Creating a `trading::read` key requires signing with the management key. Do it once: open a subaccount if none exists and create the read key. **The management private key is never loaded by the recorder or the harness (§3.2), and it does not stay on a host that runs them.** With a single host it is present only for the provisioning session and removed once the read key works (`docs/decisions/2026-10-08-single-host-provisioning.md`). A recorder on its own host receives only the read key. Record the read key's ID and creation date in `docs/vendor-capabilities.md`.
 
 **Scope:** a standalone tool in `tools/raw_recorder/` with minimal dependencies.
 
