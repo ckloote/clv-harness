@@ -95,6 +95,7 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Monetary precision is $0.00001, also used for fees, with no one-cent minimum. Exact applicable fee values/schedules still need verification before fee-adjusted EV. | Precision verified 2026-10-05 ([monetary representations](https://docs.novig.com/api/concepts/money)); applicable fee schedule unverified |
 | Each catalog market carries its own `fee` object: `coefficient` (`c` in the fee formula), `makerCredit` (the maker's share of the taker fee) and `charged` (`ALWAYS` or `WHEN_LIVE`). `WHEN_LIVE` charges the taker only while the event is `OPEN_INGAME`. Read it per market; never derive it from a league list. | Verified 2026-10-08 (catalog schema in the docs read 2026-10-06) |
 | Every MLB market in the 2026-10-06 catalog sample, including the `MONEY` market, read `coefficient` 0.03, `makerCredit` 0.5, `charged` `WHEN_LIVE`, so a pregame fill carries no taker fee. The fee formula itself is not yet recorded here. | Own work 2026-10-06 (live public catalog, one event) — re-read per market at scoring |
+| A market's fee changes during its life. The CWS `MONEY` market read `coefficient` 0.03 at 2026-10-06 23:15 UTC and 0.06 by 2026-10-07 16:58 UTC; every MLB market read through `/v3/history/markets` (127 markets, August to October) shows 0.06. Version fees by time and read them per market at the entry time. | Own work 2026-10-09 (archived catalog entries; history route) |
 
 ### Settlement
 
@@ -103,6 +104,7 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Each market declares `voids`: `PUSH` refunds every fill at its cost; `FMV` settles every outcome at a fair-market-value price. "The exchange never pushes an `FMV` market." Grades are `Winner`, `Pushes` or `FMV(price)`, and remediation can reopen a settled market for regrading. | Verified 2026-10-08 (catalog schema and event-lifecycle docs read 2026-10-06) |
 | Every MLB market in the 2026-10-06 catalog sample, including `MONEY`, read `voids: FMV`. | Own work 2026-10-06 (live public catalog, one event) |
 | Novig's MLB rules for when a game counts (called, suspended, postponed) and the time window for a rescheduled game. A secondary source says postponed or cancelled events void and refund, which contradicts `voids: FMV`. | Unverified — P0 (`docs/measurement-contract.md` §3) |
+| **Observed settlements:** a game postponed 2026-09-22 and played 2026-09-23 (`gamePk` 824785) was settled `WIN`/`LOSS` on the played game, on both the original event and a new event Novig listed for the rescheduled game. A cancelled game (823490) was `CANCELED` and settled `FMV` at 0.522/0.478. Each doubleheader game is its own event. | Own work 2026-10-09 (history route; `docs/feasibility.md` §3) |
 
 ### Public exchange data
 
@@ -112,7 +114,14 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | The manifest `/reporting/trade-data/index.json` lists dates per file separately: `dates` for trades, `marketDates` for markets. A missing `marketDates` means an empty list. | Verified 2026-10-04 |
 | Each file covers midnight to midnight Eastern and publishes around 5 a.m. ET the next day. A day's trades file is withheld if it fails validation; its markets file still publishes. | Verified 2026-10-04 |
 | Columns may be added, so read header rows. Past files are immutable except announced corrections, which republish in place. | Verified 2026-10-04 |
-| Earliest available date. | Unverified — P0/B0 |
+| Earliest available date. | Own work 2026-10-09: `trades.csv` from 2026-08-03, `markets.csv` from 2026-08-04, contiguous through 2026-10-08 (`index.json`) |
+| `trades.csv` columns: `timestamp, outcomeId, marketId, contractSeries, league, marketType, tradeType, legs, cost, qty, side`. `qty` is payout USD (native contracts ÷ 100) and `cost` is USD paid. There is no trade ID. Some timestamps have no milliseconds. | Own work 2026-10-09 |
+| Each trade is one TAKER row plus one or more MAKER rows. All 1,876 trades streamed for `gamePk` 849832 matched exactly one MAKER row by outcome, price and quantity; TAKER rows aggregate across makers. Deduplicate on MAKER rows. `COMBO` (parlay) rows carry no league or market type and are excluded. | Own work 2026-10-09 (`docs/feasibility.md` §3) |
+| The file `timestamp` lags the streamed trade's `ts` by 14 ms to 68 s (median 0.67 s) for 849832, so it is never earlier than the execution. | Own work 2026-10-09 |
+| `markets.csv` OHLC is daily, in percentage points, and includes in-play trading; it cannot provide a close. Its moneyline `reportTicker` was `MLB-MONEY` in August and `MLB-WINNER` from September. Neither file names the teams or game. | Own work 2026-10-09 |
+| The public catalog returns 404 `MARKET_NOT_FOUND` for closed markets. `GET /v3/history/markets/{id}` and `/v3/history/events/{id}` (read key, `history` bucket) return any market or event, including outcome names, grades, `settledTs`, `voids`, `fee`, the event description and `startsTs`. | Own work 2026-10-09 (127 markets resolved) |
+| Novig team naming differs from MLB's: `Oakland Athletics`/`OAK`, `KAN`, `ARI`, `WAS`. Event `startsTs` equalled StatsAPI's scheduled `gameDate` in the sample, except a traditional doubleheader's game 2 (Novig's own estimate). | Own work 2026-10-09 |
+| Requests from Python's `urllib` to `api.novig.com` get the edge's HTML 403 even with a User-Agent; `aiohttp` and `curl` pass. | Own work 2026-10-09 |
 | Unsigned public REST under `/v3/public/...`: catalog events, markets, single market, and order book (`/v3/public/catalog/markets/{id}/book`, `depth` 1–20, with `seq` and an ETag), throttled per IP at the edge. Live on 2026-10-06 the book response carried `cache-control: max-age=5`. | Verified 2026-10-06 (docs and live call) |
 | MLB moneylines are one `MONEY` market per game with two outcomes named by team abbreviation; `startsTs` matched the StatsAPI `gameDate` for every postseason game checked. | Own work 2026-10-06 (live public catalog) |
 
@@ -155,7 +164,10 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Public market-data endpoints need no authentication; rate limits apply (a third-party guide cites about 10 requests per second). | Reported — confirm in R0 |
 | Unauthenticated `GET /markets/{ticker}/orderbook` every 10 s for up to 6 tickers (9,720 calls on 2026-10-07): every response was 200, with no 429s. | Own work 2026-10-07 |
 | The single-market order-book response has an `orderbook_fp` object with YES/NO price/quantity arrays and does not include the requested ticker. Archive the request path/ticker with a request ID; the response body alone cannot establish market identity. | Verified 2026-10-05 ([order-book endpoint](https://docs.kalshi.com/api-reference/market/get-market-orderbook)); archive-envelope fixture — R0 |
-| Shape of the history endpoints (bid/ask candles, trades or both), their resolution, and coverage of 2026 MLB game-winner markets. | Unverified — P0/B0 |
+| Shape of the history endpoints (bid/ask candles, trades or both), their resolution, and coverage of 2026 MLB game-winner markets. | Own work 2026-10-09: both. 1-minute candles carry YES bid/ask OHLC and trade-price OHLC; trades carry `trade_id`, `created_time` (µs), `count_fp`, prices and taker side. `KXMLBGAME` covers 2025-04-16 onward (4,673 events). Quiet minutes have no candle (a 2025 game: 147 candles in 360 minutes). See `docs/feasibility.md` §4 |
+| Data splits into live and historical tiers at `GET /historical/cutoff` (2026-08-10 for markets and trades when read 2026-10-09). Older markets, candles and trades come only from `/historical/…`, whose field names differ (`close`, `volume`, `open_interest` versus `close_dollars`, `volume_fp`, `open_interest_fp`). | Verified 2026-10-09 ([historical data](https://docs.kalshi.com/getting_started/historical_data.md)) and own work |
+| Ticker dates and times are not game identity. `occurrence_datetime` equals the ticker time read as Pacific, several tickers are 3 h off StatsAPI, and 2025 tickers have no time. `…26SEP261915BALNYY` settled on the 2026-09-25 doubleheader game 1, and `…26SEP261915CHCBOS` on the 2026-09-27 game. Map from settlement result and `close_time`, by hand. | Own work 2026-10-09 (`docs/feasibility.md` §4) |
+| Observed settlements: a game postponed and played the next day settled on the played game (824785), and a cancelled game settled `result: scalar` at 0.47/0.53 (823490). | Own work 2026-10-09 |
 | MLB game-winner markets are series `KXMLBGAME`, one YES/NO market per team per game; the event ticker encodes the scheduled start in Eastern time and both teams (`KXMLBGAME-26OCT071800LADATL`). The order-book endpoint accepts `depth`. | Own work 2026-10-06 (live public API) |
 | `KXMLBGAME` rules: YES if the named team wins the game "originally scheduled" for the encoded date and time. A postponed or delayed game keeps the market open until the rescheduled game finishes, within two days. A game cancelled, or rescheduled more than two days away, resolves "to a fair price". The market closes early once a winner is declared (`can_close_early`, `settlement_timer_seconds` 120). Price structure `linear_cent`. | Own work 2026-10-07 (`rules_primary`/`rules_secondary` in archived market responses) |
 
@@ -167,8 +179,8 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 |---|---|
 | Free; unofficial and undocumented. | Reported |
 | Game status progresses Scheduled → Warmup → In Progress → Final. | Reported (client-library docs) |
-| Play-by-play timestamps every pitch with `startTime`; the first pitch's `startTime` is the actual off and is available retroactively. | Reported — verify semantics and corrections in P0 |
-| `gamePk` is the stable game ID; doubleheader games have distinct `gamePk` values. | Reported — verify on a real doubleheader in P0 |
+| Play-by-play timestamps every pitch with `startTime`; the first pitch's `startTime` is the actual off and is available retroactively. | Own work 2026-10-09: present to the millisecond for all 23 played games in the B0 sample, and unchanged for 849832 between the in-game feed and the final play-by-play. Longer-horizon corrections untested |
+| `gamePk` is the stable game ID; doubleheader games have distinct `gamePk` values. | Own work 2026-10-09: confirmed on split and traditional doubleheaders. A postponed game keeps its `gamePk` and appears twice in the schedule: a `Postponed` row (`reason`, `rescheduleDate`) and a `Final` row (`rescheduledFrom`). A traditional game 2's `gameDate` is a placeholder |
 
 ---
 
@@ -204,3 +216,4 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | 2026-10-07 | Novig wire field names (Paper) | `order` / `outcome` in book and tape payloads | `orderId` / `outcomeId`, plus an undocumented `tradeId` on each trade | Parsers use the observed names; `tradeId` is the candidate `execution_id`; re-verify on Production |
 | 2026-10-07 | Novig lifecycle delta shape (Paper) | `"deltas": ["GOLIVE"]` | `"deltas": [{"kind": "GOLIVE", "status": "OPEN"}]` | Parse the object form; re-verify on Production |
 | 2026-10-08 | Novig Production API access | LP onboarding (about $30,000 minimum deposit) is the only documented route to Production API access | On request to developers@novig.com, Novig enabled Production key creation on our account, with no minimum balance for read-only use | Provision a `trading::read` key with `novig-provision`; R0 re-verifies the Paper findings on Production |
+| 2026-10-09 | Novig MLB fee coefficient | 0.03 on every MLB market (2026-10-06 catalog sample, logged above) | The same markets read 0.06 from 2026-10-07; history shows 0.06 for every sampled market | Fees are versioned by time and read per market; the 0.03 row stays as the dated observation it was |

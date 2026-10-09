@@ -40,12 +40,12 @@ Other leagues join only through their own version of this document. Track A's li
 | **S2** | Suspended before becoming official, resumed and completed within 36 h | Winner | Winner (within 2 days) | Unverified |
 | **S3** | Suspended, resumed 36–48 h later | Void at DraftKings, FanDuel and BetMGM; winner at Fanatics | Winner | Unverified |
 | **S4** | Suspended and not completed within 48 h | Void | "Fair price" after 2 days | `FMV` (assumed from `voids`) |
-| **S5** | Postponed before first pitch, played within 2 days | Void | Winner of the rescheduled game | Unverified |
-| **S6** | Postponed before first pitch and cancelled, or rescheduled more than 2 days out | Void | "Fair price" | `FMV` (assumed from `voids`) |
+| **S5** | Postponed before first pitch, played within 2 days | Void | Winner of the rescheduled game (observed: 824785) | Winner of the rescheduled game (observed: 824785) |
+| **S6** | Postponed before first pitch and cancelled, or rescheduled more than 2 days out | Void | "Fair price" (observed: 823490 settled 0.47 / 0.53) | `FMV` (observed: 823490 settled 0.478 / 0.522) |
 
 The sources and statuses behind this table are in `docs/vendor-capabilities.md`:
 - Kalshi: its archived rule text.
-- Novig: the `voids: FMV` catalog field. Its MLB rules text is unverified.
+- Novig: the `voids: FMV` catalog field, and the S5 and S6 settlements observed in B0 (`docs/feasibility.md` §3). Its MLB rules text is unverified, so S1–S4 are still assumed.
 - Licensed books: a secondary source. Each book's own house rules still have to be checked.
 
 ## 3. Settlement equivalence
@@ -195,8 +195,8 @@ Use these terms, with these meanings, in schema names, reports and dashboards.
 | 1 | Novig's MLB settlement rules: when a called game counts, the suspension and postponement windows, and how `FMV` is determined | Novig's contract specification or support pages; else ask in the existing developers@novig.com thread | Novig pairs become `not_equivalent`; evaluate Kalshi as primary (§3) |
 | 2 | Each licensed book's house rules: pitcher default on the line The Odds API returns, official-game threshold, suspension window | Each book's own rules page, archived with a retrieval date | The book is excluded or its states remapped |
 | 3 | Kalshi's full `KXMLBGAME` contract terms beyond `rules_secondary`, especially the "fair price" procedure and called games | Kalshi's rulebook or contract filing for the series | Kalshi pairs drop to `pending` |
-| 4 | Doubleheader identity on every venue: Kalshi tickers and Novig `startsTs` for game 2 | B0 sample (DESIGN.md §13 P0 item 2) | Doubleheaders are excluded until a mapping rule is verified |
-| 5 | StatsAPI status codes that distinguish S1–S6 (suspended, postponed, resumed date) | B0 sample, including a suspended or postponed game if one exists | States are assigned by hand and logged until automated |
+| 4 | Doubleheader identity on every venue: Kalshi tickers and Novig `startsTs` for game 2 | **Done in B0** (`docs/feasibility.md` §3–4). Novig lists each game as its own event. Kalshi ticker dates and times can name a different game, so every Kalshi doubleheader or rescheduled game is mapped by hand from settlement result and `close_time` | The `manual_verified` rule in §5.4 stands; Kalshi mappings never come from ticker date and teams alone |
+| 5 | StatsAPI status codes that distinguish S1–S6 (suspended, postponed, resumed date) | **Partly done in B0.** `Postponed` and `Cancelled` with `reason`, `rescheduleDate` and `rescheduledFrom` were observed, and `gamePk` survives a postponement. No suspended game occurred 2026-08-03 to 2026-10-08; find one in 2025 or earlier 2026 | S2–S4 are assigned by hand and logged until a suspended game is sampled |
 
 ## 8. Sign-off
 

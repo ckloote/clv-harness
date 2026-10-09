@@ -32,6 +32,7 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
     kalshi.py, odds_api.py, mlb.py   pollers for Kalshi order books, The Odds API, MLB StatsAPI
     scheduler.py, runtime.py, cli.py capture windows, the long-running process, commands
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
+tools/b0/                   P0 B0 research scripts that reproduce docs/feasibility.md (cache in b0-work/)
 deploy/raw-recorder.service systemd user unit
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
