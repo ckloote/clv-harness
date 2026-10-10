@@ -145,11 +145,16 @@ async def test_disconnect_reconnects_with_new_conn_id_and_resubscribes(tmp_path)
     state = new_state()
     frames = await record(tmp_path, state, seconds=1.0, close_after_subscribe=True)
     ev = ws_evidence(frames)
-    assert len(state["upgrades"]) >= 2 and len(ev) == len(state["upgrades"])
-    for conn in ev.values():
+    # Each connection is its own archive stream, so order them by their first event. The
+    # recorder is cancelled at a fixed time, which can land inside a reconnect: only the last
+    # connection may be cut short, and its upgrade may or may not have reached the server.
+    conns = sorted(ev.values(), key=lambda c: min(e["mono_ns"] for e in c.events))
+    assert len(conns) >= 2 and len(conns) - len(state["upgrades"]) in (0, 1)
+    for conn in conns[:-1]:
         kinds = [e["type"] for e in conn.events]
         assert kinds[0] == "ws_connect_attempt" and "ws_connected" in kinds
         assert "ws_disconnected" in kinds
+    assert conns[-1].events[0]["type"] == "ws_connect_attempt"
     subs = [json.loads(f["frame"]) for f in frames if f["dir"] == "out"]
     assert all(s["nonce"] == 1 and "subscribe" in s for s in subs)   # nonces restart per connection
     waits = [e for c in ev.values() for e in c.events if e["type"] == "reconnect_wait"]
