@@ -12,6 +12,9 @@ dependencies = [
     "numpy>=2.3",
 ]
 
+[project.scripts]
+clv = "clv.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0",
