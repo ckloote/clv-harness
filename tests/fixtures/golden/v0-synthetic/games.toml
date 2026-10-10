@@ -1,0 +1,9 @@
+# Synthetic V0 golden game (tests/golden.py). Not a real game.
+[[game]]
+game_pk = 900001
+label = "CLE @ CWS (synthetic golden game)"
+scheduled_start_utc = "2026-04-01T12:00:00Z"
+capture_lead_s = 7200
+capture_tail_s = 9000
+novig_markets = ["syn-mkt"]
+kalshi_tickers = ["KXMLBGAME-26APR021200CLECWS-CLE", "KXMLBGAME-26APR011200CLECWS-CWS"]

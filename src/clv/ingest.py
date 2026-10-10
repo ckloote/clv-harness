@@ -16,10 +16,12 @@ What goes where (migrations/0001_v0.sql):
   for a stored state once a later one was quarantined or lost to a sequence gap;
   book_snapshot holds complete ladders at subscription, after a resync, on a
   recorder session's first poll and every `book.full_snapshot_interval_s`.
-- continuity and time: collection_gap open/close pairs; off_observation per sighting.
+- continuity and time: collection_gap open/close pairs, including a quarantine gap when a
+  quarantined state replaces the stored one (from its last trustworthy observation to the
+  next stored state, so a close never prices a replaced book); off_observation per sighting.
 
 Sportsbook quotes are not stored as facts here: an entry cites the quote it
-uses (entry_quote_observation, PR 3).
+uses (entry_quote_observation, clv.entries).
 """
 from __future__ import annotations
 
@@ -67,7 +69,7 @@ class IngestReport:
         self.quarantine_span[reason] = (first[0], ref, first[2], ts_ms)
 
 
-class _Writer:
+class Writer:
     """Inserts rows and resolves frame citations to (raw_artifact_id, raw_line)."""
 
     def __init__(self, conn: sqlite3.Connection, now_ms: int):
@@ -114,8 +116,8 @@ def payout_cents(qty: Decimal, cents_per_contract: int, ref: str) -> int:
 class _Books:
     """Writes ticks, liveness evidence and complete-ladder snapshots for one instrument."""
 
-    def __init__(self, w: _Writer, instrument_id: int, sides: tuple[str, str], cents_per_contract: int):
-        self.w, self.iid, self.sides, self.cents = w, instrument_id, sides, cents_per_contract
+    def __init__(self, w: Writer, instrument_id: int, subject: str, sides: tuple[str, str], cents_per_contract: int):
+        self.w, self.iid, self.subject, self.sides, self.cents = w, instrument_id, subject, sides, cents_per_contract
         self.n = param("book.tick_levels")
         self.snapshot_interval_ms = param("book.full_snapshot_interval_s") * 1000
         self.last_state: dict[str, tuple | None] = {}  # source -> top-N state of the last tick
@@ -123,6 +125,11 @@ class _Books:
         # source -> (book, snapshot ref) of the last stored state, while it is still the
         # current one; None once a later state was quarantined or became untrusted.
         self.current: dict[str, tuple | None] = {}
+        self.last_good: dict[str, tuple[int, str]] = {}    # source -> last tick or evidence (ms, ref)
+        self.quarantine_gap: dict[str, tuple[int, str]] = {}   # source -> open collection_gap (id, reason)
+
+    def scope(self, source: str) -> str:
+        return f"{self.subject}/book" if source == "stream" else self.subject
 
     def observe(self, book: BinaryBook, status: str, ref: str, snapshot_ref: str | None,
                 evidence_kind: str, snapshot_reason: str | None, report: IngestReport) -> None:
@@ -130,7 +137,7 @@ class _Books:
         best = [lv[0].price_e4 if lv else None for lv in ladders]
         if None not in best and best[0] + best[1] > 10_000:
             report.quarantine("crossed_book", ref, book.recv_ts_ms)
-            self.untrusted(book.source)
+            self.quarantined(book.source, "crossed_book")       # one of gaps.QUARANTINE_REASONS
             return
         self.current[book.source] = (book, snapshot_ref)
         top = tuple(tuple((lv.price, lv.qty) for lv in ladder[: self.n]) for ladder in ladders)
@@ -140,6 +147,7 @@ class _Books:
         if self.last_state.get(book.source) == state and snapshot_reason is None:
             self.w.insert("liveness_evidence", dict(venue_instrument_id=self.iid, source=book.source, kind=evidence_kind,
                                                     observed_ts_ms=book.recv_ts_ms, **self.w.cited(ref)))
+            self.last_good[book.source] = (book.recv_ts_ms, ref)
         else:
             self.last_state[book.source] = state
             tick = self.w.insert("tick", dict(
@@ -150,6 +158,9 @@ class _Books:
                 **(self.w.cited(snapshot_ref, "snapshot_") if snapshot_ref else
                    {"snapshot_raw_artifact_id": None, "snapshot_raw_line": None})))
             self._levels("tick_level", "tick_id", tick, [ladder[: self.n] for ladder in ladders], ref)
+            self.last_good[book.source] = (book.recv_ts_ms, ref)
+            if (opened := self.quarantine_gap.pop(book.source, None)) is not None:
+                self._gap_row("close", opened[0], book.source, book.recv_ts_ms, ref, opened[1])
         due = book.recv_ts_ms - self.last_snapshot_ms.get(book.source, -10**15) >= self.snapshot_interval_ms
         if snapshot_reason or due:
             self.last_snapshot_ms[book.source] = book.recv_ts_ms
@@ -172,6 +183,22 @@ class _Books:
             return
         self.w.insert("liveness_evidence", dict(venue_instrument_id=self.iid, source=source, kind=kind,
                                                 observed_ts_ms=observed_ms, **self.w.cited(ref)))
+        self.last_good[source] = (observed_ms, ref)
+
+    def quarantined(self, source: str, reason: str) -> None:
+        """A state that cannot be stored replaced the stored one. If that state was still current,
+        a collection gap opens at its last trustworthy observation, on the book's scope, and the
+        next stored state closes it: so the close function, reading only facts, never prices the
+        replaced book after this point."""
+        if self.current.get(source) is not None and source not in self.quarantine_gap:
+            ms, ref = self.last_good[source]
+            self.quarantine_gap[source] = (self._gap_row("open", None, source, ms, ref, reason), reason)
+        self.untrusted(source)
+
+    def _gap_row(self, kind: str, opens: int | None, source: str, ms: int, ref: str, reason: str) -> int:
+        return self.w.insert("collection_gap", dict(
+            kind=kind, opens_gap_id=opens, source=self.subject.split(":", 1)[0], scope=self.scope(source),
+            reason=reason, boundary_ts_ms=ms, observed_ts_ms=self.w.now, **self.w.cited(ref)))
 
     def untrusted(self, source: str) -> None:
         """The source's current state is not stored (quarantined, or a sequence gap): no
@@ -190,7 +217,7 @@ class _Books:
         self.observe(restated, status, ref, snapshot_ref, "delta_unchanged", None, report)
 
 
-def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[str, str], market: str,
+def _stream_frame(w: Writer, report: IngestReport, books: _Books, status: dict[str, str], market: str,
                   outs: list, resynced: set[str], event_id: int, game_pk: int) -> None:
     """One stream frame's outputs for one market.
 
@@ -252,7 +279,7 @@ def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: 
     lo, hi = capture_window(g)
     if conn.execute("SELECT 1 FROM event WHERE league = 'MLB' AND league_game_id = ?", (str(game_pk),)).fetchone():
         raise IngestError(f"gamePk {game_pk} is already ingested; ingest into a clean database")
-    w = _Writer(conn, now)
+    w = Writer(conn, now)
     conn.execute("BEGIN")
     try:
         report = _ingest(w, Path(root), g, lo, hi)
@@ -264,7 +291,7 @@ def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: 
     return report
 
 
-def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
+def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
     game_pk = g["game_pk"]
 
     # -- StatsAPI: identity, outcomes and off observations ------------------------------------
@@ -352,7 +379,8 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                 method="outcome name = team abbreviation", evidence=f"Novig outcome {name!r}; market {hand_checked}",
                 rules_native=None, effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None,
                 **w.cited(x.body.ref)))
-        novig_books[market] = _Books(w, iid, (s0, s1), int(novig.PAYOUT_USD_PER_CONTRACT * 100))
+        novig_books[market] = _Books(w, iid, f"novig:market:{market}", (s0, s1),
+                                     int(novig.PAYOUT_USD_PER_CONTRACT * 100))
         novig_status[market] = m.status
 
     # -- Novig: public book polls (before the stream) -------------------------------------------
@@ -435,7 +463,7 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                 method="ticker team suffix = team abbreviation; YES direct, NO its complement",
                 evidence=f"Kalshi {ticker} ({m.title!r}); ticker {hand_checked}", rules_native=rules,
                 effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None, **w.cited(x.body.ref)))
-        kbooks[ticker] = _Books(w, iid, kalshi.SIDES, int(cents))
+        kbooks[ticker] = _Books(w, iid, f"kalshi:market:{ticker}", kalshi.SIDES, int(cents))
         kstatus[ticker] = m.status
     kalshi_gaps = gaps.poll_gaps("kalshi", kx, {"orderbook"})
     poll_reason = _poll_reasons(kalshi_gaps)
