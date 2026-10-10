@@ -29,3 +29,15 @@ Not in 0001, by design (§8.5):
 - `settlement_observation` arrives with B2 or G2.
 - `historical_candle` arrives with B1.
 - `contract_rule_observation`: until it exists, a mapping carries the venue's rule text in `rules_native`.
+
+## 0002_v0_scoring (V0, 2026-10-10)
+
+Computing closes and scores on the golden-game candidate forced two changes to derived tables. Neither had been written by code before, and both are rebuilt with their rows copied (SQLite cannot relax `NOT NULL` in place).
+
+| Change | Against | Why |
+|---|---|---|
+| **`close_price.cutoff_ts_ms` may be NULL**, only for an unscoreable row with no book | 0001: `NOT NULL` | A game with no start claim at all (a postponement, or nothing recorded) has no earliest bound, so there is no cutoff. The row still exists and says `no_trusted_off`: a missing close is a measured result (DESIGN.md §5.4) |
+| **`clv_score` cites the reference book behind null EV** (`ref_entry_tick_id`), or says why there is none (`ref_entry_reason`). A trigger requires that book to be the reference venue's and received by the entry's decision time | 0001 stored `p_ref_entry` with no lineage | Every number must trace to raw frames (Gate V0). `p_ref_entry` is priced from a different book than `p_close`, and using a book the decision could not have seen would make null EV time-travel (§8.3) |
+| **Each metric exists exactly when its inputs do**: `clv_ev` with `p_close`, `null_ev` with `p_ref_entry`, `clv_residual` with both | Not constrained | A score row is kept when an input is missing, so the constraint is what stops a metric without its inputs |
+
+Rows scored before 0002 get `ref_entry_reason = 'not_recorded'` when they had no `p_ref_entry`.

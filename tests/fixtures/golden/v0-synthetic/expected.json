@@ -1,0 +1,2489 @@
+{
+ "before": {
+  "run": {
+   "scorer_version": "score-v0.1",
+   "fee_model_version": "none-v0",
+   "analysis_spec": "v0",
+   "fact_snapshot": {
+    "high_water": {
+     "book_snapshot": 7,
+     "book_snapshot_level": 45,
+     "collection_gap": 0,
+     "entry": 1,
+     "entry_quote_observation": 3,
+     "event": 1,
+     "event_alias": 5,
+     "instrument_mapping_observation": 10,
+     "liveness_evidence": 15,
+     "off_observation": 7,
+     "outcome": 2,
+     "raw_artifact": 5,
+     "signal": 2,
+     "tick": 6,
+     "tick_level": 39,
+     "venue_instrument": 5
+    },
+    "manifest_sha256": "915d062fec02369e0b3c7212767060205e5e8bb06bddbbc4870622bcb1616edc"
+   }
+  },
+  "off": [
+   {
+    "game_pk": "900001",
+    "resolver_version": "off-v0.1",
+    "selected": "2026-04-01T12:05:30.000Z",
+    "earliest": "2026-04-01T12:05:00.000Z",
+    "latest": "2026-04-01T12:05:30.000Z",
+    "disagreement_ms": 30000,
+    "confidence": "trusted",
+    "reason": null,
+    "claims": [
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-04-01T12:05:00.000Z",
+      "observed": "2026-04-01T12:20:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#1",
+       "sha256": "c3ec910768aa163a76236de14ce7c684763a0a470b3643e822959b442f7c66e9"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-04-01T12:05:00.000Z",
+      "observed": "2026-04-01T14:00:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#4",
+       "sha256": "7ae69e5dc08a5702a01da4d7627a3542918e1951e252d214f0bb467740fccbec"
+      }
+     },
+     {
+      "source": "novig_stream",
+      "kind": "venue_golive",
+      "detected": "2026-04-01T12:05:09.970Z",
+      "observed": "2026-04-01T12:05:10.000Z",
+      "frame": {
+       "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#8",
+       "sha256": "014c4b8dc130ab19906cc62770f4a5dccc36c2066a4577cedfc3a43aa67589a6"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-04-01T12:05:30.000Z",
+      "observed": "2026-04-01T12:20:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#1",
+       "sha256": "c3ec910768aa163a76236de14ce7c684763a0a470b3643e822959b442f7c66e9"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-04-01T12:05:30.000Z",
+      "observed": "2026-04-01T14:00:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#4",
+       "sha256": "7ae69e5dc08a5702a01da4d7627a3542918e1951e252d214f0bb467740fccbec"
+      }
+     }
+    ]
+   }
+  ],
+  "signals": [
+   {
+    "outcome": "CLE",
+    "producer": "v0-golden-synthetic",
+    "kind": "manual",
+    "decision": "2026-04-01T11:00:00.000Z",
+    "would_bet": true,
+    "has_entry": true
+   },
+   {
+    "outcome": "CWS",
+    "producer": "v0-golden-synthetic",
+    "kind": "manual",
+    "decision": "2026-04-01T11:00:00.000Z",
+    "would_bet": false,
+    "has_entry": false
+   }
+  ],
+  "closes": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "quote_age_ms": 39960,
+    "liveness_age_ms": 9960,
+    "p_close": {
+     "exact": "1021/2000",
+     "decimal": "0.510500"
+    },
+    "spread_e4": 200,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR021200CLECWS-CLE ('CLE wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "quote_age_ms": 39960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "truncated_ladder",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR021200CLECWS-CLE ('CLE wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": null,
+    "spread_e4": 2000,
+    "unscoreable_reason": "insufficient_depth",
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": null,
+    "spread_e4": 2000,
+    "unscoreable_reason": "insufficient_depth",
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "quote_age_ms": 39960,
+    "liveness_age_ms": 9960,
+    "p_close": {
+     "exact": "1043/2000",
+     "decimal": "0.521500"
+    },
+    "spread_e4": 200,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR021200CLECWS-CLE ('CLE wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "101/200",
+     "decimal": "0.505000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "99/200",
+     "decimal": "0.495000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "quote_age_ms": 39960,
+    "liveness_age_ms": 9960,
+    "p_close": {
+     "exact": "51/100",
+     "decimal": "0.510000"
+    },
+    "spread_e4": 200,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR021200CLECWS-CLE ('CLE wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   }
+  ],
+  "scores": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "1021/2000",
+     "decimal": "0.510500"
+    },
+    "p_ref_entry": {
+     "exact": "1021/2000",
+     "decimal": "0.510500"
+    },
+    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-6711/118000",
+     "decimal": "-0.056873"
+    },
+    "null_ev": {
+     "exact": "-6711/118000",
+     "decimal": "-0.056873"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "p_ref_entry": {
+     "exact": "49/100",
+     "decimal": "0.490000"
+    },
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-9/118",
+     "decimal": "-0.076271"
+    },
+    "null_ev": {
+     "exact": "-559/5900",
+     "decimal": "-0.094746"
+    },
+    "clv_residual": {
+     "exact": "109/5900",
+     "decimal": "0.018475"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_reason": "truncated_ladder",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending",
+     "truncated_ladder"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": "insufficient_depth",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending",
+     "insufficient_depth"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "1043/2000",
+     "decimal": "0.521500"
+    },
+    "p_ref_entry": {
+     "exact": "1043/2000",
+     "decimal": "0.521500"
+    },
+    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-4313/118000",
+     "decimal": "-0.036551"
+    },
+    "null_ev": {
+     "exact": "-4313/118000",
+     "decimal": "-0.036551"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "101/200",
+     "decimal": "0.505000"
+    },
+    "p_ref_entry": {
+     "exact": "499/1000",
+     "decimal": "0.499000"
+    },
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-791/11800",
+     "decimal": "-0.067034"
+    },
+    "null_ev": {
+     "exact": "-4609/59000",
+     "decimal": "-0.078119"
+    },
+    "clv_residual": {
+     "exact": "327/29500",
+     "decimal": "0.011085"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "51/100",
+     "decimal": "0.510000"
+    },
+    "p_ref_entry": {
+     "exact": "51/100",
+     "decimal": "0.510000"
+    },
+    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-341/5900",
+     "decimal": "-0.057797"
+    },
+    "null_ev": {
+     "exact": "-341/5900",
+     "decimal": "-0.057797"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-04-01T12:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#1",
+       "sha256": "44669df3b6ee5f5ced936be945cbfc95d3bf691494292a8a2278db1ffa328447"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "p_ref_entry": {
+     "exact": "49/100",
+     "decimal": "0.490000"
+    },
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-9/118",
+     "decimal": "-0.076271"
+    },
+    "null_ev": {
+     "exact": "-559/5900",
+     "decimal": "-0.094746"
+    },
+    "clv_residual": {
+     "exact": "109/5900",
+     "decimal": "0.018475"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   }
+  ],
+  "books": {
+   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28": {
+    "frame": {
+     "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+     "sha256": "e17517ddf7cc23eb37ae48543d8d453c0ce63d2e62d6a575c0ff15b79e0aa9cd"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-04-01T12:03:20.040Z",
+    "truncated": true,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.5000",
+       "2500.00",
+       250000
+      ],
+      [
+       "0.4900",
+       "500.00",
+       50000
+      ]
+     ],
+     "side1": [
+      [
+       "0.4800",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4700",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4600",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4500",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4400",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4300",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4200",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4100",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4000",
+       "90.00",
+       9000
+      ],
+      [
+       "0.3900",
+       "90.00",
+       9000
+      ]
+     ]
+    }
+   },
+   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4": {
+    "frame": {
+     "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+     "sha256": "57231ba7c302a505c6dd1e911de0dfa5082e8a09f4290a5b4adfd01520bc8b62"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-04-01T10:59:20.040Z",
+    "truncated": true,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.5000",
+       "2000.00",
+       200000
+      ],
+      [
+       "0.4900",
+       "500.00",
+       50000
+      ]
+     ],
+     "side1": [
+      [
+       "0.4800",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4700",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4600",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4500",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4400",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4300",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4200",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4100",
+       "90.00",
+       9000
+      ],
+      [
+       "0.4000",
+       "90.00",
+       9000
+      ],
+      [
+       "0.3900",
+       "90.00",
+       9000
+      ]
+     ]
+    }
+   },
+   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7": {
+    "frame": {
+     "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+     "sha256": "fc1f1b561f840cb3d54fa3284a98c924e1bb118f0770b7200a6265415c0dbafb"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-04-01T10:59:20.040Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.4800",
+       "800.00",
+       80000
+      ]
+     ],
+     "side1": [
+      [
+       "0.5000",
+       "800.00",
+       80000
+      ]
+     ]
+    }
+   },
+   "novig/2026-04-01/syn-c1.0001.jsonl.gz#2": {
+    "frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+     "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
+    },
+    "snapshot_frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+     "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
+    },
+    "instrument": "novig:syn-mkt",
+    "source": "stream",
+    "seq": 10,
+    "venue_status": "OPEN",
+    "venue_ts": "2026-04-01T10:53:20.970Z",
+    "observed": "2026-04-01T10:53:21.000Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.40",
+       "20000",
+       20000
+      ],
+      [
+       "0.35",
+       "50000",
+       50000
+      ]
+     ],
+     "side1": [
+      [
+       "0.38",
+       "30000",
+       30000
+      ],
+      [
+       "0.35",
+       "40000",
+       40000
+      ]
+     ]
+    }
+   },
+   "novig/2026-04-01/syn-c1.0001.jsonl.gz#5": {
+    "frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+     "sha256": "f28a95304961b3d1bab9a95b28be0973a115377e36544a81cc4931344ccf1d6f"
+    },
+    "snapshot_frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+     "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
+    },
+    "instrument": "novig:syn-mkt",
+    "source": "stream",
+    "seq": 11,
+    "venue_status": "OPEN",
+    "venue_ts": "2026-04-01T11:49:59.970Z",
+    "observed": "2026-04-01T11:50:00.000Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.40",
+       "20000",
+       20000
+      ],
+      [
+       "0.35",
+       "50000",
+       50000
+      ]
+     ],
+     "side1": [
+      [
+       "0.40",
+       "30000",
+       30000
+      ],
+      [
+       "0.35",
+       "40000",
+       40000
+      ]
+     ]
+    }
+   }
+  }
+ },
+ "after": {
+  "run": {
+   "scorer_version": "score-v0.1",
+   "fee_model_version": "none-v0",
+   "analysis_spec": "v0",
+   "fact_snapshot": {
+    "high_water": {
+     "book_snapshot": 7,
+     "book_snapshot_level": 45,
+     "collection_gap": 0,
+     "entry": 1,
+     "entry_quote_observation": 3,
+     "event": 1,
+     "event_alias": 5,
+     "instrument_mapping_observation": 14,
+     "liveness_evidence": 15,
+     "off_observation": 7,
+     "outcome": 2,
+     "raw_artifact": 5,
+     "signal": 2,
+     "tick": 6,
+     "tick_level": 39,
+     "venue_instrument": 5
+    },
+    "manifest_sha256": "915d062fec02369e0b3c7212767060205e5e8bb06bddbbc4870622bcb1616edc"
+   }
+  },
+  "off": [
+   {
+    "game_pk": "900001",
+    "resolver_version": "off-v0.1",
+    "selected": "2026-04-01T12:05:30.000Z",
+    "earliest": "2026-04-01T12:05:00.000Z",
+    "latest": "2026-04-01T12:05:30.000Z",
+    "disagreement_ms": 30000,
+    "confidence": "trusted",
+    "reason": null,
+    "claims": [
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-04-01T12:05:00.000Z",
+      "observed": "2026-04-01T12:20:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#1",
+       "sha256": "c3ec910768aa163a76236de14ce7c684763a0a470b3643e822959b442f7c66e9"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-04-01T12:05:00.000Z",
+      "observed": "2026-04-01T14:00:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#4",
+       "sha256": "7ae69e5dc08a5702a01da4d7627a3542918e1951e252d214f0bb467740fccbec"
+      }
+     },
+     {
+      "source": "novig_stream",
+      "kind": "venue_golive",
+      "detected": "2026-04-01T12:05:09.970Z",
+      "observed": "2026-04-01T12:05:10.000Z",
+      "frame": {
+       "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#8",
+       "sha256": "014c4b8dc130ab19906cc62770f4a5dccc36c2066a4577cedfc3a43aa67589a6"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-04-01T12:05:30.000Z",
+      "observed": "2026-04-01T12:20:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#1",
+       "sha256": "c3ec910768aa163a76236de14ce7c684763a0a470b3643e822959b442f7c66e9"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-04-01T12:05:30.000Z",
+      "observed": "2026-04-01T14:00:00.040Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-04-01/mlb-syn.0001.jsonl.gz#4",
+       "sha256": "7ae69e5dc08a5702a01da4d7627a3542918e1951e252d214f0bb467740fccbec"
+      }
+     }
+    ]
+   }
+  ],
+  "signals": [
+   {
+    "outcome": "CLE",
+    "producer": "v0-golden-synthetic",
+    "kind": "manual",
+    "decision": "2026-04-01T11:00:00.000Z",
+    "would_bet": true,
+    "has_entry": true
+   },
+   {
+    "outcome": "CWS",
+    "producer": "v0-golden-synthetic",
+    "kind": "manual",
+    "decision": "2026-04-01T11:00:00.000Z",
+    "would_bet": false,
+    "has_entry": false
+   }
+  ],
+  "closes": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": null,
+    "quote_age_ms": null,
+    "liveness_age_ms": null,
+    "p_close": null,
+    "spread_e4": null,
+    "unscoreable_reason": "unmapped",
+    "reference_mapping": null
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": null,
+    "quote_age_ms": null,
+    "liveness_age_ms": null,
+    "p_close": null,
+    "spread_e4": null,
+    "unscoreable_reason": "unmapped",
+    "reference_mapping": null
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": null,
+    "spread_e4": 2000,
+    "unscoreable_reason": "insufficient_depth",
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": null,
+    "spread_e4": 2000,
+    "unscoreable_reason": "insufficient_depth",
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": null,
+    "quote_age_ms": null,
+    "liveness_age_ms": null,
+    "p_close": null,
+    "spread_e4": null,
+    "unscoreable_reason": "unmapped",
+    "reference_mapping": null
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "101/200",
+     "decimal": "0.505000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "99/200",
+     "decimal": "0.495000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": null,
+    "quote_age_ms": null,
+    "liveness_age_ms": null,
+    "p_close": null,
+    "spread_e4": null,
+    "unscoreable_reason": "unmapped",
+    "reference_mapping": null
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "quote_age_ms": 3879960,
+    "liveness_age_ms": 9960,
+    "p_close": null,
+    "spread_e4": 200,
+    "unscoreable_reason": "stale_book",
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26APR011200CLECWS-CWS ('CWS wins'); ticker listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#1",
+      "sha256": "5320df07cbb965ab4673b03f4403b6b3fb48299f4ea4b432da06d9f0f8832ce6"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-04-01T12:04:00.000Z",
+    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "quote_age_ms": 840000,
+    "liveness_age_ms": 9950,
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "spread_e4": 2000,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:syn-mkt",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 900001 in tools/raw_recorder/games.toml, checked by hand (CLE @ CWS (synthetic golden game))",
+     "frame": {
+      "ref": "novig/2026-04-01/rest-syn.0001.jsonl.gz#1",
+      "sha256": "60f42feee160d273efbe6983f4a881536717b3fd9168d99514c87683dd4dd2f8"
+     },
+     "is_correction": false
+    }
+   }
+  ],
+  "scores": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": null,
+    "ref_entry_reason": "unmapped",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "equivalence_pending",
+     "unmapped"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "p_ref_entry": {
+     "exact": "49/100",
+     "decimal": "0.490000"
+    },
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-9/118",
+     "decimal": "-0.076271"
+    },
+    "null_ev": {
+     "exact": "-559/5900",
+     "decimal": "-0.094746"
+    },
+    "clv_residual": {
+     "exact": "109/5900",
+     "decimal": "0.018475"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": null,
+    "ref_entry_reason": "unmapped",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "equivalence_pending",
+     "unmapped"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": "insufficient_depth",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "equivalence_pending",
+     "insufficient_depth"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": null,
+    "ref_entry_reason": "unmapped",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "equivalence_pending",
+     "unmapped"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "101/200",
+     "decimal": "0.505000"
+    },
+    "p_ref_entry": {
+     "exact": "499/1000",
+     "decimal": "0.499000"
+    },
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-791/11800",
+     "decimal": "-0.067034"
+    },
+    "null_ev": {
+     "exact": "-4609/59000",
+     "decimal": "-0.078119"
+    },
+    "clv_residual": {
+     "exact": "327/29500",
+     "decimal": "0.011085"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": null,
+    "p_ref_entry": null,
+    "ref_entry_book": null,
+    "ref_entry_reason": "unmapped",
+    "clv_ev": null,
+    "null_ev": null,
+    "clv_residual": null,
+    "exclusion_reasons": [
+     "equivalence_pending",
+     "unmapped"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-synthetic",
+     "decision": "2026-04-01T11:00:00.000Z",
+     "instrument": "odds_api:syn-vend:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:syn-vend:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI",
+      "evidence": "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "109/59",
+     "decimal": "1.847458"
+    },
+    "p_close": {
+     "exact": "1/2",
+     "decimal": "0.500000"
+    },
+    "p_ref_entry": {
+     "exact": "49/100",
+     "decimal": "0.490000"
+    },
+    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-9/118",
+     "decimal": "-0.076271"
+    },
+    "null_ev": {
+     "exact": "-559/5900",
+     "decimal": "-0.094746"
+    },
+    "clv_residual": {
+     "exact": "109/5900",
+     "decimal": "0.018475"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   }
+  ],
+  "books": {
+   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7": {
+    "frame": {
+     "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+     "sha256": "fc1f1b561f840cb3d54fa3284a98c924e1bb118f0770b7200a6265415c0dbafb"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-04-01T10:59:20.040Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.4800",
+       "800.00",
+       80000
+      ]
+     ],
+     "side1": [
+      [
+       "0.5000",
+       "800.00",
+       80000
+      ]
+     ]
+    }
+   },
+   "novig/2026-04-01/syn-c1.0001.jsonl.gz#2": {
+    "frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+     "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
+    },
+    "snapshot_frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+     "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
+    },
+    "instrument": "novig:syn-mkt",
+    "source": "stream",
+    "seq": 10,
+    "venue_status": "OPEN",
+    "venue_ts": "2026-04-01T10:53:20.970Z",
+    "observed": "2026-04-01T10:53:21.000Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.40",
+       "20000",
+       20000
+      ],
+      [
+       "0.35",
+       "50000",
+       50000
+      ]
+     ],
+     "side1": [
+      [
+       "0.38",
+       "30000",
+       30000
+      ],
+      [
+       "0.35",
+       "40000",
+       40000
+      ]
+     ]
+    }
+   },
+   "novig/2026-04-01/syn-c1.0001.jsonl.gz#5": {
+    "frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+     "sha256": "f28a95304961b3d1bab9a95b28be0973a115377e36544a81cc4931344ccf1d6f"
+    },
+    "snapshot_frame": {
+     "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+     "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
+    },
+    "instrument": "novig:syn-mkt",
+    "source": "stream",
+    "seq": 11,
+    "venue_status": "OPEN",
+    "venue_ts": "2026-04-01T11:49:59.970Z",
+    "observed": "2026-04-01T11:50:00.000Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.40",
+       "20000",
+       20000
+      ],
+      [
+       "0.35",
+       "50000",
+       50000
+      ]
+     ],
+     "side1": [
+      [
+       "0.40",
+       "30000",
+       30000
+      ],
+      [
+       "0.35",
+       "40000",
+       40000
+      ]
+     ]
+    }
+   }
+  }
+ }
+}

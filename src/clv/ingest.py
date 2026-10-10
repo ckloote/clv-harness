@@ -19,7 +19,7 @@ What goes where (migrations/0001_v0.sql):
 - continuity and time: collection_gap open/close pairs; off_observation per sighting.
 
 Sportsbook quotes are not stored as facts here: an entry cites the quote it
-uses (entry_quote_observation, PR 3).
+uses (entry_quote_observation, clv.entries).
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ class IngestReport:
         self.quarantine_span[reason] = (first[0], ref, first[2], ts_ms)
 
 
-class _Writer:
+class Writer:
     """Inserts rows and resolves frame citations to (raw_artifact_id, raw_line)."""
 
     def __init__(self, conn: sqlite3.Connection, now_ms: int):
@@ -114,7 +114,7 @@ def payout_cents(qty: Decimal, cents_per_contract: int, ref: str) -> int:
 class _Books:
     """Writes ticks, liveness evidence and complete-ladder snapshots for one instrument."""
 
-    def __init__(self, w: _Writer, instrument_id: int, sides: tuple[str, str], cents_per_contract: int):
+    def __init__(self, w: Writer, instrument_id: int, sides: tuple[str, str], cents_per_contract: int):
         self.w, self.iid, self.sides, self.cents = w, instrument_id, sides, cents_per_contract
         self.n = param("book.tick_levels")
         self.snapshot_interval_ms = param("book.full_snapshot_interval_s") * 1000
@@ -190,7 +190,7 @@ class _Books:
         self.observe(restated, status, ref, snapshot_ref, "delta_unchanged", None, report)
 
 
-def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[str, str], market: str,
+def _stream_frame(w: Writer, report: IngestReport, books: _Books, status: dict[str, str], market: str,
                   outs: list, resynced: set[str], event_id: int, game_pk: int) -> None:
     """One stream frame's outputs for one market.
 
@@ -252,7 +252,7 @@ def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: 
     lo, hi = capture_window(g)
     if conn.execute("SELECT 1 FROM event WHERE league = 'MLB' AND league_game_id = ?", (str(game_pk),)).fetchone():
         raise IngestError(f"gamePk {game_pk} is already ingested; ingest into a clean database")
-    w = _Writer(conn, now)
+    w = Writer(conn, now)
     conn.execute("BEGIN")
     try:
         report = _ingest(w, Path(root), g, lo, hi)
@@ -264,7 +264,7 @@ def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: 
     return report
 
 
-def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
+def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
     game_pk = g["game_pk"]
 
     # -- StatsAPI: identity, outcomes and off observations ------------------------------------

@@ -162,6 +162,11 @@ value = 0.85                    # fraction used; also on projected exhaustion be
 status = "provisional"
 revised_by = "A4"
 
+[poll.liveness_max_s]
+value = 30                      # since the subject's last successful poll, changed or unchanged
+status = "provisional"
+revised_by = "A4: 3× the R0 Kalshi and Novig public-book poll intervals; a missed or failed poll is also a `collection_gap`"
+
 # --- Off resolution ---------------------------------------------------------------
 
 [off.max_source_disagreement_s]
