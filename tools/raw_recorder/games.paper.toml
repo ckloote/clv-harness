@@ -47,3 +47,11 @@ game_pk = 849831
 label = "Chicago White Sox @ Cleveland Guardians, ALDS G5, Sat Oct 10 20:00 ET"
 scheduled_start_utc = "2026-10-11T00:00:00Z"
 novig_markets = ["01a11f15-59e7-78e0-90a5-543152b9b73b"]
+
+# LAD @ MIL NLCS G1: checked 2026-10-10 13:29 UTC (09:29 ET); MLB StatsAPI and
+# Novig Paper startsTs both say 2026-10-12T00:00:00Z.
+[[game]]
+game_pk = 849809
+label = "Los Angeles Dodgers @ Milwaukee Brewers, NLCS G1, Sun Oct 11 20:00 ET"
+scheduled_start_utc = "2026-10-12T00:00:00Z"
+novig_markets = ["01a11bf9-51a5-7211-8a8e-8d68fc64876c"]
