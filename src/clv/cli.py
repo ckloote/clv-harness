@@ -3,6 +3,10 @@
     clv inspect --game-pk 849832     parse one recorded game from the raw archive and summarize it
     clv migrate                      create or upgrade the database (data/clv.sqlite by default)
     clv ingest --game-pk 849832      load one recorded game's facts into the database
+    clv record --spec entries.toml   record signals and entries (clv.entries)
+    clv correct --spec fixes.toml    append mapping corrections (clv.identity.apply_corrections)
+    clv score                        a scoring run over a new fact snapshot, or --fact-snapshot N
+    clv trace --run N                a scoring run's numbers, traced to raw frames, as JSON
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -11,14 +15,20 @@ checks, polls, quotes, off observations and gaps. It writes nothing.
 from __future__ import annotations
 
 import argparse
+import json
+import sys
+import time
 from collections import Counter
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 
-from clv import archive, db, gaps, ingest, mlb
+
+from clv import archive, db, entries, gaps, identity, ingest, mlb, trace
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
 from clv.off import sources
+from clv.score import clv as scoring
 from clv.scoring import odds_api
 from clv.timeutil import ms_iso
 from clv.venues import kalshi
@@ -180,7 +190,7 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
               f"{len(os_)} sightings)")
     if first_pitch:
         cut = first_pitch - param("close.buffer_s") * 1000
-        print(f"\n## Books at first pitch − close.buffer_s = {ms_iso(cut)} (a preview; the close function is PR 3)")
+        print(f"\n## Books at first pitch − close.buffer_s = {ms_iso(cut)} (a preview; `clv score` computes the close)")
         last_novig = max((b for b in books if b.recv_ts_ms <= cut), key=lambda b: b.recv_ts_ms, default=None)
         if last_novig:
             print(f"- Novig stream seq {last_novig.seq}, received {ms_iso(last_novig.recv_ts_ms)}: "
@@ -222,7 +232,24 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--archive", type=Path, default=REPO / "archive")
     p.add_argument("--games", type=Path, default=GAMES, help="recorder game list (default: %(default)s)")
+    p = sub.add_parser("record", help="record signals and entries from a spec file")
+    p.add_argument("--spec", type=Path, required=True)
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--archive", type=Path, default=REPO / "archive")
+    p.add_argument("--games", type=Path, default=GAMES, help="recorder game list (default: %(default)s)")
+    p = sub.add_parser("correct", help="append mapping corrections from a spec file")
+    p.add_argument("--spec", type=Path, required=True)
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p = sub.add_parser("score", help="closes, CLV and null EV for every entry, as a new run")
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--fact-snapshot", type=int, help="recompute over the facts of an earlier snapshot, as a new run")
+    p = sub.add_parser("trace", help="print a scoring run, traced to raw frames, as JSON")
+    p.add_argument("--run", type=int, required=True)
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--archive", type=Path, default=REPO / "archive")
+    p.add_argument("--no-levels", action="store_true", help="omit each book's stored levels")
     args = ap.parse_args(argv)
+    now = int(time.time() * 1000)
     if args.cmd == "inspect":
         inspect(args.archive, args.game_pk, args.games)
     elif args.cmd == "migrate":
@@ -243,6 +270,40 @@ def main(argv: list[str] | None = None) -> None:
         for reason, n in sorted(rep.quarantined.items()):
             first_ref, last_ref, first_ms, last_ms = rep.quarantine_span[reason]
             print(f"  quarantined {reason}: {n}, {ms_iso(first_ms)} .. {ms_iso(last_ms)} ({first_ref} .. {last_ref})")
+
+    elif args.cmd == "record":
+        try:
+            done = entries.record(db.connect(args.db), args.archive, args.spec, now, args.games)
+        except entries.EntryError as exc:
+            raise SystemExit(f"clv record: {exc}") from None
+        print(f"{len(done)} signals, {sum(r.entry_id is not None for r in done)} entries")
+    elif args.cmd == "correct":
+        ids = identity.apply_corrections(db.connect(args.db), args.spec, now)
+        print(f"{len(ids)} mapping corrections: observations {ids}")
+    elif args.cmd == "score":
+        conn = db.connect(args.db)
+        r = scoring.run(conn, now, snapshot_id=args.fact_snapshot)
+        print(f"run {r.scoring_run_id} over fact snapshot {r.fact_snapshot_id}: {r.closes} closes, {r.scores} scores")
+        print_scores(conn, r.scoring_run_id)
+    elif args.cmd == "trace":
+        sys.stdout.write(trace.dumps(trace.trace(db.connect(args.db), args.run, args.archive, not args.no_levels)))
+
+
+def print_scores(conn, run_id: int) -> None:
+    pct = lambda n, d: "" if n is None else f"{100 * float(Fraction(n, d)):+.2f}"
+    prob = lambda n, d: "" if n is None else f"{float(Fraction(n, d)):.4f}"
+    print(f"  {'definition':26} {'venue':6} {'outcome':7} {'d_entry':>8} {'p_close':>7} {'p_ref':>7} "
+          f"{'clv_ev%':>8} {'null_ev%':>8}  reasons")
+    for r in conn.execute("""
+            SELECT d.name, s.ref_venue, o.team_abbreviation, s.d_entry_num, s.d_entry_den, s.p_close_num, s.p_close_den,
+                   s.p_ref_entry_num, s.p_ref_entry_den, s.clv_ev_num, s.clv_ev_den, s.null_ev_num, s.null_ev_den,
+                   s.exclusion_reasons, s.ref_entry_reason
+            FROM clv_score s JOIN close_def d USING (close_def_id) JOIN entry e USING (entry_id)
+            JOIN outcome o ON o.outcome_id = e.outcome_id WHERE s.scoring_run_id = ?
+            ORDER BY e.entry_id, d.name, s.ref_venue""", (run_id,)):
+        reasons = ", ".join(json.loads(r[13]) + ([f"ref at entry: {r[14]}"] if r[14] else []))
+        print(f"  {r[0]:26} {r[1]:6} {r[2]:7} {prob(r[3], r[4]):>8} {prob(r[5], r[6]):>7} {prob(r[7], r[8]):>7} "
+              f"{pct(r[9], r[10]):>8} {pct(r[11], r[12]):>8}  {reasons}")
 
 
 if __name__ == "__main__":

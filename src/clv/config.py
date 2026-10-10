@@ -61,7 +61,16 @@ def _default() -> dict[str, Param]:
 
 def param(key: str) -> Any:
     """The value of a §10 key. KeyError for a key not in params.toml."""
+    return _get(key).value
+
+
+def param_field(key: str, name: str) -> Any:
+    """A field §10 states in prose beside a key's value, e.g. `requires_settlement_equivalence`."""
+    return _get(key).extra[name]
+
+
+def _get(key: str) -> Param:
     try:
-        return _default()[key].value
+        return _default()[key]
     except KeyError:
         raise KeyError(f"{key!r} is not in {PARAMS_PATH.name}; add it to DESIGN.md §10 first") from None

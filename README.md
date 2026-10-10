@@ -2,7 +2,7 @@
 
 Measurement infrastructure for evaluating sports-betting entries by **closing-line value (CLV)**: did an entry get a better price than an independent, defensible estimate of the same outcome's pre-event fair probability? It is deliberately built **before** any betting model. Its job is to make a claimed edge testable and to expose apparent edge that depends on timestamp errors, stale prices, mismatched contracts, illiquid reference markets or research choices.
 
-**Status: V0 in progress.** The R0 raw postseason recorder is built and recording. V0 so far has the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/0001_v0.sql`) and an ingest of one recorded game into it; closes and scoring come next. See the implementation plan in [DESIGN.md §13](DESIGN.md).
+**Status: V0 built.** The R0 raw postseason recorder is built and recording. V0 has the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/`), an ingest of one recorded game, and its off resolution, closes, CLV and null EV scores, traced to raw frames, with a mapping-correction replay and a golden game in CI. See the implementation plan in [DESIGN.md §13](DESIGN.md) and the V0 results in [docs/decisions/2026-10-10-v0-golden-game.md](docs/decisions/2026-10-10-v0-golden-game.md).
 
 | Document | What it is |
 |---|---|
@@ -20,12 +20,15 @@ Measurement infrastructure for evaluating sports-betting entries by **closing-li
 pyproject.toml              uv workspace root: the `clv` harness package
 config/params.toml          every threshold the harness uses, from DESIGN.md §10; authoritative
 migrations/0001_v0.sql      the V0 schema: facts and derived tables, constraints, append-only triggers
+migrations/0002_v0_scoring.sql  V0 changes forced by scoring: a close with no cutoff, null EV lineage
 migrations/CHANGELOG.md     schema changes forced by real data, against DESIGN.md §8
 src/clv/
   config.py                 loads params.toml; an unknown key is an error, never a default
   db.py                     connection settings and the migration runner
   ingest.py                 one recorded game from the raw archive into the facts, each row citing its frame
-  identity.py               team naming across venues, polarity normalization
+  identity.py               team naming across venues, polarity normalization, current mappings and corrections
+  lineage.py                fact snapshots: the exact facts a derived run reads
+  entries.py                signals and entries from a spec file, each quote cited to its frame
   games.py                  the recorder's hand-checked game list
   archive.py                reads sealed §7.1 segments, checks their hashes, cites frames, joins REST envelopes
   venues/protocol.py        normalized two-sided books: native prices and quantities, bids per venue side
@@ -34,11 +37,18 @@ src/clv/
   scoring/odds_api.py       The Odds API quotes, exact American-to-decimal odds, credits
   mlb.py                    StatsAPI game identity, result and first-play times
   off/sources.py            off observations: first pitch, status changes, Novig GOLIVE
+  off/resolver.py           the trusted start interval from those observations
+  close/depth.py            benchmarks: top-of-book and depth-walk midpoints, exact
+  close/definitions.py      the versioned close function and its unscoreable reasons
+  score/clv.py              scoring runs: mapping and off resolution, closes, CLV, null EV, exclusions
+  trace.py                  a scoring run traced to the raw frames behind every number
   gaps.py                   collection gaps from polls and streams
-  cli.py                    `clv inspect`, `clv migrate`, `clv ingest`
+  cli.py                    `clv inspect`, `migrate`, `ingest`, `record`, `correct`, `score`, `trace`
   score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2)
-tests/                      parameters, schema invariants, polarity, archive reader, parsers, gaps, ingest;
-                            calibration simulation and research-bound fixtures
+tests/                      parameters, schema invariants, polarity, archive reader, parsers, gaps, ingest,
+                            off resolution, depth, scoring; calibration simulation and research-bound fixtures
+  golden.py                 golden games: the synthetic generator and the end-to-end replay
+  fixtures/golden/          the synthetic golden game (archive included) and 849832's specs and trace
 tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp + cryptography only)
   config.toml               recorder parameters, each copied from DESIGN.md §10
   games.toml                the games, Novig markets and Kalshi tickers to record
@@ -59,7 +69,7 @@ deploy/raw-recorder.service systemd user unit
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
-The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage.
+The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage, and `0002_v0_scoring.sql` the changes scoring forced.
 
 ## Install
 
@@ -106,6 +116,38 @@ uv run clv ingest --game-pk 849832
 ```
 
 `ingest` creates or upgrades `data/clv.sqlite` (git-ignored; `--db` to change it) and loads the game's facts: identity and mappings, Novig and Kalshi book states, liveness evidence, collection gaps and off observations. Each row cites the sealed segment and line it came from. It refuses a game that is already loaded, since a clean database must reproduce it exactly. Game 4 takes about 15 s and makes a 24 MB database. `clv migrate` alone creates or upgrades the database.
+
+## Scoring a recorded game
+
+```bash
+uv run clv record --spec tests/fixtures/golden/849832/entries.toml
+```
+
+```bash
+uv run clv score
+```
+
+`record` writes the spec's signals and entries: each entry's decision quote is the latest one the archive had received by the decision time, cited to its frame. `score` takes a fact snapshot and writes one run against it: every mapping's eligibility, each game's off resolution, the closes per definition, reference venue and outcome, and per entry CLV, null EV and the residual, as exact fractions with every exclusion reason listed. It prints the scores.
+
+```bash
+uv run clv correct --spec tests/fixtures/golden/849832/corrections.toml
+```
+
+```bash
+uv run clv score
+```
+
+```bash
+uv run clv score --fact-snapshot 1
+```
+
+A correction appends a superseding mapping and rewrites nothing. A new run shows its effect, and `--fact-snapshot 1` recomputes the first run's facts as a new run, which reproduces the first run exactly.
+
+```bash
+uv run clv trace --run 1 > run1.json
+```
+
+`trace` prints a run as JSON with no database ids: the off claims, books, closes and scores, each number with the raw frame it came from and the sha256 of that frame's line. `tests/golden.py` replays a golden game this way from a clean database; `uv run python tests/golden.py` regenerates the committed golden outputs after a deliberate change.
 
 ## The R0 recorder
 

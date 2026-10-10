@@ -1,0 +1,2554 @@
+{
+ "before": {
+  "run": {
+   "scorer_version": "score-v0.1",
+   "fee_model_version": "none-v0",
+   "analysis_spec": "v0",
+   "fact_snapshot": {
+    "high_water": {
+     "book_snapshot": 261,
+     "book_snapshot_level": 18791,
+     "collection_gap": 22,
+     "entry": 1,
+     "entry_quote_observation": 3,
+     "event": 1,
+     "event_alias": 4,
+     "instrument_mapping_observation": 24,
+     "liveness_evidence": 2373,
+     "off_observation": 14,
+     "outcome": 2,
+     "raw_artifact": 30,
+     "signal": 2,
+     "tick": 21888,
+     "tick_level": 421062,
+     "venue_instrument": 12
+    },
+    "manifest_sha256": "fab543de581635110b1f33866860f9cb4c58ee56d24307b11f38f1c69cdfdeec"
+   }
+  },
+  "off": [
+   {
+    "game_pk": "849832",
+    "resolver_version": "off-v0.1",
+    "selected": "2026-10-09T00:08:51.917Z",
+    "earliest": "2026-10-09T00:08:04.996Z",
+    "latest": "2026-10-09T00:08:51.917Z",
+    "disagreement_ms": 46921,
+    "confidence": "trusted",
+    "reason": null,
+    "claims": [
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T01:30:14.216Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#1",
+       "sha256": "e1cf0de7877760c21b3fe86d4e2caa4f98c3cb317ce88b0055e6393ed31cbb86"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T01:30:14.233Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#4",
+       "sha256": "71281867127aeb57d9eaa183b5649c8fa9bf540e089546a970007ae1631b8000"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T12:03:56.260Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#4",
+       "sha256": "6c9516cf56521ee5d229d959ede7e6a5817e292e0df7c71f91bde1fd738e4f6e"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T12:03:56.364Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#7",
+       "sha256": "9cf41605ad302e1410db4e40d2bcc89a6e0e0f7770ccb1b53c8a6da885a8e0b5"
+      }
+     },
+     {
+      "source": "novig_stream",
+      "kind": "venue_golive",
+      "detected": "2026-10-09T00:08:23.244Z",
+      "observed": "2026-10-09T00:08:23.299Z",
+      "frame": {
+       "ref": "novig/2026-10-09/e1f90139-624a-4249-945f-7f0abc817159.0002.jsonl.gz#231",
+       "sha256": "55193d4e9f3cc637e4ac900c98be5cc539d8a431347afcba5813494e5cc975e1"
+      }
+     },
+     {
+      "source": "novig_stream",
+      "kind": "venue_golive",
+      "detected": "2026-10-09T00:08:23.244Z",
+      "observed": "2026-10-09T00:08:23.312Z",
+      "frame": {
+       "ref": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#446",
+       "sha256": "6e7c4f8918774866724b0630ec734cb75cf64837fc8a3d4c8f55478031ae69df"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T01:30:14.216Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#1",
+       "sha256": "e1cf0de7877760c21b3fe86d4e2caa4f98c3cb317ce88b0055e6393ed31cbb86"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T01:30:14.233Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#4",
+       "sha256": "71281867127aeb57d9eaa183b5649c8fa9bf540e089546a970007ae1631b8000"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T12:03:56.260Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#4",
+       "sha256": "6c9516cf56521ee5d229d959ede7e6a5817e292e0df7c71f91bde1fd738e4f6e"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T12:03:56.364Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#7",
+       "sha256": "9cf41605ad302e1410db4e40d2bcc89a6e0e0f7770ccb1b53c8a6da885a8e0b5"
+      }
+     }
+    ]
+   }
+  ],
+  "signals": [
+   {
+    "outcome": "CLE",
+    "producer": "v0-golden-849832",
+    "kind": "manual",
+    "decision": "2026-10-08T23:05:00.000Z",
+    "would_bet": true,
+    "has_entry": true
+   },
+   {
+    "outcome": "CWS",
+    "producer": "v0-golden-849832",
+    "kind": "manual",
+    "decision": "2026-10-08T23:05:00.000Z",
+    "would_bet": false,
+    "has_entry": false
+   }
+  ],
+  "closes": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   }
+  ],
+  "scores": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "fuzzy_candidate",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "mapping_unverified",
+      "method": "outcome name = team name; vendor event by teams and commence_time",
+      "evidence": "home 'Chicago White Sox' and away 'Cleveland Guardians' are this game's StatsAPI home and away; commence_time 2026-10-09T00:00:00Z is its StatsAPI scheduled start; not yet verified by hand",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0002.jsonl.gz#1",
+       "sha256": "9b1c6fe4861d95f9cecf05202974bd61abed7d78cea80690af54e060025f92a1"
+      },
+      "is_correction": false
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "mapping_unverified",
+     "equivalence_pending"
+    ]
+   }
+  ],
+  "books": {
+   "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169": {
+    "frame": {
+     "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+     "sha256": "cc9054d49c193d299404517922fe52581b11114568380b85659c213e37ede00a"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-10-08T23:04:57.495Z",
+    "truncated": true,
+    "ladder_complete": true
+   },
+   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253": {
+    "frame": {
+     "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+     "sha256": "d81acdebea601ba1898dc0e12956b025a1176fc683e026eb0319d35c88d02ac7"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-10-09T00:07:04.120Z",
+    "truncated": true,
+    "ladder_complete": true
+   },
+   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256": {
+    "frame": {
+     "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+     "sha256": "52411e09416cdf8c7f3a5432907538c279854f0035ac33804383c3b26c75ab7d"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-10-09T00:07:04.144Z",
+    "truncated": true,
+    "ladder_complete": true
+   },
+   "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85": {
+    "frame": {
+     "ref": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+     "sha256": "d090d79e6136f49784a7e5b9af1c94e3e6294261d09e907b36a1e21310ec7926"
+    },
+    "snapshot_frame": null,
+    "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+    "source": "poll",
+    "seq": 9618,
+    "venue_status": "OPEN",
+    "venue_ts": null,
+    "observed": "2026-10-08T23:04:57.532Z",
+    "truncated": false,
+    "ladder_complete": true
+   },
+   "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364": {
+    "frame": {
+     "ref": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+     "sha256": "448e5a4d2d123afa8a7ede733514baf816df62c85485f46cfe46af84a1dcf923"
+    },
+    "snapshot_frame": {
+     "ref": "novig/2026-10-08/c282f399-aa76-46d2-b5fc-d68bf52debad.0001.jsonl.gz#3",
+     "sha256": "38a4b9cf2a778d27d420b3677d64acf6a2dcfc68f947a423af8d040c9059c4e7"
+    },
+    "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+    "source": "stream",
+    "seq": 12103,
+    "venue_status": "OPEN",
+    "venue_ts": "2026-10-09T00:07:01.132Z",
+    "observed": "2026-10-09T00:07:01.214Z",
+    "truncated": false,
+    "ladder_complete": true
+   }
+  }
+ },
+ "after": {
+  "run": {
+   "scorer_version": "score-v0.1",
+   "fee_model_version": "none-v0",
+   "analysis_spec": "v0",
+   "fact_snapshot": {
+    "high_water": {
+     "book_snapshot": 261,
+     "book_snapshot_level": 18791,
+     "collection_gap": 22,
+     "entry": 1,
+     "entry_quote_observation": 3,
+     "event": 1,
+     "event_alias": 4,
+     "instrument_mapping_observation": 26,
+     "liveness_evidence": 2373,
+     "off_observation": 14,
+     "outcome": 2,
+     "raw_artifact": 30,
+     "signal": 2,
+     "tick": 21888,
+     "tick_level": 421062,
+     "venue_instrument": 12
+    },
+    "manifest_sha256": "fab543de581635110b1f33866860f9cb4c58ee56d24307b11f38f1c69cdfdeec"
+   }
+  },
+  "off": [
+   {
+    "game_pk": "849832",
+    "resolver_version": "off-v0.1",
+    "selected": "2026-10-09T00:08:51.917Z",
+    "earliest": "2026-10-09T00:08:04.996Z",
+    "latest": "2026-10-09T00:08:51.917Z",
+    "disagreement_ms": 46921,
+    "confidence": "trusted",
+    "reason": null,
+    "claims": [
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T01:30:14.216Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#1",
+       "sha256": "e1cf0de7877760c21b3fe86d4e2caa4f98c3cb317ce88b0055e6393ed31cbb86"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T01:30:14.233Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#4",
+       "sha256": "71281867127aeb57d9eaa183b5649c8fa9bf540e089546a970007ae1631b8000"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T12:03:56.260Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#4",
+       "sha256": "6c9516cf56521ee5d229d959ede7e6a5817e292e0df7c71f91bde1fd738e4f6e"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "status_in_progress",
+      "detected": "2026-10-09T00:08:04.996Z",
+      "observed": "2026-10-09T12:03:56.364Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#7",
+       "sha256": "9cf41605ad302e1410db4e40d2bcc89a6e0e0f7770ccb1b53c8a6da885a8e0b5"
+      }
+     },
+     {
+      "source": "novig_stream",
+      "kind": "venue_golive",
+      "detected": "2026-10-09T00:08:23.244Z",
+      "observed": "2026-10-09T00:08:23.299Z",
+      "frame": {
+       "ref": "novig/2026-10-09/e1f90139-624a-4249-945f-7f0abc817159.0002.jsonl.gz#231",
+       "sha256": "55193d4e9f3cc637e4ac900c98be5cc539d8a431347afcba5813494e5cc975e1"
+      }
+     },
+     {
+      "source": "novig_stream",
+      "kind": "venue_golive",
+      "detected": "2026-10-09T00:08:23.244Z",
+      "observed": "2026-10-09T00:08:23.312Z",
+      "frame": {
+       "ref": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#446",
+       "sha256": "6e7c4f8918774866724b0630ec734cb75cf64837fc8a3d4c8f55478031ae69df"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T01:30:14.216Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#1",
+       "sha256": "e1cf0de7877760c21b3fe86d4e2caa4f98c3cb317ce88b0055e6393ed31cbb86"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T01:30:14.233Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-c192677396b4.0001.jsonl.gz#4",
+       "sha256": "71281867127aeb57d9eaa183b5649c8fa9bf540e089546a970007ae1631b8000"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T12:03:56.260Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#4",
+       "sha256": "6c9516cf56521ee5d229d959ede7e6a5817e292e0df7c71f91bde1fd738e4f6e"
+      }
+     },
+     {
+      "source": "mlb_statsapi",
+      "kind": "first_pitch",
+      "detected": "2026-10-09T00:08:51.917Z",
+      "observed": "2026-10-09T12:03:56.364Z",
+      "frame": {
+       "ref": "mlb_statsapi/2026-10-09/mlb-feed-c02ebb23ecb7.0001.jsonl.gz#7",
+       "sha256": "9cf41605ad302e1410db4e40d2bcc89a6e0e0f7770ccb1b53c8a6da885a8e0b5"
+      }
+     }
+    ]
+   }
+  ],
+  "signals": [
+   {
+    "outcome": "CLE",
+    "producer": "v0-golden-849832",
+    "kind": "manual",
+    "decision": "2026-10-08T23:05:00.000Z",
+    "would_bet": true,
+    "has_entry": true
+   },
+   {
+    "outcome": "CWS",
+    "producer": "v0-golden-849832",
+    "kind": "manual",
+    "decision": "2026-10-08T23:05:00.000Z",
+    "would_bet": false,
+    "has_entry": false
+   }
+  ],
+  "closes": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "quote_age_ms": 876,
+    "liveness_age_ms": 876,
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+     "side": 0,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CLE ('Cleveland wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "kalshi",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "quote_age_ms": 852,
+    "liveness_age_ms": 852,
+    "p_close": {
+     "exact": "97/200",
+     "decimal": "0.485000"
+    },
+    "spread_e4": 100,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "ticker team suffix = team abbreviation; YES direct, NO its complement",
+     "evidence": "Kalshi KXMLBGAME-26OCT081700CLECWS-CWS ('Chicago WS wins'); ticker listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0001.jsonl.gz#1",
+      "sha256": "2a06ceb029140c35bc9eb5ba4ca0bb194111dcc08a26447628ca0c8349bcbbc2"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CLE",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 1,
+     "outcome": "CLE",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CLE'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   },
+   {
+    "definition": "close_live_mid_top",
+    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "venue": "novig",
+    "outcome": "CWS",
+    "cutoff": "2026-10-09T00:07:04.996Z",
+    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "quote_age_ms": 3782,
+    "liveness_age_ms": 3782,
+    "p_close": {
+     "exact": "193/400",
+     "decimal": "0.482500"
+    },
+    "spread_e4": 50,
+    "unscoreable_reason": null,
+    "reference_mapping": {
+     "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+     "side": 0,
+     "outcome": "CWS",
+     "polarity": "direct",
+     "status": "manual_verified",
+     "settlement_equivalence": "pending",
+     "ineligible_reason": "equivalence_pending",
+     "method": "outcome name = team abbreviation",
+     "evidence": "Novig outcome 'CWS'; market listed for gamePk 849832 in tools/raw_recorder/games.toml, checked by hand (Cleveland Guardians @ Chicago White Sox, ALDS G4, Thu Oct 08 20:00 ET)",
+     "frame": {
+      "ref": "novig/2026-10-08/rest-75896a3345cd.0001.jsonl.gz#2",
+      "sha256": "3528a52d1584bf324225adcdce2cec8527f2fed59933a12771745561aee15752"
+     },
+     "is_correction": false
+    }
+   }
+  ],
+  "scores": [
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_100",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_1000",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_depth_500",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "kalshi",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "p_ref_entry": {
+     "exact": "103/200",
+     "decimal": "0.515000"
+    },
+    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "null_ev": {
+     "exact": "-1049/23400",
+     "decimal": "-0.044829"
+    },
+    "clv_residual": {
+     "exact": "0/1",
+     "decimal": "0.000000"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   },
+   {
+    "definition": "close_live_mid_top",
+    "venue": "novig",
+    "entry": {
+     "outcome": "CLE",
+     "producer": "v0-golden-849832",
+     "decision": "2026-10-08T23:05:00.000Z",
+     "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+     "operator": "draftkings",
+     "side": 1,
+     "mapping": {
+      "instrument": "odds_api:b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h",
+      "side": 1,
+      "outcome": "CLE",
+      "polarity": "direct",
+      "status": "manual_verified",
+      "settlement_equivalence": "pending",
+      "ineligible_reason": "equivalence_pending",
+      "method": "manual: vendor event checked against StatsAPI and every vendor event between these teams",
+      "evidence": "b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the 849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in the window). Side 1 is outcome name Cleveland Guardians.",
+      "frame": null,
+      "is_correction": true
+     },
+     "decision_quote": {
+      "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     }
+    },
+    "d_entry": {
+     "exact": "217/117",
+     "decimal": "1.854701"
+    },
+    "p_close": {
+     "exact": "207/400",
+     "decimal": "0.517500"
+    },
+    "p_ref_entry": {
+     "exact": "41/80",
+     "decimal": "0.512500"
+    },
+    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_reason": null,
+    "clv_ev": {
+     "exact": "-209/5200",
+     "decimal": "-0.040192"
+    },
+    "null_ev": {
+     "exact": "-463/9360",
+     "decimal": "-0.049466"
+    },
+    "clv_residual": {
+     "exact": "217/23400",
+     "decimal": "0.009274"
+    },
+    "exclusion_reasons": [
+     "equivalence_pending"
+    ]
+   }
+  ],
+  "books": {
+   "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169": {
+    "frame": {
+     "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+     "sha256": "cc9054d49c193d299404517922fe52581b11114568380b85659c213e37ede00a"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-10-08T23:04:57.495Z",
+    "truncated": true,
+    "ladder_complete": true
+   },
+   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253": {
+    "frame": {
+     "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+     "sha256": "d81acdebea601ba1898dc0e12956b025a1176fc683e026eb0319d35c88d02ac7"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-10-09T00:07:04.120Z",
+    "truncated": true,
+    "ladder_complete": true
+   },
+   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256": {
+    "frame": {
+     "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+     "sha256": "52411e09416cdf8c7f3a5432907538c279854f0035ac33804383c3b26c75ab7d"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-10-09T00:07:04.144Z",
+    "truncated": true,
+    "ladder_complete": true
+   },
+   "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85": {
+    "frame": {
+     "ref": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+     "sha256": "d090d79e6136f49784a7e5b9af1c94e3e6294261d09e907b36a1e21310ec7926"
+    },
+    "snapshot_frame": null,
+    "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+    "source": "poll",
+    "seq": 9618,
+    "venue_status": "OPEN",
+    "venue_ts": null,
+    "observed": "2026-10-08T23:04:57.532Z",
+    "truncated": false,
+    "ladder_complete": true
+   },
+   "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364": {
+    "frame": {
+     "ref": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+     "sha256": "448e5a4d2d123afa8a7ede733514baf816df62c85485f46cfe46af84a1dcf923"
+    },
+    "snapshot_frame": {
+     "ref": "novig/2026-10-08/c282f399-aa76-46d2-b5fc-d68bf52debad.0001.jsonl.gz#3",
+     "sha256": "38a4b9cf2a778d27d420b3677d64acf6a2dcfc68f947a423af8d040c9059c4e7"
+    },
+    "instrument": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2",
+    "source": "stream",
+    "seq": 12103,
+    "venue_status": "OPEN",
+    "venue_ts": "2026-10-09T00:07:01.132Z",
+    "observed": "2026-10-09T00:07:01.214Z",
+    "truncated": false,
+    "ladder_complete": true
+   }
+  }
+ }
+}

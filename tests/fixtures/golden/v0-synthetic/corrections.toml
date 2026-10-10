@@ -1,0 +1,39 @@
+# Synthetic V0 golden game (tests/golden.py): two mapping corrections.
+#
+# 1. The DraftKings line is verified by hand, as on gamePk 849832: the cohort exclusion changes
+#    and the numbers do not.
+# 2. The game list named the NEXT day's Kalshi CLE ticker (a planted error in this synthetic
+#    game). Its listing shows it, so both sides are rejected: Kalshi has no CLE reference after
+#    the correction, and the Kalshi CLE closes and scores become `unmapped`.
+
+[[correction]]
+venue = "odds_api"
+native_id = "syn-vend:draftkings:h2h"
+side = 0
+status = "manual_verified"
+method = "manual: vendor event checked against StatsAPI"
+evidence = "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 0 is Chicago White Sox."
+
+[[correction]]
+venue = "odds_api"
+native_id = "syn-vend:draftkings:h2h"
+side = 1
+status = "manual_verified"
+method = "manual: vendor event checked against StatsAPI"
+evidence = "syn-vend: home Chicago White Sox, away Cleveland Guardians, commence_time 2026-04-01T12:00:00Z equal StatsAPI's for gamePk 900001; the only vendor event between these teams. Side 1 is Cleveland Guardians."
+
+[[correction]]
+venue = "kalshi"
+native_id = "KXMLBGAME-26APR021200CLECWS-CLE"
+side = 0
+status = "rejected"
+method = "manual: Kalshi listing checked against StatsAPI"
+evidence = "Listing event_ticker KXMLBGAME-26APR021200CLECWS and occurrence_datetime 2026-04-02T12:00:00Z are the next day's game, not gamePk 900001 (2026-04-01T12:00:00Z); the game list named the wrong ticker."
+
+[[correction]]
+venue = "kalshi"
+native_id = "KXMLBGAME-26APR021200CLECWS-CLE"
+side = 1
+status = "rejected"
+method = "manual: Kalshi listing checked against StatsAPI"
+evidence = "Listing event_ticker KXMLBGAME-26APR021200CLECWS and occurrence_datetime 2026-04-02T12:00:00Z are the next day's game, not gamePk 900001 (2026-04-01T12:00:00Z); the game list named the wrong ticker."
