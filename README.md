@@ -2,7 +2,7 @@
 
 Measurement infrastructure for evaluating sports-betting entries by **closing-line value (CLV)**: did an entry get a better price than an independent, defensible estimate of the same outcome's pre-event fair probability? It is deliberately built **before** any betting model. Its job is to make a claimed edge testable and to expose apparent edge that depends on timestamp errors, stale prices, mismatched contracts, illiquid reference markets or research choices.
 
-**Status: V0 in progress.** The R0 raw postseason recorder is built and recording. V0 so far has the parameters (`config/params.toml`) and parsers that read the raw archive; the schema, ingestion, closes and scoring come next. See the implementation plan in [DESIGN.md §13](DESIGN.md).
+**Status: V0 in progress.** The R0 raw postseason recorder is built and recording. V0 so far has the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/0001_v0.sql`) and an ingest of one recorded game into it; closes and scoring come next. See the implementation plan in [DESIGN.md §13](DESIGN.md).
 
 | Document | What it is |
 |---|---|
@@ -19,8 +19,14 @@ Measurement infrastructure for evaluating sports-betting entries by **closing-li
 ```text
 pyproject.toml              uv workspace root: the `clv` harness package
 config/params.toml          every threshold the harness uses, from DESIGN.md §10; authoritative
+migrations/0001_v0.sql      the V0 schema: facts and derived tables, constraints, append-only triggers
+migrations/CHANGELOG.md     schema changes forced by real data, against DESIGN.md §8
 src/clv/
   config.py                 loads params.toml; an unknown key is an error, never a default
+  db.py                     connection settings and the migration runner
+  ingest.py                 one recorded game from the raw archive into the facts, each row citing its frame
+  identity.py               team naming across venues, polarity normalization
+  games.py                  the recorder's hand-checked game list
   archive.py                reads sealed §7.1 segments, checks their hashes, cites frames, joins REST envelopes
   venues/protocol.py        normalized two-sided books: native prices and quantities, bids per venue side
   venues/novig/parser.py    Novig stream replay (snapshot + deltas, sequence and probe checks), public book, catalog
@@ -29,9 +35,10 @@ src/clv/
   mlb.py                    StatsAPI game identity, result and first-play times
   off/sources.py            off observations: first pitch, status changes, Novig GOLIVE
   gaps.py                   collection gaps from polls and streams
-  cli.py                    `clv inspect`
+  cli.py                    `clv inspect`, `clv migrate`, `clv ingest`
   score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2)
-tests/                      parameters, archive reader, parsers, gaps; calibration simulation and research-bound fixtures
+tests/                      parameters, schema invariants, polarity, archive reader, parsers, gaps, ingest;
+                            calibration simulation and research-bound fixtures
 tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp + cryptography only)
   config.toml               recorder parameters, each copied from DESIGN.md §10
   games.toml                the games, Novig markets and Kalshi tickers to record
@@ -52,7 +59,7 @@ deploy/raw-recorder.service systemd user unit
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
-The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5); the harness has none yet: the V0 migration comes next.
+The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage.
 
 ## Install
 
@@ -91,6 +98,14 @@ uv run clv inspect --game-pk 849832
 ```
 
 `inspect` runs every V0 parser over one game's capture window from `tools/raw_recorder/games.toml` and prints what each source shows: the Novig stream replay and its checks, Kalshi and Odds API polls, StatsAPI identity and result, off observations, the books at first pitch minus `close.buffer_s`, and collection gaps. It reads sealed segments only, checks each one's hash, and writes nothing. The Novig stream for a two-hour game takes about 15 s.
+
+## Loading a recorded game
+
+```bash
+uv run clv ingest --game-pk 849832
+```
+
+`ingest` creates or upgrades `data/clv.sqlite` (git-ignored; `--db` to change it) and loads the game's facts: identity and mappings, Novig and Kalshi book states, liveness evidence, collection gaps and off observations. Each row cites the sealed segment and line it came from. It refuses a game that is already loaded, since a clean database must reproduce it exactly. Game 4 takes about 15 s and makes a 24 MB database. `clv migrate` alone creates or upgrades the database.
 
 ## The R0 recorder
 
