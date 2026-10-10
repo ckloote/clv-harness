@@ -190,6 +190,48 @@ class _Books:
         self.observe(restated, status, ref, snapshot_ref, "delta_unchanged", None, report)
 
 
+def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[str, str], market: str,
+                  outs: list, resynced: set[str], event_id: int, game_pk: int) -> None:
+    """One stream frame's outputs for one market.
+
+    Order: a sequence gap first makes the stored state untrusted; then the frame's status
+    is taken (unless it came in a probe reply behind the replayed state); then the frame's
+    own book, if any, is observed with that status. Only a frame with no book of its own,
+    or whose book a probe confirmed unchanged, restates the stored book with a new status.
+    """
+    probes = [o for o in outs if isinstance(o, novig.ProbeCheck) and o.channel == "book"]
+    new_books = [o for o in outs if isinstance(o, BinaryBook)]
+    for o in outs:
+        if isinstance(o, novig.SequenceGap) and o.channel == "book":
+            books.untrusted("stream")
+        elif isinstance(o, novig.Resync) and o.channel == "book":
+            resynced.add(market)
+    stale = any(isinstance(o, novig.ProbeCheck) and o.status == "superseded" for o in outs)
+    changed = None
+    for o in outs:
+        if not isinstance(o, novig.Lifecycle):
+            continue
+        if (obs := sources.from_lifecycle(o, game_pk)) is not None:
+            w.insert("off_observation", dict(event_id=event_id, source=obs.source, kind=obs.kind, subject=obs.subject,
+                                             detected_off_ts_ms=obs.detected_off_ts_ms,
+                                             observed_ts_ms=obs.observed_ts_ms, **w.cited(o.ref)))
+        if not stale and o.status != status[market]:
+            status[market] = o.status
+            changed = o
+    for o in new_books:
+        snapshot_ref, ref = o.refs[0], o.refs[-1]
+        reason = None
+        if ref == snapshot_ref:     # this frame is itself the snapshot
+            reason = "resync" if market in resynced else "subscribe"
+            resynced.discard(market)
+        books.observe(o, status[market], ref, snapshot_ref, "delta_unchanged", reason, report)
+    if changed is not None and not new_books and all(p.status == "confirmed" for p in probes):
+        books.status_change("stream", changed.status, changed.ref, changed.recv_ts_ms, changed.venue_ts_ms, report)
+    for p in probes:
+        if p.status == "confirmed":
+            books.evidence("stream", "probe_confirmed", p.recv_ts_ms, p.ref)
+
+
 def _poll_reasons(poll_gaps: list[gaps.Gap]):
     """A poll that ends a collection gap re-establishes its subject's state: a resync, so a
     new tick and a complete ladder. Using gaps.poll_gaps itself keeps ticks and gaps in step."""
@@ -341,32 +383,15 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
     replay = novig.StreamReplay()
     resynced: set[str] = set()
     for f in stream_frames:
+        # A frame is handled as a whole: a snapshot carries its lifecycle status, sequence check
+        # and book together, and the status may restate the stored book only once the frame's
+        # own book result is known (it may be a gap, a replacement or a quarantined state).
+        by_market: dict[str, list] = {}
         for o in replay.feed(f):
-            market = getattr(o, "market", None)
-            if market not in novig_books:
-                continue
-            if isinstance(o, novig.Lifecycle):
-                if o.status != novig_status[market]:
-                    novig_status[market] = o.status
-                    novig_books[market].status_change("stream", o.status, o.ref, o.recv_ts_ms, o.venue_ts_ms, report)
-                if (obs := sources.from_lifecycle(o, game_pk)) is not None:
-                    w.insert("off_observation", dict(event_id=event_id, source=obs.source, kind=obs.kind,
-                                                     subject=obs.subject, detected_off_ts_ms=obs.detected_off_ts_ms,
-                                                     observed_ts_ms=obs.observed_ts_ms, **w.cited(o.ref)))
-            elif isinstance(o, novig.SequenceGap) and o.channel == "book":
-                novig_books[market].untrusted("stream")
-            elif isinstance(o, novig.Resync) and o.channel == "book":
-                resynced.add(market)
-            elif isinstance(o, novig.ProbeCheck) and o.channel == "book" and o.status == "confirmed":
-                novig_books[market].evidence("stream", "probe_confirmed", o.recv_ts_ms, o.ref)
-            elif isinstance(o, BinaryBook):
-                snapshot_ref, ref = o.refs[0], o.refs[-1]
-                reason = None
-                if ref == snapshot_ref:     # this frame is itself the snapshot
-                    reason = "resync" if market in resynced else "subscribe"
-                    resynced.discard(market)
-                novig_books[market].observe(o, novig_status[market], ref, snapshot_ref, "delta_unchanged",
-                                            reason, report)
+            if getattr(o, "market", None) in novig_books:
+                by_market.setdefault(o.market, []).append(o)
+        for market, outs in by_market.items():
+            _stream_frame(w, report, novig_books[market], novig_status, market, outs, resynced, event_id, game_pk)
 
     # -- Kalshi: listings, instruments, mappings, order-book polls ---------------------------------
     kalshi_segs = archive.overlapping(archive.segments(root, "kalshi"), lo, hi)

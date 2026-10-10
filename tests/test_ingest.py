@@ -64,7 +64,10 @@ def kalshi_book(yes, no):
     return {"orderbook_fp": {"yes_dollars": [list(x) for x in yes], "no_dollars": [list(x) for x in no]}}
 
 
-def write_archive(root: Path, games: Path) -> None:
+def write_archive(root: Path, games: Path, crossed_resync: str | None = None) -> None:
+    """crossed_resync ("gap" or "mismatch"): after the halt, instead of GOLIVE and in-play
+    trading, a probe reply reports OPEN and replaces the book with a crossed one, either
+    jumping the sequence (a gap) or at the same sequence (a mismatch)."""
     clock = Clock()
     w = ArchiveWriter(root, session_id="s1", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
     # StatsAPI: an in-game feed, then the final feed.
@@ -114,18 +117,27 @@ def write_archive(root: Path, games: Path) -> None:
             CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
                   {"orderId": "w8", "price": "0.40", "qty": 1}],
             CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "CLOSED"}}}})
-    send(T + 503_244, "in", {"ts": T + 503_244, "delta": {M: {"eventId": "ev1", "lifecycle": {
-        "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
-    send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
-        {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})          # crossed: in-play
-    # A probe confirming the crossed (quarantined) state must not vouch for the last stored tick.
-    send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 4, "snapshot": {
-        M: {"eventId": "ev1", "book": {"seq": 13, "orders": {
-            CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
-                  {"orderId": "w8", "price": "0.40", "qty": 1}],
-            CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, {"orderId": "l0", "price": "0.51", "qty": 500}]}},
-            "lifecycle": {"seq": 1, "status": "OPEN"}}}})
-    ev(T + 600_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
+    if crossed_resync:
+        # Review regression: one probe reply reports OPEN and replaces the book with a crossed one.
+        # The stored CLOSED book must not be restated as OPEN.
+        send(T - 300_000, "in", {"ts": T - 300_001, "nonce": 5, "snapshot": {
+            M: {"eventId": "ev1", "book": {"seq": 14 if crossed_resync == "gap" else 12, "orders": {
+                CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}],
+                CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}]}}, "lifecycle": {"seq": 0, "status": "OPEN"}}}})
+        ev(T - 200_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
+    else:
+        send(T + 503_244, "in", {"ts": T + 503_244, "delta": {M: {"eventId": "ev1", "lifecycle": {
+            "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
+        send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
+            {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})      # crossed: in-play
+        # A probe confirming the crossed (quarantined) state must not vouch for the last stored tick.
+        send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 4, "snapshot": {
+            M: {"eventId": "ev1", "book": {"seq": 13, "orders": {
+                CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
+                      {"orderId": "w8", "price": "0.40", "qty": 1}],
+                CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, {"orderId": "l0", "price": "0.51", "qty": 500}]}},
+                "lifecycle": {"seq": 1, "status": "OPEN"}}}})
+        ev(T + 600_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
     # Kalshi: listing, then three polls per ticker; the third is unchanged but follows a failed poll
     # (review finding 3); a restart before the fourth.
     k = w.stream("kalshi", "kalshi-s1")
@@ -182,6 +194,14 @@ def recorded(tmp_path_factory):
     games = root / "games.toml"
     write_archive(root, games)
     return root, games
+
+
+@pytest.fixture(scope="module", params=["gap", "mismatch"])
+def recorded_crossed_resync(request, tmp_path_factory):
+    root = tmp_path_factory.mktemp(f"archive_crossed_{request.param}")
+    games = root / "games.toml"
+    write_archive(root, games, crossed_resync=request.param)
+    return root, games, request.param
 
 
 def ingested(recorded, now_ms=NOW):
@@ -273,6 +293,26 @@ def test_no_tick_spans_a_gap(recorded):
                              AND t.observed_ts_ms >= close.boundary_ts_ms)
                    FROM collection_gap g JOIN collection_gap close ON close.opens_gap_id = g.collection_gap_id""")
     assert rows and all(end == first_tick for _, end, first_tick in rows)
+
+
+def test_rejected_snapshot_cannot_restate_the_old_book_as_open(recorded_crossed_resync):
+    # Review regression: CLOSED at seq 12, then a snapshot reporting OPEN with a crossed book,
+    # at seq 14 (a gap) or at seq 12 (a mismatch). The crossed book is quarantined, and the old
+    # seq 12 book is never restated as OPEN: no tick, and no evidence, after the halt.
+    root, games, kind = recorded_crossed_resync
+    c, rep = ingested((root, games))
+    stream = q(c, "SELECT seq, venue_status, observed_ts_ms FROM tick WHERE source = 'stream' ORDER BY observed_ts_ms")
+    assert stream[-1] == (12, "CLOSED", T - 400_000)
+    assert q(c, "SELECT count(*) FROM tick WHERE source = 'stream' AND observed_ts_ms > ?", T - 400_000) == [(0,)]
+    assert q(c, "SELECT count(*) FROM liveness_evidence WHERE source = 'stream' AND observed_ts_ms > ?",
+             T - 400_000) == [(0,)]
+    assert rep.quarantined == {"crossed_book": 1}
+    # On a gap the feed itself resynced, so the sequence gap closes there; the close function
+    # (PR 3) then finds only the CLOSED seq 12 tick before the gap, which it must reject.
+    novig_gaps = q(c, "SELECT kind, reason, boundary_ts_ms FROM collection_gap WHERE scope LIKE 'novig:%' "
+                      "ORDER BY collection_gap_id")
+    assert novig_gaps == ([("open", "sequence_gap", T - 400_000), ("close", "sequence_gap", T - 300_000)]
+                          if kind == "gap" else [])
 
 
 def test_other_games_between_the_same_teams_are_not_this_game(recorded):
