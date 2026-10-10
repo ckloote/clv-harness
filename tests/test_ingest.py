@@ -64,10 +64,14 @@ def kalshi_book(yes, no):
     return {"orderbook_fp": {"yes_dollars": [list(x) for x in yes], "no_dollars": [list(x) for x in no]}}
 
 
-def write_archive(root: Path, games: Path, crossed_resync: str | None = None) -> None:
+def write_archive(root: Path, games: Path, crossed_resync: str | None = None, late_snapshot: bool = False) -> None:
     """crossed_resync ("gap" or "mismatch"): after the halt, instead of GOLIVE and in-play
     trading, a probe reply reports OPEN and replaces the book with a crossed one, either
-    jumping the sequence (a gap) or at the same sequence (a mismatch)."""
+    jumping the sequence (a gap) or at the same sequence (a mismatch).
+
+    late_snapshot: after book delta 12 the connection ends with two delayed snapshot replies
+    whose book is at seq 11: the first carries a newer lifecycle status (CLOSED, lifecycle
+    seq 1), the second an older one (OPEN, lifecycle seq 0)."""
     clock = Clock()
     w = ArchiveWriter(root, session_id="s1", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
     # StatsAPI: an in-game feed, then the final feed.
@@ -105,39 +109,50 @@ def write_archive(root: Path, games: Path, crossed_resync: str | None = None) ->
         {"kind": "add", "orderId": "w9", "outcomeId": CWS, "price": "0.485", "qty": 200}]}}}})
     send(T - 999_000, "in", {"ts": T - 999_001, "delta": {M: {"eventId": "ev1", "book": {"seq": 12, "deltas": [
         {"kind": "add", "orderId": "w8", "outcomeId": CWS, "price": "0.40", "qty": 1}]}}}})   # beyond nothing: changes level 2
-    send(T - 500_000, "out", {"nonce": 2, "snapshot": {"markets": {M: "book"}}})
-    send(T - 499_950, "in", {"ts": T - 499_951, "nonce": 2, "snapshot": {
-        M: {"eventId": "ev1", "book": {"seq": 12, "orders": {
-            CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
-                  {"orderId": "w8", "price": "0.40", "qty": 1}],
-            CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "OPEN"}}}})
-    # A halt: a confirmed probe reports CLOSED with the book unchanged (review finding 2); GOLIVE reopens.
-    send(T - 400_000, "in", {"ts": T - 400_001, "nonce": 3, "snapshot": {
-        M: {"eventId": "ev1", "book": {"seq": 12, "orders": {
-            CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
-                  {"orderId": "w8", "price": "0.40", "qty": 1}],
-            CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "CLOSED"}}}})
-    if crossed_resync:
-        # Review regression: one probe reply reports OPEN and replaces the book with a crossed one.
-        # The stored CLOSED book must not be restated as OPEN.
-        send(T - 300_000, "in", {"ts": T - 300_001, "nonce": 5, "snapshot": {
-            M: {"eventId": "ev1", "book": {"seq": 14 if crossed_resync == "gap" else 12, "orders": {
-                CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}],
-                CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}]}}, "lifecycle": {"seq": 0, "status": "OPEN"}}}})
-        ev(T - 200_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
+    if late_snapshot:
+        # Review finding: a snapshot taken between book deltas 11 and 12 and received 50 ms after
+        # delta 12. Its book is behind the replay, but lifecycle has its own sequence: the CLOSED
+        # is new and must be recorded. The second reply's OPEN is behind lifecycle seq 1.
+        after_11 = {CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000}],
+                    CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}
+        for nonce, t, lc in ((6, T - 998_950, {"seq": 1, "status": "CLOSED"}), (7, T - 998_900, {"seq": 0, "status": "OPEN"})):
+            send(t, "in", {"ts": T - 999_020, "nonce": nonce, "snapshot": {
+                M: {"eventId": "ev1", "book": {"seq": 11, "orders": after_11}, "lifecycle": lc}}})
+        ev(T - 990_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
     else:
-        send(T + 503_244, "in", {"ts": T + 503_244, "delta": {M: {"eventId": "ev1", "lifecycle": {
-            "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
-        send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
-            {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})      # crossed: in-play
-        # A probe confirming the crossed (quarantined) state must not vouch for the last stored tick.
-        send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 4, "snapshot": {
-            M: {"eventId": "ev1", "book": {"seq": 13, "orders": {
+        send(T - 500_000, "out", {"nonce": 2, "snapshot": {"markets": {M: "book"}}})
+        send(T - 499_950, "in", {"ts": T - 499_951, "nonce": 2, "snapshot": {
+            M: {"eventId": "ev1", "book": {"seq": 12, "orders": {
                 CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
                       {"orderId": "w8", "price": "0.40", "qty": 1}],
-                CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, {"orderId": "l0", "price": "0.51", "qty": 500}]}},
-                "lifecycle": {"seq": 1, "status": "OPEN"}}}})
-        ev(T + 600_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
+                CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "OPEN"}}}})
+        # A halt: a confirmed probe reports CLOSED with the book unchanged (review finding 2); GOLIVE reopens.
+        send(T - 400_000, "in", {"ts": T - 400_001, "nonce": 3, "snapshot": {
+            M: {"eventId": "ev1", "book": {"seq": 12, "orders": {
+                CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
+                      {"orderId": "w8", "price": "0.40", "qty": 1}],
+                CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 1, "status": "CLOSED"}}}})
+        if crossed_resync:
+            # Review regression: one probe reply reports OPEN and replaces the book with a crossed one.
+            # The stored CLOSED book must not be restated as OPEN.
+            send(T - 300_000, "in", {"ts": T - 300_001, "nonce": 5, "snapshot": {
+                M: {"eventId": "ev1", "book": {"seq": 14 if crossed_resync == "gap" else 12, "orders": {
+                    CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}],
+                    CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}]}}, "lifecycle": {"seq": 2, "status": "OPEN"}}}})
+            ev(T - 200_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
+        else:
+            send(T + 503_244, "in", {"ts": T + 503_244, "delta": {M: {"eventId": "ev1", "lifecycle": {
+                "seq": 2, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
+            send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
+                {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})      # crossed: in-play
+            # A probe confirming the crossed (quarantined) state must not vouch for the last stored tick.
+            send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 4, "snapshot": {
+                M: {"eventId": "ev1", "book": {"seq": 13, "orders": {
+                    CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
+                          {"orderId": "w8", "price": "0.40", "qty": 1}],
+                    CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, {"orderId": "l0", "price": "0.51", "qty": 500}]}},
+                    "lifecycle": {"seq": 2, "status": "OPEN"}}}})
+            ev(T + 600_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
     # Kalshi: listing, then three polls per ticker; the third is unchanged but follows a failed poll
     # (review finding 3); a restart before the fourth.
     k = w.stream("kalshi", "kalshi-s1")
@@ -193,6 +208,14 @@ def recorded(tmp_path_factory):
     root = tmp_path_factory.mktemp("archive")
     games = root / "games.toml"
     write_archive(root, games)
+    return root, games
+
+
+@pytest.fixture(scope="module")
+def recorded_late_snapshot(tmp_path_factory):
+    root = tmp_path_factory.mktemp("archive")
+    games = root / "games.toml"
+    write_archive(root, games, late_snapshot=True)
     return root, games
 
 
@@ -313,6 +336,21 @@ def test_rejected_snapshot_cannot_restate_the_old_book_as_open(recorded_crossed_
                       "ORDER BY collection_gap_id")
     assert novig_gaps == ([("open", "sequence_gap", T - 400_000), ("close", "sequence_gap", T - 300_000)]
                           if kind == "gap" else [])
+
+
+def test_lifecycle_freshness_does_not_follow_the_book_sequence(recorded_late_snapshot):
+    # Review finding: a delayed snapshot whose book (seq 11) is behind the replay (seq 12) carries
+    # a newer lifecycle status (CLOSED, lifecycle seq 1). The book is rejected, the CLOSED is not:
+    # the stored seq 12 book is restated as CLOSED, citing the snapshot. A second delayed reply
+    # whose OPEN is behind lifecycle seq 1 changes nothing.
+    c, _ = ingested(recorded_late_snapshot)
+    stream = q(c, "SELECT seq, venue_status, observed_ts_ms FROM tick WHERE source = 'stream' ORDER BY observed_ts_ms")
+    assert stream == [(10, "OPEN", T - 1_999_990), (11, "OPEN", T - 1_000_000), (12, "OPEN", T - 999_000),
+                      (12, "CLOSED", T - 998_950)]
+    levels = q(c, """SELECT side, rank, price_native FROM tick_level WHERE tick_id = (SELECT max(tick_id) FROM tick
+                     WHERE source = 'stream') ORDER BY side, rank""")
+    assert levels == [(0, 0, "0.485"), (0, 1, "0.48"), (0, 2, "0.40"), (1, 0, "0.51")]   # the seq 12 book
+    assert q(c, "SELECT count(*) FROM liveness_evidence WHERE source = 'stream'") == [(0,)]
 
 
 def test_other_games_between_the_same_teams_are_not_this_game(recorded):
