@@ -1,4 +1,4 @@
-"""The V0 migration and its DESIGN.md §8.4 tests (the ones that apply at stage V0).
+"""The V0 migrations and their DESIGN.md §8.4 tests (the ones that apply at stage V0).
 
 Trade deduplication (stream + CSV) arrives with trade_execution in A1/B1; the
 polarity round trip is in test_polarity.py.
@@ -127,6 +127,8 @@ def score(c, ids, venue, **over):
     row = dict(scoring_run_id=ids["run"], entry_id=ids["entry"], ref_venue=venue, close_def_id=ids["cdef"],
                close_price_id=ids[f"close_{venue}"], entry_quote_observation_id=ids["quote"], d_entry_num=109,
                d_entry_den=59, computed_ts_ms=T)
+    if "ref_entry_reason" in {r[1] for r in c.execute("PRAGMA table_info(clv_score)")}:     # from 0002
+        row["ref_entry_reason"] = "no_quotes"
     row.update(over)
     return ins(c, "clv_score", **row)
 
@@ -353,6 +355,48 @@ def test_signal_entry_outcome_mismatch_and_time_travel_are_rejected(conn):
         ins(conn, "signal", kind="control", event_id=ids["event"], outcome_id=ids["cle"], producer="v0",
             decision_ts_ms=T, emitted_ts_ms=T - 1, would_bet=0, policy_version="v0", features_as_of_decision=1,
             created_ts_ms=T)                                                 # emitted before its decision
+
+
+def test_0002_rebuilds_close_price_and_clv_score_keeping_their_rows():
+    c = db.connect(":memory:")
+    db.migrate(c, upto=1)
+    ids = seed(c)
+    before = [tuple(r) for r in c.execute("SELECT * FROM close_price ORDER BY 1")]
+    assert db.migrate(c) == [2]
+    assert [tuple(r) for r in c.execute("SELECT * FROM close_price ORDER BY 1")] == before
+    assert [tuple(r) for r in c.execute("SELECT clv_score_id, ref_entry_tick_id, ref_entry_reason FROM clv_score")] \
+        == [(ids["score"], None, "not_recorded")]
+    assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+        c.execute("DELETE FROM clv_score")
+
+
+def test_a_close_without_a_start_bound_has_no_cutoff_and_no_price(conn):
+    ids = seed(conn)
+    close(conn, ids, "novig", None, book_observed_ts_ms=None, cutoff_ts_ms=None, p_close_num=None,
+          p_close_den=None, unscoreable_reason="no_trusted_off", close_def_id=new_def(conn))
+    with pytest.raises(sqlite3.IntegrityError):
+        close(conn, ids, "novig", ids["tick"], cutoff_ts_ms=None, close_def_id=new_def(conn))
+
+
+def test_null_ev_reference_must_be_known_at_the_decision(conn):
+    ids = seed(conn)
+    cdef = new_def(conn)
+    ids["close_novig"] = close(conn, ids, "novig", ids["tick"], close_def_id=cdef)
+    early, later = (ins(conn, "tick", venue_instrument_id=ids["novig"], source="poll", venue_status="OPEN",
+                        observed_ts_ms=t, bid0_e4=4800, bid1_e4=5150, levels0=0, levels1=0, truncated=0,
+                        ladder_complete=1, raw_artifact_id=ids["art"], raw_line=2) for t in (T - 510_000, T - 499_000))
+    good = dict(close_def_id=cdef, p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800,
+                ref_entry_reason=None)
+    with pytest.raises(sqlite3.IntegrityError, match="received after the decision"):
+        score(conn, ids, "novig", ref_entry_tick_id=later, **good)             # entry decided at T - 500 s
+    with pytest.raises(sqlite3.IntegrityError, match="received after the decision"):
+        score(conn, ids, "novig", ref_entry_tick_id=ids["ktick"], **good)      # another venue's book
+    with pytest.raises(sqlite3.IntegrityError):                                # a price and a reason
+        score(conn, ids, "novig", ref_entry_tick_id=early, **dict(good, ref_entry_reason="stale_book"))
+    with pytest.raises(sqlite3.IntegrityError):                                # null EV without its input
+        score(conn, ids, "novig", ref_entry_tick_id=early, **dict(good, null_ev_num=None, null_ev_den=None))
+    score(conn, ids, "novig", ref_entry_tick_id=early, **good)
 
 
 def test_quote_received_after_the_decision_is_not_known_at_it(conn):

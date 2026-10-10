@@ -121,9 +121,14 @@ All are prespecified, and each is counted in the waterfall:
 | `settlement_divergence` | S3 or S4 |
 | `equivalence_pending` / `rules_mismatch` | Verdict `pending` / `not_equivalent` (§3) |
 | `mapping_unverified` | The mapping is not `exact` or `manual_verified`. Every doubleheader game needs `manual_verified` |
+| `mapping_rejected` / `mapping_conflict` | The current mapping is `rejected`, or two corrections of one side both stand |
+| `entry_mapping_superseded` | A correction says the entry's instrument side is no longer the entry's outcome |
 | `listed_pitcher_terms` | The quote is conditional on listed pitchers rather than "action" |
 | `unlicensed_book` | §5.3 |
-| DESIGN.md §5.4 reasons | `no_trusted_off`, `stale_book`, `collection_gap`, `no_depth` and the rest, unchanged |
+| `entry_after_cutoff` | The entry was decided at or after the close cutoff (§5.5) |
+| DESIGN.md §5.4 reasons (the close is unscoreable) | `no_trusted_off`, `off_disagreement`, `collection_gap`, `feed_stalled`, `halted`, `venue_lag`, `stale_book`; for the benchmark, `no_quotes`, `insufficient_depth` (DESIGN.md §2.4) and `truncated_ladder` (the stored ladder may have cut off the depth needed); for the reference instrument, `unmapped`, `ambiguous_reference` and `mapping_inconsistent`. Crossed books never reach a close: they are quarantined at ingest |
+
+The harness lists every applicable reason beside each score (`clv_score.exclusion_reasons`) and computes the numbers whenever its inputs exist, so the waterfall can count each reason, and a correction that clears one shows exactly what changed.
 
 **Wide-spread and thin markets stay in** and are stratified, not excluded (DESIGN.md §5.4).
 
@@ -131,8 +136,8 @@ All are prespecified, and each is counted in the waterfall:
 
 ### 5.5 Entry timing
 
-- **The quote:** an entry's `observed_quote` must be observed strictly before the close cutoff.
-- **The decision:** its `decision_quote` must be known as of the decision time under the data-access contract (DESIGN.md §6.2).
+- **The decision:** an entry is decided strictly before the close cutoff, and so its `observed_quote` is observed before it (`entry_after_cutoff`).
+- **The decision quote:** its `decision_quote` must be known as of the decision time under the data-access contract (DESIGN.md §6.2): received by then, whatever its provider timestamp.
 - **The harness's own entries** are the control entries of DESIGN.md §9.2, taken at the offsets in `controls.oracle_offsets`.
 - **Historical entries** (Track B) are labeled by snapshot time, bookmaker `last_update` and retrieval time, and are never called actionable.
 

@@ -1,0 +1,30 @@
+# V0 golden game: the mapping correction replayed for gamePk 849832 (DESIGN.md §13, V0).
+# The ingest maps The Odds API by teams and commence_time and leaves it a fuzzy_candidate.
+# This verifies the DraftKings line by hand. Settlement equivalence stays pending: DraftKings'
+# house rules are not yet checked (measurement contract §3, §7 item 2).
+
+[[correction]]
+venue = "odds_api"
+native_id = "b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h"
+side = 0
+status = "manual_verified"
+method = "manual: vendor event checked against StatsAPI and every vendor event between these teams"
+evidence = """b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the \
+849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland \
+Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between \
+these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and \
+e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in \
+the window). Side 0 is outcome name Chicago White Sox."""
+
+[[correction]]
+venue = "odds_api"
+native_id = "b57e790481f2b8e5eaf9e0f3eab816bc:draftkings:h2h"
+side = 1
+status = "manual_verified"
+method = "manual: vendor event checked against StatsAPI and every vendor event between these teams"
+evidence = """b57e790481f2b8e5eaf9e0f3eab816bc is the only The Odds API h2h event between these teams quoted in the \
+849832 capture window (2026-10-08T18:00Z to 2026-10-09T01:30Z). Its home (Chicago White Sox), away (Cleveland \
+Guardians) and commence_time 2026-10-09T00:00:00Z equal StatsAPI's for gamePk 849832. The other events between \
+these teams are cd974d85e2a617152370056d22cd8deb (commence 2026-10-07T20:00Z, an earlier game) and \
+e0448f7b831a9ecc0580ba4295270d0c (commence 2026-10-08T21:00Z, quoted only 2026-10-07 23:37Z to 23:57Z, never in \
+the window). Side 1 is outcome name Cleveland Guardians."""

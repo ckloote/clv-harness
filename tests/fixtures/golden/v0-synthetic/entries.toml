@@ -1,0 +1,21 @@
+# Synthetic V0 golden game (tests/golden.py): one manual entry on CLE at DraftKings an hour
+# before the scheduled start, priced on the -118 quote received at S-3700s, and the no-bet
+# signal on CWS at the same decision time.
+game_pk = 900001
+
+[[signal]]
+outcome = "CLE"
+kind = "manual"
+producer = "v0-golden-synthetic"
+decision = "2026-04-01T11:00:00Z"
+would_bet = 1
+policy_version = "v0"
+entry = { venue = "odds_api", operator = "draftkings" }
+
+[[signal]]
+outcome = "CWS"
+kind = "manual"
+producer = "v0-golden-synthetic"
+decision = "2026-04-01T11:00:00Z"
+would_bet = 0
+policy_version = "v0"
