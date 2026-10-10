@@ -11,3 +11,5 @@ archive/
 archive-paper/
 # B0 feasibility inputs and caches (tools/b0): large, re-fetchable, never committed.
 b0-work/
+# Harness databases: rebuilt from the archive (clv migrate / clv ingest).
+data/

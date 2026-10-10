@@ -113,6 +113,28 @@ def test_late_probe_reply_is_superseded_and_does_not_roll_back():
     assert b.bids[B] == (Level("0.5", Decimal(1)),)            # o3 stays removed
 
 
+def test_lifecycle_status_is_judged_by_its_own_sequence():
+    # A probe reply behind the book can carry a newer lifecycle status: it is emitted. One behind
+    # the lifecycle sequence is not, whatever the book sequence beside it.
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS)))
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o3", "reason": "cancel"})))
+
+    def probe(book_seq, lc_seq, status, nonce):
+        msg = snapshot(book_seq, ORDERS, nonce=nonce, subscribed=False)
+        msg["snapshot"][M]["lifecycle"] = {"seq": lc_seq, "status": status}
+        return [o for o in r.feed(frame(msg)) if not isinstance(o, novig.ProbeCheck) or o.status != "superseded"]
+
+    (lc,) = probe(10, 1, "CLOSED", 2)
+    assert isinstance(lc, novig.Lifecycle) and (lc.seq, lc.status) == (1, "CLOSED")
+    assert probe(10, 0, "OPEN", 3) == []
+    (same,) = probe(10, 1, "CLOSED", 4)                        # the same lifecycle seq is current
+    assert (same.seq, same.status) == (1, "CLOSED")
+    (golive,) = r.feed(frame(delta(2, {"kind": "GOLIVE", "status": "OPEN"}, channel="lifecycle")))
+    assert golive.status == "OPEN"
+    assert probe(10, 1, "CLOSED", 5) == []                     # behind the GOLIVE delta
+
+
 def test_sequence_gap_drops_state_until_a_snapshot():
     r = novig.StreamReplay()
     r.feed(frame(snapshot(10, ORDERS), recv=1000))
