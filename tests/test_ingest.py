@@ -29,13 +29,13 @@ class Clock:
         return self.t
 
 
-def rest(clock, stream, rid, t, path, purpose, body, subjects=(), query=""):
+def rest(clock, stream, rid, t, path, purpose, body, subjects=(), query="", status=200):
     clock.t = t
     stream.event(rid, "rest_request", request_id=rid, method="GET", origin="https://x", path=path, query=query,
                  subjects=list(subjects), purpose=purpose, start_ts_ms=t)
-    stream.write("in", rid, json.dumps(body), recv_ts_ms=t + 5)
+    stream.write("in", rid, json.dumps(body) if status == 200 else "Service Unavailable", recv_ts_ms=t + 5)
     clock.t = t + 6
-    stream.event(rid, "rest_complete", request_id=rid, status=200, failure=None, response_headers=[])
+    stream.event(rid, "rest_complete", request_id=rid, status=status, failure=None, response_headers=[])
 
 
 def book(seq, cws_bids, cle_bids, ts):
@@ -108,12 +108,26 @@ def write_archive(root: Path, games: Path) -> None:
             CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
                   {"orderId": "w8", "price": "0.40", "qty": 1}],
             CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "OPEN"}}}})
+    # A halt: a confirmed probe reports CLOSED with the book unchanged (review finding 2); GOLIVE reopens.
+    send(T - 400_000, "in", {"ts": T - 400_001, "nonce": 3, "snapshot": {
+        M: {"eventId": "ev1", "book": {"seq": 12, "orders": {
+            CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
+                  {"orderId": "w8", "price": "0.40", "qty": 1}],
+            CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "CLOSED"}}}})
     send(T + 503_244, "in", {"ts": T + 503_244, "delta": {M: {"eventId": "ev1", "lifecycle": {
         "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
     send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
         {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})          # crossed: in-play
+    # A probe confirming the crossed (quarantined) state must not vouch for the last stored tick.
+    send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 4, "snapshot": {
+        M: {"eventId": "ev1", "book": {"seq": 13, "orders": {
+            CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
+                  {"orderId": "w8", "price": "0.40", "qty": 1}],
+            CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, {"orderId": "l0", "price": "0.51", "qty": 500}]}},
+            "lifecycle": {"seq": 1, "status": "OPEN"}}}})
     ev(T + 600_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
-    # Kalshi: listing, then three polls per ticker; the third is unchanged; a restart between the first two.
+    # Kalshi: listing, then three polls per ticker; the third is unchanged but follows a failed poll
+    # (review finding 3); a restart before the fourth.
     k = w.stream("kalshi", "kalshi-s1")
     listing = {"cursor": "", "markets": [
         {"ticker": t, "event_ticker": "KX", "title": f"{t[-3:]} wins", "yes_sub_title": t[-3:], "status": "active",
@@ -122,18 +136,25 @@ def write_archive(root: Path, games: Path) -> None:
          "price_level_structure": "linear_cent", "can_close_early": True} for t in TICKERS]}
     rest(clock, k, "k0", T - 3_000_000, "/trade-api/v2/markets", "catalog", listing,
          [f"kalshi:market:{t}" for t in TICKERS])
-    for i, (t, yes) in enumerate(((T - 2_900_000, "0.5100"), (T - 2_000_000, "0.5200"), (T - 1_990_000, "0.5200"))):
+    for i, (t, yes) in enumerate(((T - 2_900_000, "0.5100"), (T - 2_000_000, "0.5200"), (T - 1_995_000, None),
+                                  (T - 1_990_000, "0.5200"))):
         for ticker in TICKERS:
             rest(clock, k, f"k{i}{ticker}", t, f"/trade-api/v2/markets/{ticker}/orderbook", "orderbook",
-                 kalshi_book([(yes, "100.50")], [("0.4700", "20.00")]), [f"kalshi:market:{ticker}"])
-    # The Odds API: one pregame poll.
+                 kalshi_book([(yes, "100.50")], [("0.4700", "20.00")]), [f"kalshi:market:{ticker}"],
+                 status=503 if yes is None else 200)
+    # The Odds API: one pregame poll. The same teams also meet two days later, once with home and
+    # away reversed and once not (review finding 1); neither is this game.
+    def odds_event(vid, commence, home, away):
+        return {"id": vid, "sport_key": "baseball_mlb", "commence_time": commence, "home_team": home,
+                "away_team": away, "bookmakers": [
+                    {"key": "draftkings", "title": "DraftKings", "last_update": "2026-10-08T23:52:11Z", "markets": [
+                        {"key": "h2h", "last_update": "2026-10-08T23:52:11Z", "outcomes": [
+                            {"name": home, "price": -102}, {"name": away, "price": -118}]}]}]}
     o = w.stream("odds_api", "odds-s1")
     rest(clock, o, "o1", T - 480_000, "/v4/sports/baseball_mlb/odds", "odds", [
-        {"id": "vend1", "sport_key": "baseball_mlb", "commence_time": "2026-10-09T00:00:00Z",
-         "home_team": "Chicago White Sox", "away_team": "Cleveland Guardians", "bookmakers": [
-             {"key": "draftkings", "title": "DraftKings", "last_update": "2026-10-08T23:52:11Z", "markets": [
-                 {"key": "h2h", "last_update": "2026-10-08T23:52:11Z", "outcomes": [
-                     {"name": "Chicago White Sox", "price": -102}, {"name": "Cleveland Guardians", "price": -118}]}]}]}],
+        odds_event("vend1", "2026-10-09T00:00:00Z", "Chicago White Sox", "Cleveland Guardians"),
+        odds_event("vend2", "2026-10-11T00:00:00Z", "Cleveland Guardians", "Chicago White Sox"),
+        odds_event("vend3", "2026-10-11T00:00:00Z", "Chicago White Sox", "Cleveland Guardians")],
          ["odds_api:sport:baseball_mlb"])
     w.close()
     # A second recorder session for the restart gap: one more Kalshi poll per ticker.
@@ -198,22 +219,28 @@ def test_books_ticks_evidence_and_snapshots(recorded):
     c, rep = ingested(recorded)
     by = q(c, """SELECT v.venue, t.source, count(*) FROM tick t JOIN venue_instrument v USING (venue_instrument_id)
                  GROUP BY 1, 2 ORDER BY 1, 2""")
-    # Kalshi: 4 polls per ticker; the third is unchanged, the fourth unchanged but after a restart,
-    # so a new tick. Novig poll: 2, the second unchanged. Novig stream: the snapshot and two
-    # deltas (the crossed in-play state is quarantined).
-    assert by == [("kalshi", "poll", 6), ("novig", "poll", 1), ("novig", "stream", 3)]
+    # Kalshi: 4 good polls per ticker, each a tick: changed, or re-established after a failed poll
+    # or a restart even when unchanged. Novig poll: 2, the second unchanged. Novig stream: the
+    # snapshot, two deltas, and two status changes with the book unchanged (CLOSED, then OPEN at
+    # GOLIVE); the crossed in-play state is quarantined.
+    assert by == [("kalshi", "poll", 8), ("novig", "poll", 1), ("novig", "stream", 5)]
+    # Probes: the first, and the CLOSED one. The probe confirming the quarantined crossed state adds none.
     assert q(c, "SELECT source, kind, count(*) FROM liveness_evidence GROUP BY 1, 2 ORDER BY 1, 2") == [
-        ("poll", "poll_unchanged", 3), ("stream", "probe_confirmed", 1)]
+        ("poll", "poll_unchanged", 1), ("stream", "probe_confirmed", 2)]
     assert rep.quarantined == {"crossed_book": 1}
-    # Complete ladders: each recorder session's first poll, the subscription, and every
-    # book.full_snapshot_interval_s (the fixture's Kalshi polls and stream deltas are 15 min apart).
+    # Complete ladders: each recorder session's first poll, the recovery after the failed polls, the
+    # subscription, and every book.full_snapshot_interval_s (the fixture's events are minutes apart).
     assert q(c, "SELECT reason, source, count(*) FROM book_snapshot GROUP BY 1, 2 ORDER BY 1, 2") == [
-        ("first_poll", "poll", 5), ("periodic", "poll", 2), ("periodic", "stream", 1), ("subscribe", "stream", 1)]
+        ("first_poll", "poll", 5), ("periodic", "poll", 2), ("periodic", "stream", 3), ("resync", "poll", 2),
+        ("subscribe", "stream", 1)]
     snap = q(c, """SELECT bid0_e4, bid1_e4, seq, venue_status, levels0, levels1 FROM tick
                    WHERE source = 'stream' ORDER BY observed_ts_ms""")
-    assert snap == [(4800, 5100, 10, "OPEN", 1, 1), (4850, 5100, 11, "OPEN", 2, 1), (4850, 5100, 12, "OPEN", 3, 1)]
+    assert snap == [(4800, 5100, 10, "OPEN", 1, 1), (4850, 5100, 11, "OPEN", 2, 1), (4850, 5100, 12, "OPEN", 3, 1),
+                    (4850, 5100, 12, "CLOSED", 3, 1), (4850, 5100, 12, "OPEN", 3, 1)]
+    status_ticks = q(c, "SELECT observed_ts_ms, venue_ts_ms FROM tick WHERE source = 'stream' AND seq = 12 ORDER BY 1")
+    assert status_ticks[1:] == [(T - 400_000, T - 400_001), (T + 503_244, T + 503_244)]   # at each status change
     levels = q(c, """SELECT side, rank, price_native, price_e4, qty_native, payout_cents FROM tick_level
-                     WHERE tick_id = (SELECT tick_id FROM tick WHERE seq = 12) ORDER BY side, rank""")
+                     WHERE tick_id = (SELECT min(tick_id) FROM tick WHERE seq = 12) ORDER BY side, rank""")
     assert levels == [(0, 0, "0.485", 4850, "200", 200), (0, 1, "0.48", 4800, "1000", 1000),
                       (0, 2, "0.40", 4000, "1", 1), (1, 0, "0.51", 5100, "500", 500)]
     kalshi = q(c, "SELECT payout_cents, qty_native FROM tick_level l JOIN tick t USING (tick_id) "
@@ -227,10 +254,34 @@ def test_off_observations_and_gaps(recorded):
         ("mlb_statsapi", "status_in_progress", T + 484_996, 2), ("novig_stream", "venue_golive", T + 503_244, 1),
         ("mlb_statsapi", "first_pitch", T + 531_917, 2)]
     gaps = q(c, "SELECT kind, scope, reason, boundary_ts_ms FROM collection_gap ORDER BY collection_gap_id")
-    assert gaps == [("open", "kalshi:market:KX-CLE", "recorder_restart", T - 1_989_995),
-                    ("close", "kalshi:market:KX-CLE", "recorder_restart", T - 999_995),
-                    ("open", "kalshi:market:KX-CWS", "recorder_restart", T - 1_989_995),
-                    ("close", "kalshi:market:KX-CWS", "recorder_restart", T - 999_995)]
+    expected = []
+    for ticker in TICKERS:
+        expected += [("open", f"kalshi:market:{ticker}", "request_failed", T - 1_999_995),
+                     ("close", f"kalshi:market:{ticker}", "request_failed", T - 1_989_995),
+                     ("open", f"kalshi:market:{ticker}", "recorder_restart", T - 1_989_995),
+                     ("close", f"kalshi:market:{ticker}", "recorder_restart", T - 999_995)]
+    assert gaps == expected
+
+
+def test_no_tick_spans_a_gap(recorded):
+    # Review finding 3: for every closed gap, the instrument's first tick at or after the gap's
+    # end is at its end, so the latest tick before any later cutoff is never from before the gap.
+    c, _ = ingested(recorded)
+    rows = q(c, """SELECT g.scope, close.boundary_ts_ms,
+                          (SELECT min(t.observed_ts_ms) FROM tick t JOIN venue_instrument v USING (venue_instrument_id)
+                           WHERE g.scope LIKE v.venue || ':market:' || v.native_id || '%'
+                             AND t.observed_ts_ms >= close.boundary_ts_ms)
+                   FROM collection_gap g JOIN collection_gap close ON close.opens_gap_id = g.collection_gap_id""")
+    assert rows and all(end == first_tick for _, end, first_tick in rows)
+
+
+def test_other_games_between_the_same_teams_are_not_this_game(recorded):
+    # Review finding 1.
+    c, rep = ingested(recorded)
+    assert rep.unmatched == {"vend2": "home and away reversed",
+                             "vend3": "commence_time 2026-10-11T00:00:00Z is not the StatsAPI scheduled start"}
+    assert q(c, "SELECT DISTINCT native_event_id FROM venue_instrument WHERE venue = 'odds_api'") == [("vend1",)]
+    assert q(c, "SELECT provider_event_id FROM event_alias WHERE provider = 'odds_api'") == [("vend1",)]
 
 
 def test_every_citation_is_the_exact_raw_frame(recorded):
@@ -241,11 +292,16 @@ def test_every_citation_is_the_exact_raw_frame(recorded):
         import hashlib
         assert hashlib.sha256((root / relpath).read_bytes()).hexdigest() == sha
     lines = {aid: gzip.decompress((root / rel).read_bytes()).split(b"\n") for aid, (rel, _) in arts.items()}
-    # Each stream tick cites the frame that produced its sequence number.
-    for aid, line, seq in c.execute("SELECT raw_artifact_id, raw_line, seq FROM tick WHERE source = 'stream'"):
+    # Each stream tick cites the frame that produced it: its book sequence number, or, for a
+    # status change with the book unchanged, the status itself.
+    for aid, line, seq, status in c.execute(
+            "SELECT raw_artifact_id, raw_line, seq, venue_status FROM tick WHERE source = 'stream'"):
         frame = json.loads(json.loads(lines[aid][line])["frame"])
-        body = (frame.get("snapshot") or frame.get("delta"))[M]["book"]
-        assert body["seq"] == seq
+        body = (frame.get("snapshot") or frame.get("delta"))[M]
+        if "book" in body and body["book"]["seq"] == seq:
+            continue
+        lifecycle = body["lifecycle"]
+        assert status in [lifecycle.get("status")] + [d["status"] for d in lifecycle.get("deltas", [])]
     # Each off observation cites a StatsAPI body or the GOLIVE delta.
     for aid, line, kind in c.execute("SELECT raw_artifact_id, raw_line, kind FROM off_observation"):
         text = json.loads(lines[aid][line])["frame"]

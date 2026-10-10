@@ -10,9 +10,10 @@ What goes where (migrations/0001_v0.sql):
   venue_instrument per Novig market, Kalshi ticker and sportsbook line, and
   instrument_mapping_observation per native side.
 - books: Novig stream and public-poll states, and Kalshi polls, become a tick
-  when the top `book.tick_levels` change, and on the first observation after a
-  subscription, resync or recorder restart (so a tick never spans a gap), and
-  liveness_evidence when they don't;
+  when the top `book.tick_levels` or the venue status change, and on the first
+  observation after a subscription, resync, failed poll or recorder restart (so a
+  tick never spans a gap), and liveness_evidence when they don't; nothing vouches
+  for a stored state once a later one was quarantined or lost to a sequence gap;
   book_snapshot holds complete ladders at subscription, after a resync, on a
   recorder session's first poll and every `book.full_snapshot_interval_s`.
 - continuity and time: collection_gap open/close pairs; off_observation per sighting.
@@ -22,6 +23,7 @@ uses (entry_quote_observation, PR 3).
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 import time
@@ -56,6 +58,7 @@ class IngestReport:
     rows: Counter = field(default_factory=Counter)
     quarantined: Counter = field(default_factory=Counter)        # reason -> count
     quarantine_span: dict = field(default_factory=dict)         # reason -> (first ref, last ref, first ms, last ms)
+    unmatched: dict = field(default_factory=dict)               # vendor event id -> why it is not this game
 
     def quarantine(self, reason: str, ref: str, ts_ms: int) -> None:
         """Never stored as a fact; the raw archive keeps the frame (DESIGN.md §2.4)."""
@@ -115,8 +118,11 @@ class _Books:
         self.w, self.iid, self.sides, self.cents = w, instrument_id, sides, cents_per_contract
         self.n = param("book.tick_levels")
         self.snapshot_interval_ms = param("book.full_snapshot_interval_s") * 1000
-        self.last_state: dict[str, tuple] = {}         # source -> top-N state of the last tick
+        self.last_state: dict[str, tuple | None] = {}  # source -> top-N state of the last tick
         self.last_snapshot_ms: dict[str, int] = {}
+        # source -> (book, snapshot ref) of the last stored state, while it is still the
+        # current one; None once a later state was quarantined or became untrusted.
+        self.current: dict[str, tuple | None] = {}
 
     def observe(self, book: BinaryBook, status: str, ref: str, snapshot_ref: str | None,
                 evidence_kind: str, snapshot_reason: str | None, report: IngestReport) -> None:
@@ -124,7 +130,9 @@ class _Books:
         best = [lv[0].price_e4 if lv else None for lv in ladders]
         if None not in best and best[0] + best[1] > 10_000:
             report.quarantine("crossed_book", ref, book.recv_ts_ms)
+            self.untrusted(book.source)
             return
+        self.current[book.source] = (book, snapshot_ref)
         top = tuple(tuple((lv.price, lv.qty) for lv in ladder[: self.n]) for ladder in ladders)
         state = (status, book.complete, top)
         # After a subscription, resync or recorder restart the state is re-established, so it
@@ -159,8 +167,39 @@ class _Books:
         self.w.rows[table] += len(rows)
 
     def evidence(self, source: str, kind: str, observed_ms: int, ref: str) -> None:
+        """Evidence that the last stored state is still current; nothing while it isn't."""
+        if self.current.get(source) is None:
+            return
         self.w.insert("liveness_evidence", dict(venue_instrument_id=self.iid, source=source, kind=kind,
                                                 observed_ts_ms=observed_ms, **self.w.cited(ref)))
+
+    def untrusted(self, source: str) -> None:
+        """The source's current state is not stored (quarantined, or a sequence gap): no
+        evidence may vouch for the last tick, and the next stored state is a new tick."""
+        self.current[source] = None
+        self.last_state[source] = None
+
+    def status_change(self, source: str, status: str, ref: str, recv_ts_ms: int, venue_ts_ms: int | None,
+                      report: IngestReport) -> None:
+        """A venue status change is a new tick even when the book is unchanged, so a stored
+        state never carries a status the venue has already left."""
+        if self.current.get(source) is None:
+            return                  # no current stored state to restate; the next one carries the status
+        book, snapshot_ref = self.current[source]
+        restated = dataclasses.replace(book, recv_ts_ms=recv_ts_ms, venue_ts_ms=venue_ts_ms)
+        self.observe(restated, status, ref, snapshot_ref, "delta_unchanged", None, report)
+
+
+def _poll_reasons(poll_gaps: list[gaps.Gap]):
+    """A poll that ends a collection gap re-establishes its subject's state: a resync, so a
+    new tick and a complete ladder. Using gaps.poll_gaps itself keeps ticks and gaps in step."""
+    recovery = {g.end_ref for g in poll_gaps if g.end_ref}
+
+    def reason(x, first_of_session: bool) -> str | None:
+        if first_of_session:
+            return "first_poll"
+        return "resync" if x.body.ref in recovery else None
+    return reason
 
 
 def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: Path = GAMES,
@@ -275,9 +314,19 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
         novig_status[market] = m.status
 
     # -- Novig: public book polls (before the stream) -------------------------------------------
+    novig_poll_gaps = gaps.poll_gaps("novig", novig_x, {"public_book"})
+    poll_reason = _poll_reasons(novig_poll_gaps)
     last_session: dict[str, str] = {}
     for x in novig_x:
-        if not (x.ok and x.request.get("purpose") == "public_book"):
+        if not x.ok:
+            continue
+        if x.request.get("purpose") == "catalog" and x.path.count("/") == 5:
+            m = novig.catalog_market(x)
+            if m.market in novig_books and m.status != novig_status[m.market]:
+                novig_status[m.market] = m.status
+                novig_books[m.market].status_change("poll", m.status, x.body.ref, m.recv_ts_ms, None, report)
+            continue
+        if x.request.get("purpose") != "public_book":
             continue
         book = novig.public_book(x)
         if book.market not in novig_books:
@@ -285,7 +334,7 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
         first_of_session = last_session.get(book.market) != x.request["session_id"]
         last_session[book.market] = x.request["session_id"]
         novig_books[book.market].observe(book, novig_status[book.market], x.body.ref, None, "poll_unchanged",
-                                         "first_poll" if first_of_session else None, report)
+                                         poll_reason(x, first_of_session), report)
 
     # -- Novig: stream replay -------------------------------------------------------------------
     stream_frames = list(archive.iter_frames(root, ws))
@@ -297,11 +346,15 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
             if market not in novig_books:
                 continue
             if isinstance(o, novig.Lifecycle):
-                novig_status[market] = o.status
+                if o.status != novig_status[market]:
+                    novig_status[market] = o.status
+                    novig_books[market].status_change("stream", o.status, o.ref, o.recv_ts_ms, o.venue_ts_ms, report)
                 if (obs := sources.from_lifecycle(o, game_pk)) is not None:
                     w.insert("off_observation", dict(event_id=event_id, source=obs.source, kind=obs.kind,
                                                      subject=obs.subject, detected_off_ts_ms=obs.detected_off_ts_ms,
                                                      observed_ts_ms=obs.observed_ts_ms, **w.cited(o.ref)))
+            elif isinstance(o, novig.SequenceGap) and o.channel == "book":
+                novig_books[market].untrusted("stream")
             elif isinstance(o, novig.Resync) and o.channel == "book":
                 resynced.add(market)
             elif isinstance(o, novig.ProbeCheck) and o.channel == "book" and o.status == "confirmed":
@@ -359,11 +412,15 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                 effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None, **w.cited(x.body.ref)))
         kbooks[ticker] = _Books(w, iid, kalshi.SIDES, int(cents))
         kstatus[ticker] = m.status
+    kalshi_gaps = gaps.poll_gaps("kalshi", kx, {"orderbook"})
+    poll_reason = _poll_reasons(kalshi_gaps)
     last_session = {}
     for x in kx:
         if x.ok and x.request.get("purpose") == "catalog":
             for m in kalshi.markets(x):
-                kstatus[m.ticker] = m.status
+                if m.ticker in kbooks and m.status != kstatus[m.ticker]:
+                    kstatus[m.ticker] = m.status
+                    kbooks[m.ticker].status_change("poll", m.status, x.body.ref, m.recv_ts_ms, None, report)
         if not (x.ok and x.request.get("purpose") == "orderbook" and kalshi.ticker_of(x) in kbooks):
             continue
         ticker = kalshi.ticker_of(x)
@@ -371,24 +428,33 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
         first_of_session = last_session.get(ticker) != x.request["session_id"]
         last_session[ticker] = x.request["session_id"]
         kbooks[ticker].observe(book, kstatus[ticker], x.body.ref, None, "poll_unchanged",
-                               "first_poll" if first_of_session else None, report)
+                               poll_reason(x, first_of_session), report)
 
     # -- The Odds API: vendor event alias, sportsbook instruments and mappings ------------------
     odds_segs = archive.overlapping(archive.segments(root, "odds_api"), lo, hi)
     w.know(odds_segs)
     ox = [x for x in archive.rest_exchanges(f for f in archive.iter_frames(root, odds_segs) if lo <= f.recv_ts_ms <= hi)
           if x.request.get("purpose") == "odds"]
-    teams = {first.away.name, first.home.name}
+    scheduled = {gm.scheduled_start_ms for _, gm in feeds}
     lines: dict[tuple[str, str], int] = {}
     aliased: set[str] = set()
     for x in ox:
         if not x.ok:
             continue
         for q in odds_api.quotes(x):
-            if {q.home_team, q.away_team} != teams or q.market != "h2h":
+            if q.market != "h2h" or {q.home_team, q.away_team} != {first.home.name, first.away.name}:
                 continue
-            evidence = (f"home {q.home_team!r} and away {q.away_team!r} are this game's StatsAPI teams; "
-                        f"commence_time {q.commence_time}; not yet verified by hand")
+            # The same teams can meet again within the window (a series, a doubleheader). A vendor
+            # event is this game only with the same home and away and commence_time on this game's
+            # StatsAPI schedule; anything else is reported, never guessed.
+            if (q.home_team, q.away_team) != (first.home.name, first.away.name):
+                report.unmatched[q.vendor_event_id] = "home and away reversed"
+                continue
+            if iso_ms(q.commence_time) not in scheduled:
+                report.unmatched[q.vendor_event_id] = f"commence_time {q.commence_time} is not the StatsAPI scheduled start"
+                continue
+            evidence = (f"home {q.home_team!r} and away {q.away_team!r} are this game's StatsAPI home and away; "
+                        f"commence_time {q.commence_time} is its StatsAPI scheduled start; not yet verified by hand")
             if q.vendor_event_id not in aliased:
                 aliased.add(q.vendor_event_id)
                 w.insert("event_alias", dict(
@@ -415,8 +481,8 @@ def _ingest(w: _Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
 
     # -- Collection gaps for this game's subjects ---------------------------------------------------
     subjects = {f"novig:market:{m}" for m in g["novig_markets"]} | {f"kalshi:market:{t}" for t in g["kalshi_tickers"]}
-    found = (gaps.stream_gaps("novig", stream_frames, replay) + gaps.poll_gaps("novig", novig_x, {"public_book"})
-             + gaps.poll_gaps("kalshi", kx, {"orderbook"}) + gaps.poll_gaps("odds_api", ox, {"odds"}))
+    found = (gaps.stream_gaps("novig", stream_frames, replay) + novig_poll_gaps + kalshi_gaps
+             + gaps.poll_gaps("odds_api", ox, {"odds"}))
     for gp in found:
         subject = gp.scope.split("/", 1)[0]
         if subject not in subjects and not subject.startswith("odds_api:"):

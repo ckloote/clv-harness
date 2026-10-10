@@ -238,6 +238,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"gamePk {rep.game_pk} -> event {rep.event_id} in {args.db}")
         for table, n in sorted(rep.rows.items()):
             print(f"  {table}: {n}")
+        for vendor_id, why in sorted(rep.unmatched.items()):
+            print(f"  not this game: The Odds API event {vendor_id} ({why})")
         for reason, n in sorted(rep.quarantined.items()):
             first_ref, last_ref, first_ms, last_ms = rep.quarantine_span[reason]
             print(f"  quarantined {reason}: {n}, {ms_iso(first_ms)} .. {ms_iso(last_ms)} ({first_ref} .. {last_ref})")
