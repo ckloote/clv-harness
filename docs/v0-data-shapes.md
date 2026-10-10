@@ -68,7 +68,7 @@ My recommendation: select the first pitch as the start, accept In Progress as th
    - A span runs from its subscribe snapshot to the last trustworthy observation: a snapshot, a contiguous delta, or a confirmed probe.
    - A confirmed probe extends the span but adds no book state, so the book's own change time stays put.
    - A sequence gap closes at the next trusted state for that market and channel, on any connection.
-   - A deliberate unsubscribe ends a span without a gap.
+   - A deliberate unsubscribe ends a span without a gap. That is decided from the subscribe and unsubscribe commands the recorder sent, so frames already in flight that arrive after the unsubscribe can't turn it into an outage.
 7. **Poll gaps can't detect a silent slowdown yet.** Within one recorder session, a poller that silently slows down is invisible until `poll_attempt` arrives with A4. Until then, a stale Kalshi book shows up as quote age (`close.max_quote_age_s`), not as a gap.
 
 ## Outside V0

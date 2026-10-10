@@ -85,10 +85,12 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
     `replay` (venues/novig/parser.StreamReplay, already fed) supplies what the
     data proves: coverage spans per subscription, sequence gaps and resyncs.
     `frames` supply what only the recorder knows: why each connection ended
-    (`ws_disconnected`) and when it unsubscribed a market (`out` frames).
+    (`ws_disconnected`) and which subscriptions it ended on purpose (its
+    `subscribe` and `unsubscribe` commands, the `out` frames).
     """
     end_reason: dict[str, str] = {}
-    unsubscribed: dict[tuple[str, str], list[int]] = defaultdict(list)     # (conn, market) -> times
+    # (conn, market) -> the recorder's subscribe/unsubscribe commands, as (send time, kind), in order.
+    commands: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
     for f in frames:
         if f.dir == "event":
             e = json.loads(f.frame)
@@ -96,14 +98,26 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
                 end_reason[f.conn_id] = e.get("reason") or "unknown"
         elif f.dir == "out":
             msg = json.loads(f.frame)
+            for market in ((msg.get("subscribe") or {}).get("markets") or {}):
+                commands[(f.conn_id, market)].append((f.recv_ts_ms, "subscribe"))
             for subject in msg.get("unsubscribe") or []:
                 if subject.startswith("market:"):
-                    unsubscribed[(f.conn_id, subject.removeprefix("market:"))].append(f.recv_ts_ms)
+                    commands[(f.conn_id, subject.removeprefix("market:"))].append((f.recv_ts_ms, "unsubscribe"))
 
-    def unsubscribed_after(span: Span, until: int | None = None) -> bool:
-        """The recorder ended this subscription on purpose after its last evidence."""
-        return any(span.last_ts <= t and (until is None or t <= until)
-                   for t in unsubscribed[(span.conn_id, span.market)])
+    def ended_on_purpose(span: Span, by: int | None = None) -> bool:
+        """The recorder unsubscribed the subscription this span belongs to (by time `by`, if given).
+
+        Decided from the commands the recorder sent, not from the span's last evidence:
+        frames already in flight can arrive after an unsubscribe and extend the span,
+        and they must not turn a deliberate end into an outage. The span belongs to the
+        last subscribe sent at or before its first evidence, and that subscription ends
+        at the first unsubscribe before the next subscribe.
+        """
+        cmds = commands[(span.conn_id, span.market)]
+        subs = [t for t, kind in cmds if kind == "subscribe" and t <= span.first_ts]
+        start = subs[-1] if subs else float("-inf")
+        resub = min((t for t, kind in cmds if kind == "subscribe" and t > start), default=float("inf"))
+        return any(kind == "unsubscribe" and start <= t < resub and (by is None or t <= by) for t, kind in cmds)
 
     gaps = []
     by_scope: dict[str, list[Span]] = defaultdict(list)
@@ -113,12 +127,12 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
         spans = sorted(spans, key=lambda sp: sp.first_ts)
         reach = spans[0]                    # the span whose coverage reaches furthest so far
         for nxt in spans[1:]:
-            if nxt.first_ts > reach.last_ts and not unsubscribed_after(reach, nxt.first_ts):
+            if nxt.first_ts > reach.last_ts and not ended_on_purpose(reach, by=nxt.first_ts):
                 gaps.append(Gap(source, scope, "reconnect", reach.last_ts, nxt.first_ts, reach.last_ref,
                                 nxt.first_ref))
             if nxt.last_ts >= reach.last_ts:
                 reach = nxt
-        if not unsubscribed_after(reach) and end_reason.get(reach.conn_id) not in PLANNED_CLOSES:
+        if not ended_on_purpose(reach) and end_reason.get(reach.conn_id) not in PLANNED_CLOSES:
             # Lost, or no end recorded (a killed process, or a segment not yet sealed):
             # either way coverage after the last trustworthy observation is unproven.
             reason = "connection_lost" if reach.conn_id in end_reason else "connection_end_unrecorded"

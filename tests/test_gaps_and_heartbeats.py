@@ -142,3 +142,24 @@ def test_sequence_gap_is_closed_by_the_replacement_connection():
 
 def test_overlapping_connections_leave_no_gap():
     assert stream_gaps(one_connection("c1", 100, 400, "recorder_stop"), one_connection("c2", 200, 500, "no_active_markets")) == []
+
+
+def test_in_flight_frame_after_unsubscribe_keeps_the_end_deliberate():
+    # Follow-up review: a delta already in flight arrives after the unsubscribe and extends B's span.
+    got = stream_gaps(connect(99, "c1", ["a", "b"]), subscribe(100, "c1", "a"), subscribe(100, "c1", "b"),
+                      unsubscribe(200, "c1", "b"), delta(201, "c1", "b", 2), delta(300, "c1", "a", 2),
+                      disconnected(400, "c1", "io_error"))
+    assert got == [("connection_lost", "a/book", 300, None)]
+
+
+def test_snapshot_arriving_after_unsubscribe_is_still_a_deliberate_end():
+    snapshot_in = subscribe(160, "c1", "b")[1]                      # sent at 100, unsubscribed at 150
+    got = stream_gaps(connect(99, "c1", ["b"]), subscribe(100, "c1", "b")[0], unsubscribe(150, "c1", "b"),
+                      snapshot_in, disconnected(400, "c1", "io_error"))
+    assert got == []
+
+
+def test_resubscription_after_an_unsubscribe_is_not_covered_by_it():
+    got = stream_gaps(connect(99, "c1", ["b"]), subscribe(100, "c1", "b"), unsubscribe(150, "c1", "b"),
+                      subscribe(200, "c1", "b", seq=5), delta(250, "c1", "b", 6), disconnected(400, "c1", "io_error"))
+    assert got == [("connection_lost", "b/book", 250, None)]
