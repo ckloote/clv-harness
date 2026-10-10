@@ -1,0 +1,325 @@
+# Harness parameters, created in V0 from DESIGN.md §10 and authoritative from now on.
+#
+# One table per §10 key: `value`, `status` (fixed | provisional) and `revised_by`
+# (the §10 "Set or revised by" cell, verbatim). Some keys carry extra fields
+# that §10 states in prose (for example a polling window); they are named here.
+# Durations whose §10 default is written in hours or minutes are stored in seconds.
+#
+# Rules (§10):
+# - No threshold exists outside this file. A value the code needs that is not
+#   here is added to DESIGN.md §10 first, then here.
+# - Fixed values change only by a design change. Provisional values change by a
+#   dated decision record in docs/decisions/, then here.
+# - A change that alters a metric's meaning creates a new close_def, resolver
+#   or run version; it never edits a reported result.
+#
+# tests/test_params.py checks every key against the §10 table, and the R0
+# values against tools/raw_recorder/config.toml.
+
+# --- Time ---------------------------------------------------------------------
+
+[time.unit]
+value = "ms"
+status = "fixed"
+revised_by = "—"
+
+[clock.ntp_offset_alert_ms]
+value = 100
+status = "provisional"
+revised_by = "A1 time-health telemetry"
+
+[clock.min_claimable_buffer_ms]
+value = 1000
+status = "provisional"
+revised_by = "A1"
+
+# --- R0 recorder (copied into tools/raw_recorder/config.toml) -------------------
+
+[r0.kalshi_poll_interval_s]
+value = 10
+status = "provisional"
+revised_by = "R0: observed Kalshi rate limits"
+
+[r0.odds_poll_interval_s]
+value = 1200
+status = "provisional"
+revised_by = "R0: free-tier credit budget"
+
+[r0.odds_quota_floor]
+value = 50
+status = "provisional"
+revised_by = "R0"
+
+[r0.capture_lead_s]
+value = 10800
+status = "provisional"
+revised_by = "R0: covers the 1 h and 15 min offsets with margin"
+
+[r0.capture_tail_s]
+value = 5400
+status = "provisional"
+revised_by = "R0: at least 30 min after first pitch"
+
+[r0.odds_window_lead_s]
+value = 10800
+status = "provisional"
+revised_by = "R0: free-tier credit budget"
+
+[r0.segment_max_s]
+value = 3600
+status = "provisional"
+revised_by = "R0/A1 measured volume"
+
+[r0.fsync_interval_s]
+value = 5
+status = "provisional"
+revised_by = "R0/A1 host storage"
+
+[r0.rest_timeout_s]
+value = 10
+status = "provisional"
+revised_by = "R0 observed latency"
+
+[r0.min_free_disk_mb]
+value = 5000
+status = "provisional"
+revised_by = "R0/A1 measured volume"
+
+[r0.stream_probe_reserve_fraction]
+value = 0.5
+status = "provisional"
+revised_by = "R0/A1 measured probe demand"
+
+[r0.novig_public_book_poll_interval_s]
+value = 10
+status = "provisional"
+revised_by = "R0; the public response is cached 5 s"
+
+# --- Streams and books ------------------------------------------------------------
+
+[stream.liveness_max_s]
+value = 30
+status = "provisional"
+revised_by = "R0/A1: subject-level evidence and probe latency"
+
+[stream.transport_liveness_max_s]
+value = 45
+status = "provisional"
+revised_by = "R0: 3× documented Novig 15 s Ping interval; independent of channel liveness"
+
+[stream.channel_probe_interval_s]
+value = 15
+status = "provisional"
+revised_by = "R0/A1: subscription semantics and actual quota"
+
+[stream.probe_timeout_s]
+value = 5
+status = "provisional"
+revised_by = "R0/A1: measured latency; timeout records a coverage failure"
+
+[stream.max_venue_lag_ms]
+value = 5000
+status = "provisional"
+revised_by = "R0/A1: about 2× observed p99"
+
+[stream.reconnect_backoff_s]
+value = { initial = 1, max = 60 }
+jitter = true
+status = "provisional"
+revised_by = "Vendor docs, A1"
+
+[book.tick_levels]
+value = 10
+status = "provisional"
+revised_by = "R0: must cover the largest benchmark notional; fail closed if truncated"
+
+[book.full_snapshot_interval_s]
+value = 300
+status = "provisional"
+revised_by = "A1 one-week storage pilot"
+
+# --- Polling ----------------------------------------------------------------------
+
+[odds.poll_interval_s]
+value = 300
+status = "provisional"
+revised_by = "A4 quota budget"
+
+[scores.poll_interval_s]
+value = 60
+from_scheduled_s = -1200        # scheduled −20 min
+until_scheduled_s = 14400       # until in-progress is observed, or scheduled +4 h
+status = "provisional"
+revised_by = "A2"
+
+[odds.quota_target_utilization]
+value = 0.65
+status = "provisional"
+revised_by = "A4"
+
+[odds.quota_degrade_at]
+value = 0.85                    # fraction used; also on projected exhaustion before reset
+status = "provisional"
+revised_by = "A4"
+
+# --- Off resolution ---------------------------------------------------------------
+
+[off.max_source_disagreement_s]
+value = 120
+status = "provisional"
+revised_by = "A2 agreement report"
+
+[off.scheduled_only]
+value = "no_trusted_off"        # a scheduled time alone is unscoreable
+status = "fixed"
+revised_by = "—"
+
+# --- Close ------------------------------------------------------------------------
+
+[close.buffer_s]
+value = 60
+status = "provisional"
+revised_by = "G2: conservative side of the oracle kink and contamination-injection tests"
+
+[close.buffer_sweep_s]
+value = [0, 30, 60, 120, 600]
+status = "fixed"
+revised_by = "—"
+
+[close.depth_notional_basis]
+value = "payout_usd_both_sides_proportional_final_level"
+status = "fixed"
+revised_by = "§2.4; contract multiplier retained per instrument"
+
+[close.depth_notionals_usd]
+value = [100, 500, 1000]
+status = "provisional"
+revised_by = "A3 liquidity pilot, before any model data"
+
+[close.primary_benchmark]
+value = "mid_depth_500"
+status = "provisional"
+revised_by = "Locked at G2 on development data"
+
+[close.max_quote_age_s]
+value = 1800
+status = "provisional"
+revised_by = "A3, per sport"
+
+[close.hist_vwap_window_s]
+value = 600
+status = "provisional"
+revised_by = "B2 coverage"
+
+[close.hist_vwap_min_executions]
+value = 5
+status = "provisional"
+revised_by = "B2"
+
+[close.hist_vwap_min_notional_usd]
+value = 250
+status = "provisional"
+revised_by = "B2"
+
+[close.hist_candle_rule]
+value = "interval_ends_before_cutoff"
+status = "fixed"
+revised_by = "—"
+
+# --- Entries ----------------------------------------------------------------------
+
+[entry.execution_delays_s]
+value = [5, 15, 30]
+status = "provisional"
+revised_by = "A4"
+
+[mapping.primary_cohort]
+value = ["exact", "manual_verified"]
+requires_settlement_equivalence = true
+status = "fixed"
+revised_by = "—"
+
+# --- Controls and acceptance --------------------------------------------------------
+
+[controls.sample_events]
+value = 1500
+status = "provisional"
+revised_by = "§9.4 item 12, then observed dispersion"
+
+# Not read from this file: the code constant MIN_CLUSTERS in src/clv/score/controls.py
+# is authoritative. Listed so the §10 table is complete; test_params.py checks they agree.
+[controls.min_clusters]
+value = 30
+code_constant = "clv.score.controls.MIN_CLUSTERS"
+status = "fixed"
+revised_by = "Normal-approximation floor, the code constant `MIN_CLUSTERS` in `controls.py`; not read from `params.toml`, changed only with the code and a simulation rerun; not the sample target"
+
+[controls.equivalence_ci]
+value = 0.90                    # event-clustered; two one-sided tests at 5%
+status = "fixed"
+revised_by = "—"
+
+[controls.martingale_offsets]
+value = [86400, 21600, 3600, 900]     # 24 h, 6 h, 1 h, 15 min before the trusted start bound
+status = "provisional"
+revised_by = "B2"
+
+[controls.martingale_margin_intercept_pp]
+value = 0.5
+status = "provisional"
+revised_by = "§9.4 item 12; tighter needs more events"
+
+[controls.martingale_margin_slope]
+value = 0.05
+status = "provisional"
+revised_by = "§9.4 item 12"
+
+[controls.martingale_curvature_radius_pp]
+value = 20
+status = "fixed"
+revised_by = "Defines the interpretable scale of the quadratic basis"
+
+[controls.martingale_margin_curvature_pp]
+value = 1.6
+status = "provisional"
+revised_by = "§9.4 items 12 and 14; tighten after B1/A1 dispersion is measured"
+
+[controls.martingale_price_bins]
+value = 5
+status = "provisional"
+revised_by = "B1/A1 sample support"
+
+[controls.martingale_bin_trigger_pp]
+value = 0.5
+status = "provisional"
+revised_by = "§9.4 item 19"
+
+[controls.agreement_devig_method]
+value = "proportional_two_way"
+status = "fixed"
+revised_by = "Calibration diagnostic only; §9.2"
+
+[controls.agreement_margin_slope]
+value = 0.15
+status = "provisional"
+revised_by = "V0/B3 observed distribution"
+
+[controls.agreement_outlier_pp]
+value = 8
+status = "provisional"
+revised_by = "V0/B3 observed distribution"
+
+[controls.agreement_max_verified_rate]
+value = 0.01
+status = "provisional"
+revised_by = "V0/B3 observed distribution"
+
+[controls.oracle_offsets]
+value = [86400, 21600, 3600, 900]     # 24 h, 6 h, 1 h, 15 min before the trusted start bound
+status = "provisional"
+revised_by = "G2"
+
+[stats.cluster_unit]
+value = "event"                 # with date-level sensitivity
+status = "fixed"
+revised_by = "—"

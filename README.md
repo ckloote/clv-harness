@@ -2,12 +2,15 @@
 
 Measurement infrastructure for evaluating sports-betting entries by **closing-line value (CLV)**: did an entry get a better price than an independent, defensible estimate of the same outcome's pre-event fair probability? It is deliberately built **before** any betting model. Its job is to make a claimed edge testable and to expose apparent edge that depends on timestamp errors, stale prices, mismatched contracts, illiquid reference markets or research choices.
 
-**Status: R0.** The raw postseason recorder is built. The harness proper (schema, ingestion, closes, scoring) starts at V0. See the implementation plan in [DESIGN.md §13](DESIGN.md).
+**Status: V0 in progress.** The R0 raw postseason recorder is built and recording. V0 so far has the parameters (`config/params.toml`) and parsers that read the raw archive; the schema, ingestion, closes and scoring come next. See the implementation plan in [DESIGN.md §13](DESIGN.md).
 
 | Document | What it is |
 |---|---|
 | [DESIGN.md](DESIGN.md) | The design: measurement contract, venues, archive format, schema, calibration, parameters (§10), plan (§13) |
 | [docs/vendor-capabilities.md](docs/vendor-capabilities.md) | Vendor facts with verification status and dates, plus a discrepancy log |
+| [docs/measurement-contract.md](docs/measurement-contract.md) | The v1 measurement contract: settlement states, venue equivalence, population |
+| [docs/feasibility.md](docs/feasibility.md) | The P0 feasibility verdict and the B0 historical sample |
+| [docs/v0-data-shapes.md](docs/v0-data-shapes.md) | What the recorded golden-game candidate looks like when parsed, and what that means for the V0 schema |
 | [docs/RESEARCH_PROTOCOL.md](docs/RESEARCH_PROTOCOL.md) | The model-evaluation protocol; inactive until a signal model exists |
 | [docs/decisions/](docs/decisions/) | Dated decision records explaining why the design is what it is |
 
@@ -15,8 +18,20 @@ Measurement infrastructure for evaluating sports-betting entries by **closing-li
 
 ```text
 pyproject.toml              uv workspace root: the `clv` harness package
-src/clv/score/controls.py   statistical core of the calibration checks (DESIGN.md §9.2)
-tests/                      calibration simulation and research-bound fixtures; these gate §9.2 and §10
+config/params.toml          every threshold the harness uses, from DESIGN.md §10; authoritative
+src/clv/
+  config.py                 loads params.toml; an unknown key is an error, never a default
+  archive.py                reads sealed §7.1 segments, checks their hashes, cites frames, joins REST envelopes
+  venues/protocol.py        normalized two-sided books: native prices and quantities, bids per venue side
+  venues/novig/parser.py    Novig stream replay (snapshot + deltas, sequence and probe checks), public book, catalog
+  venues/kalshi.py          Kalshi order-book polls and market listings
+  scoring/odds_api.py       The Odds API quotes, exact American-to-decimal odds, credits
+  mlb.py                    StatsAPI game identity, result and first-play times
+  off/sources.py            off observations: first pitch, status changes, Novig GOLIVE
+  gaps.py                   collection gaps from polls and streams
+  cli.py                    `clv inspect`
+  score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2)
+tests/                      parameters, archive reader, parsers, gaps; calibration simulation and research-bound fixtures
 tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp + cryptography only)
   config.toml               recorder parameters, each copied from DESIGN.md §10
   games.toml                the games, Novig markets and Kalshi tickers to record
@@ -37,7 +52,7 @@ deploy/raw-recorder.service systemd user unit
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
-The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5); the harness has none yet.
+The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5); the harness has none yet: the V0 migration comes next.
 
 ## Install
 
@@ -68,6 +83,14 @@ To print the calibration operating characteristics, which back the §10 margins:
 ```bash
 uv run pytest -s tests/test_calibration_simulation.py
 ```
+
+## Reading a recorded game
+
+```bash
+uv run clv inspect --game-pk 849832
+```
+
+`inspect` runs every V0 parser over one game's capture window from `tools/raw_recorder/games.toml` and prints what each source shows: the Novig stream replay and its checks, Kalshi and Odds API polls, StatsAPI identity and result, off observations, the books at first pitch minus `close.buffer_s`, and collection gaps. It reads sealed segments only, checks each one's hash, and writes nothing. The Novig stream for a two-hour game takes about 15 s.
 
 ## The R0 recorder
 
