@@ -16,10 +16,12 @@ Stream (wire shapes observed on Production, docs/vendor-capabilities.md):
 An order on an outcome is a bid for that outcome; it is liquidity for the
 other outcome at 1 - price. `seq` is per connection, market and channel.
 
-`StreamReplay.feed()` takes one connection's frames in order and returns what
-each one established: a book state, a probe check, a sequence gap, a trade or
+`StreamReplay.feed()` takes frames in receive order and returns what each one
+established: a book state, a probe check, a sequence gap, a resync, a trade or
 a lifecycle transition. A sequence gap makes the book untrusted until a new
-snapshot (DESIGN.md §7.2); the replay never guesses across it.
+snapshot (DESIGN.md §7.2); the replay never guesses across it. The replay is
+also the one judge of channel evidence: its coverage spans are what
+gaps.stream_gaps builds stream gaps from.
 """
 from __future__ import annotations
 
@@ -102,22 +104,52 @@ class Lifecycle:
     ref: str
 
 
+@dataclass
+class Span:
+    """Trusted coverage of one market's channel during one subscription on one connection.
+
+    It runs from the subscribe snapshot to the last trustworthy observation: a
+    snapshot install, a contiguous delta or a confirmed probe. A resubscription
+    starts a new span, so an unsubscribed interval is never covered. Sequence
+    gaps inside a span are reported separately (`StreamReplay.seq_gaps`). Mutable:
+    the replay extends the current span as evidence arrives.
+    """
+    conn_id: str
+    market: str
+    channel: str
+    first_ts: int
+    first_ref: str
+    last_ts: int
+    last_ref: str
+
+
 class _Channel:
     """Replayed state of one market's channel on one connection."""
     def __init__(self):
         self.seq: int | None = None         # None: no trusted state
         self.orders: dict[str, tuple[str, str, int]] = {}   # orderId -> (outcomeId, price, qty)
         self.outcomes: tuple[str, ...] = ()
-        self.last_ref: str | None = None
+        self.last_ref: str | None = None    # last trustworthy observation (channel evidence)
         self.last_ts: int | None = None
         self.snapshot_ref: str | None = None
-        self.gap_open = False
+        self.span: Span | None = None
 
 
 class StreamReplay:
+    """Replays any number of connections' frames, fed in receive order.
+
+    Besides each frame's outputs, it keeps what continuity needs (gaps.stream_gaps):
+    coverage `spans`, `seq_gaps` and the `resyncs` that close them. A gap on one
+    connection is closed by trusted state for the same market and channel on any
+    connection, including a replacement after a reconnect.
+    """
     def __init__(self):
         self.channels: dict[tuple[str, str, str], _Channel] = {}   # (conn, market, channel)
         self.trade_ids: set[str] = set()
+        self.spans: list[Span] = []
+        self.seq_gaps: list[SequenceGap] = []
+        self.resyncs: list[Resync] = []
+        self.open_gaps: set[tuple[str, str]] = set()             # (market, channel) awaiting a resync
 
     def feed(self, f: Frame) -> list:
         if f.dir != "in":
@@ -148,30 +180,34 @@ class StreamReplay:
     def _trades_snapshot(self, f: Frame, msg: dict, market: str, trades: dict) -> list:
         """A trades snapshot lists recent trades; it is checked by sequence only."""
         ch = self._ch(f.conn_id, market, "trades")
+        subscribed = "subscribed" in msg
         out: list = []
         for batch in trades.get("trades", []):
             out += self._trades(f, market, batch["deltas"])
-        if ch.seq is not None and "subscribed" not in msg:
+        if ch.seq is not None and not subscribed:
             seq = trades["seq"]
             status = "confirmed" if seq == ch.seq else "gap" if seq > ch.seq else "superseded"
             out.append(ProbeCheck(f.conn_id, market, "trades", msg.get("nonce"), ch.seq, seq, status,
                                   f.recv_ts_ms, f.ref))
-            if status != "gap":
+            if status == "confirmed":
+                self._evidence(ch, f, market, "trades")
+                return out
+            if status == "superseded":
                 return out
             out.append(self._gap(ch, f, market, "trades", seq))
-        if ch.gap_open:
-            out.append(Resync(f.conn_id, market, "trades", trades["seq"], f.recv_ts_ms, f.ref))
-        ch.seq, ch.snapshot_ref, ch.gap_open = trades["seq"], f.ref, False
-        ch.last_ref, ch.last_ts = f.ref, f.recv_ts_ms
+        out += self._resync(f, market, "trades", trades["seq"])
+        ch.seq, ch.snapshot_ref = trades["seq"], f.ref
+        self._evidence(ch, f, market, "trades", new_span=subscribed)
         return out
 
     def _book_snapshot(self, f: Frame, msg: dict, market: str, book: dict) -> list:
         ch = self._ch(f.conn_id, market, "book")
+        subscribed = "subscribed" in msg
         orders = {o["orderId"]: (outcome, o["price"], o["qty"])
                   for outcome, lst in book["orders"].items() for o in lst}
         outcomes = tuple(book["orders"])
         out: list = []
-        if ch.seq is not None and "subscribed" not in msg:
+        if ch.seq is not None and not subscribed:
             if book["seq"] == ch.seq:
                 status = "confirmed" if orders == ch.orders else "mismatch"
             elif book["seq"] > ch.seq:
@@ -180,15 +216,20 @@ class StreamReplay:
                 status = "superseded"
             out.append(ProbeCheck(f.conn_id, market, "book", msg.get("nonce"), ch.seq, book["seq"],
                                   status, f.recv_ts_ms, f.ref))
-            if status in ("confirmed", "superseded"):
-                return out          # an unchanged probe refreshes evidence, not the book (§7.2)
+            if status == "confirmed":
+                # Unchanged: fresh channel evidence, but no new book state, so the
+                # book's economic-change time stays where it was (§7.2).
+                self._evidence(ch, f, market, "book")
+                return out
+            if status == "superseded":
+                return out          # behind the replayed state: proves nothing new
             if status == "gap":
                 out.append(self._gap(ch, f, market, "book", book["seq"]))
-        if ch.gap_open:
-            out.append(Resync(f.conn_id, market, "book", book["seq"], f.recv_ts_ms, f.ref))
-        ch.seq, ch.orders, ch.snapshot_ref, ch.gap_open = book["seq"], orders, f.ref, False
-        ch.last_ref, ch.last_ts = f.ref, f.recv_ts_ms
+            # A mismatch installs the authoritative snapshot; the ProbeCheck reports the defect.
+        out += self._resync(f, market, "book", book["seq"])
+        ch.seq, ch.orders, ch.snapshot_ref = book["seq"], orders, f.ref
         ch.outcomes = outcomes or ch.outcomes
+        self._evidence(ch, f, market, "book", new_span=subscribed)
         out.append(self._state(f, msg, market, ch))
         return out
 
@@ -209,7 +250,8 @@ class StreamReplay:
                         continue    # already covered by a later snapshot
                     out.append(self._gap(ch, f, market, channel, batch["seq"]))
                     continue
-                ch.seq, ch.last_ref, ch.last_ts = batch["seq"], f.ref, f.recv_ts_ms
+                ch.seq = batch["seq"]
+                self._evidence(ch, f, market, channel)
             if channel == "book":
                 for d in batch["deltas"]:
                     self._apply(ch, d, f)
@@ -251,12 +293,34 @@ class StreamReplay:
                              f.recv_ts_ms, f.ref))
         return out
 
-    @staticmethod
-    def _gap(ch: _Channel, f: Frame, market: str, channel: str, got: int) -> SequenceGap:
+    # -- continuity ------------------------------------------------------------
+
+    def _evidence(self, ch: _Channel, f: Frame, market: str, channel: str, new_span: bool = False) -> None:
+        """The one place a trustworthy observation is recorded: it moves the channel's
+        evidence boundary and extends (or, on a subscribe snapshot, opens) its span."""
+        ch.last_ref, ch.last_ts = f.ref, f.recv_ts_ms
+        if new_span or ch.span is None:
+            ch.span = Span(f.conn_id, market, channel, f.recv_ts_ms, f.ref, f.recv_ts_ms, f.ref)
+            self.spans.append(ch.span)
+        else:
+            ch.span.last_ts, ch.span.last_ref = f.recv_ts_ms, f.ref
+
+    def _gap(self, ch: _Channel, f: Frame, market: str, channel: str, got: int) -> SequenceGap:
         """Record a gap and drop the channel's state until a snapshot re-establishes it."""
         gap = SequenceGap(f.conn_id, market, channel, ch.seq, got, ch.last_ref, ch.last_ts, f.ref, f.recv_ts_ms)
-        ch.seq, ch.gap_open = None, True
+        ch.seq = None
+        self.seq_gaps.append(gap)
+        self.open_gaps.add((market, channel))
         return gap
+
+    def _resync(self, f: Frame, market: str, channel: str, seq: int) -> list:
+        """Trusted state for a market and channel with an open gap, on any connection."""
+        if (market, channel) not in self.open_gaps:
+            return []
+        self.open_gaps.discard((market, channel))
+        r = Resync(f.conn_id, market, channel, seq, f.recv_ts_ms, f.ref)
+        self.resyncs.append(r)
+        return [r]
 
     def _ch(self, conn: str, market: str, channel: str) -> _Channel:
         return self.channels.setdefault((conn, market, channel), _Channel())

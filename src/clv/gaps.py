@@ -11,10 +11,14 @@ What the archive can prove in V0:
   came from different recorder sessions (a restart). A poller that silently
   slowed down inside one session is not detected here: that needs the schedule
   itself, which arrives with `poll_attempt` in A4.
-- Streams (Novig): a gap at every sequence gap (until the next snapshot), and
-  between connections for the same subject and channel. A connection the
-  recorder closed on purpose (stopped, or the capture window ended) ends
-  coverage; it is not a gap. Any other end is an open gap.
+- Streams (Novig): coverage is the stream replay's spans, one per subscription
+  of a market's channel, extended by every trustworthy observation (snapshot,
+  contiguous delta, confirmed probe). A gap at every sequence gap, until trusted
+  state returns on any connection; and between spans of the same market and
+  channel that neither overlap nor were separated by a deliberate unsubscribe.
+  A subscription the recorder ended on purpose (unsubscribed, stopped, or the
+  capture window ended) ends coverage; it is not a gap. Any other end is an
+  open gap from that market's last trustworthy observation.
 
 Before a subject's first observation there is no coverage, and no gap either:
 the close function requires coverage, so a missing start is never mistaken for
@@ -28,7 +32,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from clv.archive import Frame, RestExchange
-from clv.venues.novig.parser import Resync, SequenceGap
+from clv.venues.novig.parser import Span, StreamReplay
 
 
 # Recorder close reasons (tools/raw_recorder/.../novig/stream.py) that end coverage on purpose:
@@ -75,52 +79,54 @@ def poll_gaps(source: str, exchanges: Iterable[RestExchange], purposes: set[str]
     return sorted(gaps, key=lambda g: (g.scope, g.start_ms))
 
 
-@dataclass
-class _Conn:
-    subjects: tuple[str, ...] = ()
-    channel: str = ""
-    first_in: Frame | None = None
-    last_in: Frame | None = None
-    end_reason: str | None = None
+def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> list[Gap]:
+    """Gaps for a WebSocket source.
 
-
-def stream_gaps(source: str, frames: Iterable[Frame], seq_gaps: Iterable[SequenceGap] = (),
-                resyncs: Iterable[Resync] = ()) -> list[Gap]:
-    """Gaps for a WebSocket source, from its connection events, received frames
-    and the sequence gaps and resyncs a replay found (venues/novig/parser.StreamReplay)."""
-    conns: dict[str, _Conn] = {}
+    `replay` (venues/novig/parser.StreamReplay, already fed) supplies what the
+    data proves: coverage spans per subscription, sequence gaps and resyncs.
+    `frames` supply what only the recorder knows: why each connection ended
+    (`ws_disconnected`) and when it unsubscribed a market (`out` frames).
+    """
+    end_reason: dict[str, str] = {}
+    unsubscribed: dict[tuple[str, str], list[int]] = defaultdict(list)     # (conn, market) -> times
     for f in frames:
-        c = conns.setdefault(f.conn_id, _Conn())
         if f.dir == "event":
             e = json.loads(f.frame)
-            if e["type"] == "ws_connect_attempt":
-                c.subjects = tuple(f"novig:market:{m}" for m in e.get("markets", []))
-                c.channel = e.get("channel", "")
-            elif e["type"] == "ws_disconnected":     # the recorder's final word on the connection
-                c.end_reason = e.get("reason") or "unknown"
-        elif f.dir == "in":
-            c.first_in = c.first_in or f
-            c.last_in = f
+            if e.get("type") == "ws_disconnected":     # the recorder's final word on the connection
+                end_reason[f.conn_id] = e.get("reason") or "unknown"
+        elif f.dir == "out":
+            msg = json.loads(f.frame)
+            for subject in msg.get("unsubscribe") or []:
+                if subject.startswith("market:"):
+                    unsubscribed[(f.conn_id, subject.removeprefix("market:"))].append(f.recv_ts_ms)
+
+    def unsubscribed_after(span: Span, until: int | None = None) -> bool:
+        """The recorder ended this subscription on purpose after its last evidence."""
+        return any(span.last_ts <= t and (until is None or t <= until)
+                   for t in unsubscribed[(span.conn_id, span.market)])
+
     gaps = []
-    runs: dict[str, list[_Conn]] = defaultdict(list)
-    for c in conns.values():
-        if c.first_in is not None:
-            for s in c.subjects:
-                runs[f"{s}/{c.channel}"].append(c)
-    for scope, cs in runs.items():
-        cs.sort(key=lambda c: c.first_in.recv_ts_ms)
-        for a, b in zip(cs, cs[1:]):
-            gaps.append(Gap(source, scope, "reconnect", a.last_in.recv_ts_ms, b.first_in.recv_ts_ms,
-                            a.last_in.ref, b.first_in.ref))
-        last = cs[-1]
-        if last.end_reason not in PLANNED_CLOSES:
+    by_scope: dict[str, list[Span]] = defaultdict(list)
+    for sp in replay.spans:
+        by_scope[f"novig:market:{sp.market}/{sp.channel}"].append(sp)
+    for scope, spans in by_scope.items():
+        spans = sorted(spans, key=lambda sp: sp.first_ts)
+        reach = spans[0]                    # the span whose coverage reaches furthest so far
+        for nxt in spans[1:]:
+            if nxt.first_ts > reach.last_ts and not unsubscribed_after(reach, nxt.first_ts):
+                gaps.append(Gap(source, scope, "reconnect", reach.last_ts, nxt.first_ts, reach.last_ref,
+                                nxt.first_ref))
+            if nxt.last_ts >= reach.last_ts:
+                reach = nxt
+        if not unsubscribed_after(reach) and end_reason.get(reach.conn_id) not in PLANNED_CLOSES:
             # Lost, or no end recorded (a killed process, or a segment not yet sealed):
-            # either way coverage after the last frame is unproven.
-            reason = "connection_lost" if last.end_reason else "connection_end_unrecorded"
-            gaps.append(Gap(source, scope, reason, last.last_in.recv_ts_ms, None, last.last_in.ref, None))
-    resyncs = sorted(resyncs, key=lambda r: r.recv_ts_ms)
-    for g in seq_gaps:
-        end = next((r for r in resyncs if (r.conn_id, r.market, r.channel) == (g.conn_id, g.market, g.channel)
+            # either way coverage after the last trustworthy observation is unproven.
+            reason = "connection_lost" if reach.conn_id in end_reason else "connection_end_unrecorded"
+            gaps.append(Gap(source, scope, reason, reach.last_ts, None, reach.last_ref, None))
+    resyncs = sorted(replay.resyncs, key=lambda r: r.recv_ts_ms)
+    for g in replay.seq_gaps:
+        # Closed by trusted state for the same market and channel on any connection.
+        end = next((r for r in resyncs if (r.market, r.channel) == (g.market, g.channel)
                     and r.recv_ts_ms >= g.recv_ts_ms), None)
         gaps.append(Gap(source, f"novig:market:{g.market}/{g.channel}", "sequence_gap",
                         g.last_recv_ts_ms if g.last_recv_ts_ms is not None else g.recv_ts_ms,
