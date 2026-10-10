@@ -41,9 +41,9 @@ The licensed books' last pregame prices for CLE, from the 23:52 poll, were Draft
 
 Each StatsAPI claim appears in four archived responses: the feed and the play-by-play, at 01:30 and at 12:03. All four agree.
 
-**Decision needed before PR 3: which source sets the earliest plausible start.** DESIGN.md §5.2 derives the conservative close boundary from the earliest credible start bound across accepted sources. The official In Progress status change came 47 s before the first pitch, and Novig's `GOLIVE` 19 s after that status change. If In Progress is an accepted source, the cutoff moves from 00:07:51.9 to 00:07:05.0.
+**Which source sets the earliest plausible start** (decided in `docs/decisions/2026-10-10-v0-golden-game.md`: the earliest accepted claim, here In Progress). DESIGN.md §5.2 derives the conservative close boundary from the earliest credible start bound across accepted sources. The official In Progress status change came 47 s before the first pitch, and Novig's `GOLIVE` 19 s after that status change. If In Progress is an accepted source, the cutoff moves from 00:07:51.9 to 00:07:05.0.
 
-My recommendation: select the first pitch as the start, accept In Progress as the earliest plausible bound, and keep `GOLIVE` as the venue-perception alternative. This costs 47 s of pregame data. It goes in a decision record with the resolver.
+The resolver selects the first pitch as the start and takes In Progress as the earliest plausible bound; `GOLIVE` is accepted too and would set the bound had it come first. This costs 47 s of pregame data.
 
 ## What this changes in the V0 schema
 

@@ -1,0 +1,21 @@
+# V0 golden game: the signals and entry recorded for gamePk 849832 (CLE @ CWS, ALDS Game 4).
+# One manual entry on the Guardians at DraftKings, an hour before the scheduled start, and
+# the no-bet signal on the White Sox at the same decision time (DESIGN.md §13, V0).
+game_pk = 849832
+
+[[signal]]
+outcome = "CLE"
+kind = "manual"
+producer = "v0-golden-849832"
+decision = "2026-10-08T23:05:00Z"
+would_bet = 1
+policy_version = "v0"
+entry = { venue = "odds_api", operator = "draftkings" }
+
+[[signal]]
+outcome = "CWS"
+kind = "manual"
+producer = "v0-golden-849832"
+decision = "2026-10-08T23:05:00Z"
+would_bet = 0
+policy_version = "v0"

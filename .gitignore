@@ -2,8 +2,9 @@
 __pycache__/
 # Virtual environment managed by uv.
 .venv/
-# Raw evidence archive: large, backed up separately, never committed.
-archive/
+# Raw evidence archive: large, backed up separately, never committed. Root only: the
+# synthetic golden game's archive under tests/fixtures/ is committed on purpose.
+/archive/
 # Secrets must never be committed.
 *.pem
 .env
