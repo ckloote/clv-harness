@@ -61,7 +61,7 @@ My recommendation: select the first pitch as the start, accept In Progress as th
    - The stream's end at 01:30 was planned (`no_active_markets`).
    - The 20 s handoff from the Novig public poll to the stream is a change of source, not a gap within either one.
 
-   A close needs continuous coverage by the source it uses, so `collection_gap` has a companion: the first and last trustworthy observation of each subject and channel.
+   A close needs continuous coverage by the source it uses. In 0001 that is `collection_gap` plus `liveness_evidence`: every confirmed probe, unchanged poll and unchanged delta, beside the ticks. That replaced the coverage companion first proposed here (`migrations/CHANGELOG.md`).
 
    For the stream, coverage comes from the replay, which is the only judge of channel evidence:
    - Each subscription of a market's channel is one span, including a market subscribed after the socket opened. A resubscription starts a new span.

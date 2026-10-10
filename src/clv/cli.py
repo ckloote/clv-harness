@@ -1,6 +1,8 @@
 """`clv` command line.
 
     clv inspect --game-pk 849832     parse one recorded game from the raw archive and summarize it
+    clv migrate                      create or upgrade the database (data/clv.sqlite by default)
+    clv ingest --game-pk 849832      load one recorded game's facts into the database
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -9,38 +11,21 @@ checks, polls, quotes, off observations and gaps. It writes nothing.
 from __future__ import annotations
 
 import argparse
-import tomllib
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from clv import archive, gaps, mlb
+from clv import archive, db, gaps, ingest, mlb
 from clv.config import param
+from clv.games import GAMES, capture_window, load_game
 from clv.off import sources
 from clv.scoring import odds_api
-from clv.timeutil import iso_ms, ms_iso
+from clv.timeutil import ms_iso
 from clv.venues import kalshi
 from clv.venues.novig import parser as novig
 from clv.venues.protocol import BinaryBook
 
 REPO = Path(__file__).resolve().parents[2]
-GAMES = REPO / "tools" / "raw_recorder" / "games.toml"
-
-
-def load_game(path: Path, game_pk: int) -> dict:
-    with open(path, "rb") as f:
-        games = tomllib.load(f)["game"]
-    for g in games:
-        if g["game_pk"] == game_pk:
-            return g
-    raise SystemExit(f"game_pk {game_pk} is not in {path}")
-
-
-def capture_window(g: dict) -> tuple[int, int]:
-    start = iso_ms(g["scheduled_start_utc"])
-    lead = g.get("capture_lead_s", param("r0.capture_lead_s"))
-    tail = g.get("capture_tail_s", param("r0.capture_tail_s"))
-    return start - lead * 1000, start + tail * 1000
 
 
 def fmt_book(book, side: str, names: dict[str, str]) -> str:
@@ -98,7 +83,7 @@ def game_subject(scope: str, g: dict) -> bool:
 
 
 def inspect(root: Path, game_pk: int, games_path: Path) -> None:
-    g = load_game(games_path, game_pk)
+    g = load_game(game_pk, games_path)
     lo, hi = capture_window(g)
     print(f"# {g['label']} (gamePk {game_pk})")
     print(f"capture window {ms_iso(lo)} .. {ms_iso(hi)}\n")
@@ -230,9 +215,34 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--game-pk", type=int, required=True)
     p.add_argument("--archive", type=Path, default=REPO / "archive")
     p.add_argument("--games", type=Path, default=GAMES, help="recorder game list (default: %(default)s)")
+    p = sub.add_parser("migrate", help="create or upgrade the database")
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p = sub.add_parser("ingest", help="load one recorded game's facts into the database")
+    p.add_argument("--game-pk", type=int, required=True)
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--archive", type=Path, default=REPO / "archive")
+    p.add_argument("--games", type=Path, default=GAMES, help="recorder game list (default: %(default)s)")
     args = ap.parse_args(argv)
     if args.cmd == "inspect":
         inspect(args.archive, args.game_pk, args.games)
+    elif args.cmd == "migrate":
+        conn = db.connect(args.db)
+        print(f"{args.db}: applied {db.migrate(conn) or 'nothing (up to date)'}")
+    elif args.cmd == "ingest":
+        conn = db.connect(args.db)
+        db.migrate(conn)
+        try:
+            rep = ingest.ingest_game(conn, args.archive, args.game_pk, args.games)
+        except ingest.IngestError as exc:
+            raise SystemExit(f"clv ingest: {exc}") from None
+        print(f"gamePk {rep.game_pk} -> event {rep.event_id} in {args.db}")
+        for table, n in sorted(rep.rows.items()):
+            print(f"  {table}: {n}")
+        for vendor_id, why in sorted(rep.unmatched.items()):
+            print(f"  not this game: The Odds API event {vendor_id} ({why})")
+        for reason, n in sorted(rep.quarantined.items()):
+            first_ref, last_ref, first_ms, last_ms = rep.quarantine_span[reason]
+            print(f"  quarantined {reason}: {n}, {ms_iso(first_ms)} .. {ms_iso(last_ms)} ({first_ref} .. {last_ref})")
 
 
 if __name__ == "__main__":
