@@ -38,6 +38,9 @@ from clv.venues.novig.parser import Span, StreamReplay
 # Recorder close reasons (tools/raw_recorder/.../novig/stream.py) that end coverage on purpose:
 # the process was stopped, or the capture window for every subscribed market ended.
 PLANNED_CLOSES = {"recorder_stop", "no_active_markets"}
+# Gap reasons the ingest writes when it quarantines a state that replaced the stored one
+# (DESIGN.md §2.4): from the stored state's last trustworthy observation to the next stored state.
+QUARANTINE_REASONS = frozenset({"crossed_book"})
 
 
 @dataclass(frozen=True)

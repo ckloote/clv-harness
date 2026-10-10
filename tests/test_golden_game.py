@@ -92,8 +92,8 @@ def test_every_number_cites_a_hashed_frame(synthetic):
     before = synthetic["before"]
     for s in before["scores"]:
         assert s["entry"]["decision_quote"]["frame"]["sha256"]
-        for book in (s["ref_entry_book"],):
-            assert book is None or before["books"][book]["frame"]["ref"] == book
+        book = s["ref_entry_book"]
+        assert book is None or book == f'{before["books"][book]["instrument"]}@{before["books"][book]["frame"]["ref"]}'
     for c in before["closes"]:
         assert c["p_close"] is None or before["books"][c["book"]]["snapshot_frame"] is not None \
             or before["books"][c["book"]]["source"] == "poll"

@@ -115,7 +115,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
     "quote_age_ms": 39960,
     "liveness_age_ms": 9960,
     "p_close": {
@@ -147,7 +147,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -176,7 +176,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -208,7 +208,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -240,7 +240,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
     "quote_age_ms": 39960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -269,7 +269,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -298,7 +298,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": null,
@@ -327,7 +327,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": null,
@@ -356,7 +356,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
     "quote_age_ms": 39960,
     "liveness_age_ms": 9960,
     "p_close": {
@@ -388,7 +388,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -417,7 +417,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -449,7 +449,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -481,7 +481,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
+    "book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
     "quote_age_ms": 39960,
     "liveness_age_ms": 9960,
     "p_close": {
@@ -513,7 +513,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -542,7 +542,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -574,7 +574,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -650,7 +650,7 @@
      "exact": "1021/2000",
      "decimal": "0.510500"
     },
-    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-6711/118000",
@@ -717,7 +717,7 @@
      "exact": "49/100",
      "decimal": "0.490000"
     },
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-9/118",
@@ -778,7 +778,7 @@
     },
     "p_close": null,
     "p_ref_entry": null,
-    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
     "ref_entry_reason": "truncated_ladder",
     "clv_ev": null,
     "null_ev": null,
@@ -831,7 +831,7 @@
     },
     "p_close": null,
     "p_ref_entry": null,
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": "insufficient_depth",
     "clv_ev": null,
     "null_ev": null,
@@ -890,7 +890,7 @@
      "exact": "1043/2000",
      "decimal": "0.521500"
     },
-    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-4313/118000",
@@ -957,7 +957,7 @@
      "exact": "499/1000",
      "decimal": "0.499000"
     },
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-791/11800",
@@ -1024,7 +1024,7 @@
      "exact": "51/100",
      "decimal": "0.510000"
     },
-    "ref_entry_book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
+    "ref_entry_book": "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-341/5900",
@@ -1091,7 +1091,7 @@
      "exact": "49/100",
      "decimal": "0.490000"
     },
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-9/118",
@@ -1112,7 +1112,38 @@
    }
   ],
   "books": {
-   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28": {
+   "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7": {
+    "frame": {
+     "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+     "sha256": "fc1f1b561f840cb3d54fa3284a98c924e1bb118f0770b7200a6265415c0dbafb"
+    },
+    "snapshot_frame": null,
+    "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
+    "source": "poll",
+    "seq": null,
+    "venue_status": "active",
+    "venue_ts": null,
+    "observed": "2026-04-01T10:59:20.040Z",
+    "truncated": false,
+    "ladder_complete": true,
+    "levels": {
+     "side0": [
+      [
+       "0.4800",
+       "800.00",
+       80000
+      ]
+     ],
+     "side1": [
+      [
+       "0.5000",
+       "800.00",
+       80000
+      ]
+     ]
+    }
+   },
+   "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28": {
     "frame": {
      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#28",
      "sha256": "e17517ddf7cc23eb37ae48543d8d453c0ce63d2e62d6a575c0ff15b79e0aa9cd"
@@ -1193,7 +1224,7 @@
      ]
     }
    },
-   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4": {
+   "kalshi:KXMLBGAME-26APR021200CLECWS-CLE@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4": {
     "frame": {
      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#4",
      "sha256": "57231ba7c302a505c6dd1e911de0dfa5082e8a09f4290a5b4adfd01520bc8b62"
@@ -1274,38 +1305,7 @@
      ]
     }
    },
-   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7": {
-    "frame": {
-     "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
-     "sha256": "fc1f1b561f840cb3d54fa3284a98c924e1bb118f0770b7200a6265415c0dbafb"
-    },
-    "snapshot_frame": null,
-    "instrument": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS",
-    "source": "poll",
-    "seq": null,
-    "venue_status": "active",
-    "venue_ts": null,
-    "observed": "2026-04-01T10:59:20.040Z",
-    "truncated": false,
-    "ladder_complete": true,
-    "levels": {
-     "side0": [
-      [
-       "0.4800",
-       "800.00",
-       80000
-      ]
-     ],
-     "side1": [
-      [
-       "0.5000",
-       "800.00",
-       80000
-      ]
-     ]
-    }
-   },
-   "novig/2026-04-01/syn-c1.0001.jsonl.gz#2": {
+   "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2": {
     "frame": {
      "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
      "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
@@ -1349,7 +1349,7 @@
      ]
     }
    },
-   "novig/2026-04-01/syn-c1.0001.jsonl.gz#5": {
+   "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5": {
     "frame": {
      "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
      "sha256": "f28a95304961b3d1bab9a95b28be0973a115377e36544a81cc4931344ccf1d6f"
@@ -1525,7 +1525,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -1554,7 +1554,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -1586,7 +1586,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -1632,7 +1632,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -1661,7 +1661,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": null,
@@ -1690,7 +1690,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": null,
@@ -1733,7 +1733,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -1762,7 +1762,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -1794,7 +1794,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -1840,7 +1840,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
+    "book": "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
     "quote_age_ms": 3879960,
     "liveness_age_ms": 9960,
     "p_close": null,
@@ -1869,7 +1869,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -1901,7 +1901,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
-    "book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
+    "book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
     "quote_age_ms": 840000,
     "liveness_age_ms": 9950,
     "p_close": {
@@ -2023,7 +2023,7 @@
      "exact": "49/100",
      "decimal": "0.490000"
     },
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-9/118",
@@ -2129,7 +2129,7 @@
     },
     "p_close": null,
     "p_ref_entry": null,
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": "insufficient_depth",
     "clv_ev": null,
     "null_ev": null,
@@ -2233,7 +2233,7 @@
      "exact": "499/1000",
      "decimal": "0.499000"
     },
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-791/11800",
@@ -2345,7 +2345,7 @@
      "exact": "49/100",
      "decimal": "0.490000"
     },
-    "ref_entry_book": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
+    "ref_entry_book": "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-9/118",
@@ -2365,7 +2365,7 @@
    }
   ],
   "books": {
-   "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7": {
+   "kalshi:KXMLBGAME-26APR011200CLECWS-CWS@kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7": {
     "frame": {
      "ref": "kalshi/2026-04-01/kalshi-syn.0001.jsonl.gz#7",
      "sha256": "fc1f1b561f840cb3d54fa3284a98c924e1bb118f0770b7200a6265415c0dbafb"
@@ -2396,7 +2396,7 @@
      ]
     }
    },
-   "novig/2026-04-01/syn-c1.0001.jsonl.gz#2": {
+   "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#2": {
     "frame": {
      "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#2",
      "sha256": "80087910d52f7f4843942fc30d35dd7be7e2ee7b71543093b090f89360be43fb"
@@ -2440,7 +2440,7 @@
      ]
     }
    },
-   "novig/2026-04-01/syn-c1.0001.jsonl.gz#5": {
+   "novig:syn-mkt@novig/2026-04-01/syn-c1.0001.jsonl.gz#5": {
     "frame": {
      "ref": "novig/2026-04-01/syn-c1.0001.jsonl.gz#5",
      "sha256": "f28a95304961b3d1bab9a95b28be0973a115377e36544a81cc4931344ccf1d6f"

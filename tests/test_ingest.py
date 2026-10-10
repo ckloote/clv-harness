@@ -14,6 +14,7 @@ from raw_recorder.archive import ArchiveWriter
 
 from clv import db
 from clv.ingest import IngestError, ingest_game
+from clv.timeutil import iso_ms
 
 T = 1_791_504_000_000            # scheduled start 2026-10-09T00:00:00Z
 PK = 849832
@@ -297,7 +298,9 @@ def test_off_observations_and_gaps(recorded):
         ("mlb_statsapi", "status_in_progress", T + 484_996, 2), ("novig_stream", "venue_golive", T + 503_244, 1),
         ("mlb_statsapi", "first_pitch", T + 531_917, 2)]
     gaps = q(c, "SELECT kind, scope, reason, boundary_ts_ms FROM collection_gap ORDER BY collection_gap_id")
-    expected = []
+    # The in-play crossed delta replaces the stored book (the GOLIVE status tick): a quarantine gap
+    # opens there and never closes, since the book stays crossed (review of PR #8).
+    expected = [("open", f"novig:market:{M}/book", "crossed_book", T + 503_244)]
     for ticker in TICKERS:
         expected += [("open", f"kalshi:market:{ticker}", "request_failed", T - 1_999_995),
                      ("close", f"kalshi:market:{ticker}", "request_failed", T - 1_989_995),
@@ -330,12 +333,13 @@ def test_rejected_snapshot_cannot_restate_the_old_book_as_open(recorded_crossed_
     assert q(c, "SELECT count(*) FROM liveness_evidence WHERE source = 'stream' AND observed_ts_ms > ?",
              T - 400_000) == [(0,)]
     assert rep.quarantined == {"crossed_book": 1}
-    # On a gap the feed itself resynced, so the sequence gap closes there; the close function
-    # (PR 3) then finds only the CLOSED seq 12 tick before the gap, which it must reject.
+    # On a gap the feed itself resynced, so the sequence gap closes there, and the close function
+    # finds only the CLOSED seq 12 tick before the gap, which it rejects. On a mismatch the crossed
+    # replacement quarantines the CLOSED book, so a quarantine gap opens at it and stays open.
     novig_gaps = q(c, "SELECT kind, reason, boundary_ts_ms FROM collection_gap WHERE scope LIKE 'novig:%' "
                       "ORDER BY collection_gap_id")
     assert novig_gaps == ([("open", "sequence_gap", T - 400_000), ("close", "sequence_gap", T - 300_000)]
-                          if kind == "gap" else [])
+                          if kind == "gap" else [("open", "crossed_book", T - 400_000)])
 
 
 def test_lifecycle_freshness_does_not_follow_the_book_sequence(recorded_late_snapshot):
@@ -415,8 +419,12 @@ def test_recorded_849832_ingests():
     assert q(c, "PRAGMA foreign_key_check") == []
     assert rep.rows["venue_instrument"] == 12 and rep.rows["instrument_mapping_observation"] == 24
     assert rep.rows["off_observation"] == 14
-    assert rep.rows["collection_gap"] == 22               # 11 open/close pairs, all closed
-    assert q(c, "SELECT count(*) FROM collection_gap WHERE kind = 'open'") == [(11,)]
+    # 11 restart gaps, all closed, and 74 in-play quarantine gaps, the last still open at the end.
+    assert q(c, "SELECT reason, kind, count(*) FROM collection_gap GROUP BY 1, 2 ORDER BY 1, 2") == [
+        ("crossed_book", "close", 73), ("crossed_book", "open", 74), ("recorder_restart", "close", 11),
+        ("recorder_restart", "open", 11)]
+    assert q(c, "SELECT min(boundary_ts_ms) > ? FROM collection_gap WHERE reason = 'crossed_book'",
+             iso_ms("2026-10-09T00:09:00Z")) == [(1,)]
     # Every stream state before GOLIVE is uncrossed and complete; the crossing is all in-play.
     golive = q(c, "SELECT detected_off_ts_ms FROM off_observation WHERE kind = 'venue_golive'")[0][0]
     span = rep.quarantine_span["crossed_book"]

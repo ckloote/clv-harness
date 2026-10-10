@@ -290,3 +290,67 @@ def test_entries_need_a_bet_and_a_known_outcome(conn, tmp_path):
     with pytest.raises(entries.EntryError, match="no draftkings quote"):
         entries.record(conn, ARCHIVE, spec(tmp_path, "2026-04-01T09:00:00Z"), NOW, GAMES)
     assert conn.execute("SELECT count(*) FROM signal").fetchone()[0] == 2         # nothing half-written
+
+
+# -- the trace ----------------------------------------------------------------------------------------
+
+def test_books_from_one_frame_keep_their_own_instrument_in_the_trace(conn):
+    # One frame can establish two instruments' books (a listing changing both tickers' status).
+    # Here a Kalshi CWS tick cites the frame of the latest CLE tick: each close must trace to its own.
+    from clv import trace
+    cle = conn.execute("""SELECT t.* FROM tick t JOIN venue_instrument v USING (venue_instrument_id)
+                          WHERE v.native_id = ? ORDER BY observed_ts_ms DESC LIMIT 1""", (golden.K_CLE,)).fetchone()
+    cws_tick = conn.execute("""SELECT t.tick_id, t.venue_instrument_id FROM tick t JOIN venue_instrument v
+                               USING (venue_instrument_id) WHERE v.native_id = ? ORDER BY observed_ts_ms DESC LIMIT 1""",
+                            (golden.K_CWS,)).fetchone()
+    row = dict(cle)
+    row.pop("tick_id")
+    row.update(venue_instrument_id=cws_tick[1], observed_ts_ms=S + 235 * SEC, bid0_e4=4800, bid1_e4=5000)
+    tid = conn.execute(f"INSERT INTO tick ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+                       tuple(row.values())).lastrowid
+    conn.execute("INSERT INTO tick_level (tick_id, side, rank, price_native, price_e4, qty_native, payout_cents)"
+                 " SELECT ?, side, rank, price_native, price_e4, qty_native, payout_cents FROM tick_level"
+                 " WHERE tick_id = ?", (tid, cws_tick[0]))
+    doc = trace.trace(conn, run(conn).scoring_run_id, ARCHIVE)
+    got = {(c["venue"], c["outcome"]): c["book"] for c in doc["closes"] if c["definition"] == "close_live_mid_top"}
+    cle_book, cws_book = doc["books"][got[("kalshi", "CLE")]], doc["books"][got[("kalshi", "CWS")]]
+    assert cle_book["frame"] == cws_book["frame"]
+    assert (cle_book["instrument"], cws_book["instrument"]) == (f"kalshi:{golden.K_CLE}", f"kalshi:{golden.K_CWS}")
+    assert cws_book["levels"]["side0"] == [["0.4800", "800.00", 80000]]
+
+
+# -- a quarantined state between the book and the cutoff (review of PR #8) ------------------------------
+
+@pytest.fixture(scope="module")
+def crossed(tmp_path_factory):
+    root = tmp_path_factory.mktemp("crossed")
+    golden.generate_synthetic(root, crossed_before_cutoff=True)
+    c = db.connect(":memory:")
+    db.migrate(c)
+    ingest.ingest_game(c, root / "archive", golden.SYN_PK, root / "games.toml", now_ms=NOW)
+    entries.record(c, root / "archive", golden.SYNTHETIC / "entries.toml", NOW, root / "games.toml")
+    return c
+
+
+def test_a_quarantined_update_ends_the_stored_books_validity(crossed):
+    # A crossed delta at S+235 s, after the S+230 s probe and before the cutoff, is quarantined.
+    # The S-600 s book it replaced must not be priced, though the probe's evidence is fresh.
+    got = closes(crossed, run(crossed), "close_live_mid_top")
+    assert got[("novig", "CLE")] == (None, "crossed_book", S - 600 * SEC)
+    assert got[("novig", "CWS")] == (None, "crossed_book", S - 600 * SEC)
+    gaps = [tuple(r) for r in crossed.execute(
+        "SELECT kind, scope, reason, boundary_ts_ms FROM collection_gap WHERE source = 'novig'")]
+    # From the last trustworthy observation (the probe) to the next stored state (the S+400 s uncross).
+    assert gaps == [("open", BOOK_SCOPE, "crossed_book", S + 230 * SEC + 50),
+                    ("close", BOOK_SCOPE, "crossed_book", S + 400 * SEC)]
+
+
+def test_a_quarantine_after_the_decision_leaves_null_ev_alone(crossed):
+    r = run(crossed)
+    row = crossed.execute("""SELECT s.p_ref_entry_num, s.p_ref_entry_den, s.ref_entry_reason FROM clv_score s
+                             JOIN close_def d USING (close_def_id) WHERE s.scoring_run_id = ? AND s.ref_venue = 'novig'
+                             AND d.name = 'close_live_mid_top'""", (r.scoring_run_id,)).fetchone()
+    assert (Fraction(row[0], row[1]), row[2]) == (Fraction("0.49"), None)
+    # And once the book is stored again, it prices again.
+    ref = novig_ref(crossed)
+    assert close.price_as_of(crossed, ref, S + 410 * SEC, close.live_defs()[0]).reason is None

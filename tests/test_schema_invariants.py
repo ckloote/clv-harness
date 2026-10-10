@@ -357,18 +357,49 @@ def test_signal_entry_outcome_mismatch_and_time_travel_are_rejected(conn):
             created_ts_ms=T)                                                 # emitted before its decision
 
 
-def test_0002_rebuilds_close_price_and_clv_score_keeping_their_rows():
+def test_0002_keeps_every_valid_0001_row_exactly_and_marks_it_legacy():
     c = db.connect(":memory:")
     db.migrate(c, upto=1)
     ids = seed(c)
-    before = [tuple(r) for r in c.execute("SELECT * FROM close_price ORDER BY 1")]
+    # Valid under 0001 but not under 0002's new constraints: a close with a book time and no
+    # tick, a score with p_ref_entry and null EV but no reference book, and one with CLV but
+    # no p_close (review of PR #8).
+    close(c, ids, "novig", None, book_observed_ts_ms=T - 70_000, close_def_id=new_def(c))
+    score(c, ids, "kalshi", p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800)
+    score(c, ids, "novig", **fresh_close(c, ids), clv_ev_num=-791, clv_ev_den=11800)
+    old = {t: [tuple(r) for r in c.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in ("close_price", "clv_score")}
     assert db.migrate(c) == [2]
-    assert [tuple(r) for r in c.execute("SELECT * FROM close_price ORDER BY 1")] == before
-    assert [tuple(r) for r in c.execute("SELECT clv_score_id, ref_entry_tick_id, ref_entry_reason FROM clv_score")] \
-        == [(ids["score"], None, "not_recorded")]
+    for t, rows in old.items():
+        width = len(rows[0])
+        assert [tuple(r)[:width] for r in c.execute(f"SELECT {', '.join(cols(c, t)[:width])} FROM {t} ORDER BY 1")] \
+            == rows                                                       # the 0001 columns, unchanged
+        assert {r[0] for r in c.execute(f"SELECT legacy_0001 FROM {t}")} == {1}
+    assert c.execute("SELECT count(*) FROM clv_score WHERE ref_entry_tick_id IS NOT NULL"
+                     " OR ref_entry_reason IS NOT NULL").fetchone()[0] == 0           # nothing invented
     assert c.execute("PRAGMA foreign_key_check").fetchall() == []
     with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         c.execute("DELETE FROM clv_score")
+    # New rows meet 0002 and cannot claim to be legacy.
+    with pytest.raises(sqlite3.IntegrityError, match="only rows copied from 0001"):
+        score(c, ids, "novig", **fresh_close(c, ids), legacy_0001=1)
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):            # p_ref_entry without its book
+        score(c, ids, "novig", **fresh_close(c, ids), p_ref_entry_num=103, p_ref_entry_den=200,
+              null_ev_num=1, null_ev_den=11800, ref_entry_reason=None)
+    with pytest.raises(sqlite3.IntegrityError, match="only rows copied from 0001"):
+        close(c, ids, "novig", None, book_observed_ts_ms=None, p_close_num=None, p_close_den=None,
+              unscoreable_reason="no_quotes", close_def_id=new_def(c), legacy_0001=1)
+
+
+def fresh_close(c, ids):
+    """A close under a new definition, so another score of the same entry and venue is allowed."""
+    d = new_def(c)
+    return dict(close_def_id=d, close_price_id=close(c, ids, "novig", ids["tick"], close_def_id=d))
+
+
+def cols(c, table):
+    """Column names in 0002's order, which keeps 0001's columns first except clv_score's two new ones."""
+    names = [r[1] for r in c.execute(f"PRAGMA table_info({table})")]
+    return [n for n in names if n not in ("ref_entry_tick_id", "ref_entry_reason")]
 
 
 def test_a_close_without_a_start_bound_has_no_cutoff_and_no_price(conn):

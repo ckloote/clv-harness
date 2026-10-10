@@ -9,6 +9,10 @@
 -- SQLite cannot relax NOT NULL in place, so both tables are rebuilt and their rows
 -- copied. clv_score rows wait in a temporary table while close_price, their parent,
 -- is replaced, so no row ever references a dropped table.
+--
+-- A copied row was valid under 0001 and keeps exactly what it had: it is marked
+-- legacy_0001 = 1, and the constraints this migration adds bind only new rows. Nothing
+-- is invented for it (no reference book, no reason). A new row cannot claim legacy_0001.
 
 CREATE TABLE close_price_v2 (
     close_price_id      INTEGER PRIMARY KEY,
@@ -28,16 +32,17 @@ CREATE TABLE close_price_v2 (
     spread_e4           INTEGER CHECK (spread_e4 BETWEEN 0 AND 10000),
     unscoreable_reason  TEXT,
     computed_ts_ms      INTEGER NOT NULL,
+    legacy_0001         INTEGER NOT NULL DEFAULT 0 CHECK (legacy_0001 IN (0, 1)),  -- copied from 0001
     UNIQUE (fact_snapshot_id, close_def_id, ref_venue, outcome_id),
     CHECK ((p_close_num IS NULL) = (p_close_den IS NULL)),
     CHECK (p_close_den IS NULL OR (p_close_den > 0 AND p_close_num BETWEEN 0 AND p_close_den)),
     CHECK ((p_close_num IS NULL) <> (unscoreable_reason IS NULL)),
-    CHECK (cutoff_ts_ms IS NOT NULL OR (p_close_num IS NULL AND book_tick_id IS NULL)),
-    CHECK ((book_tick_id IS NULL) = (book_observed_ts_ms IS NULL)),
+    CHECK (legacy_0001 = 1 OR cutoff_ts_ms IS NOT NULL OR (p_close_num IS NULL AND book_tick_id IS NULL)),
+    CHECK (legacy_0001 = 1 OR (book_tick_id IS NULL) = (book_observed_ts_ms IS NULL)),
     -- Reference observation time <= close cutoff (DESIGN.md §8.3).
     CHECK (book_observed_ts_ms IS NULL OR book_observed_ts_ms <= cutoff_ts_ms)
 ) STRICT;
-INSERT INTO close_price_v2 SELECT * FROM close_price;
+INSERT INTO close_price_v2 SELECT *, 1 FROM close_price;
 
 CREATE TEMP TABLE clv_score_rows AS SELECT * FROM clv_score;
 -- Dropping a table drops its triggers first, so the append-only triggers do not fire.
@@ -71,6 +76,7 @@ CREATE TABLE clv_score (
     fee_adjusted_close_ev_den INTEGER,
     exclusion_reasons   TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(exclusion_reasons)),
     computed_ts_ms      INTEGER NOT NULL,
+    legacy_0001         INTEGER NOT NULL DEFAULT 0 CHECK (legacy_0001 IN (0, 1)),  -- copied from 0001
     UNIQUE (scoring_run_id, entry_id, ref_venue, close_def_id),
     CHECK ((clv_ev_num IS NULL) = (clv_ev_den IS NULL) AND (clv_ev_den IS NULL OR clv_ev_den > 0)),
     CHECK ((null_ev_num IS NULL) = (null_ev_den IS NULL) AND (null_ev_den IS NULL OR null_ev_den > 0)),
@@ -78,22 +84,22 @@ CREATE TABLE clv_score (
     CHECK ((p_close_num IS NULL) = (p_close_den IS NULL) AND (p_close_den IS NULL OR p_close_den > 0)),
     CHECK ((p_ref_entry_num IS NULL) = (p_ref_entry_den IS NULL) AND (p_ref_entry_den IS NULL OR p_ref_entry_den > 0)),
     CHECK ((fee_adjusted_close_ev_num IS NULL) = (fee_adjusted_close_ev_den IS NULL)),
-    -- Each metric exists exactly when its inputs do (DESIGN.md §2.3).
-    CHECK ((clv_ev_num IS NULL) = (p_close_num IS NULL)),
-    CHECK ((null_ev_num IS NULL) = (p_ref_entry_num IS NULL)),
-    CHECK ((clv_residual_num IS NULL) = (p_close_num IS NULL OR p_ref_entry_num IS NULL)),
-    CHECK ((p_ref_entry_num IS NULL) <> (ref_entry_reason IS NULL)),
-    CHECK (p_ref_entry_num IS NULL OR ref_entry_tick_id IS NOT NULL)
+    -- Each metric exists exactly when its inputs do (DESIGN.md §2.3), and p_ref_entry has
+    -- its reference book or the reason it is missing. New rows only.
+    CHECK (legacy_0001 = 1 OR (clv_ev_num IS NULL) = (p_close_num IS NULL)),
+    CHECK (legacy_0001 = 1 OR (null_ev_num IS NULL) = (p_ref_entry_num IS NULL)),
+    CHECK (legacy_0001 = 1 OR (clv_residual_num IS NULL) = (p_close_num IS NULL OR p_ref_entry_num IS NULL)),
+    CHECK (legacy_0001 = 1 OR (p_ref_entry_num IS NULL) <> (ref_entry_reason IS NULL)),
+    CHECK (legacy_0001 = 1 OR p_ref_entry_num IS NULL OR ref_entry_tick_id IS NOT NULL)
 ) STRICT;
 INSERT INTO clv_score (clv_score_id, scoring_run_id, entry_id, ref_venue, close_def_id, close_price_id,
     entry_quote_observation_id, d_entry_num, d_entry_den, p_close_num, p_close_den, p_ref_entry_num, p_ref_entry_den,
-    ref_entry_reason, clv_ev_num, clv_ev_den, null_ev_num, null_ev_den, clv_residual_num, clv_residual_den,
-    fee_adjusted_close_ev_num, fee_adjusted_close_ev_den, exclusion_reasons, computed_ts_ms)
+    clv_ev_num, clv_ev_den, null_ev_num, null_ev_den, clv_residual_num, clv_residual_den,
+    fee_adjusted_close_ev_num, fee_adjusted_close_ev_den, exclusion_reasons, computed_ts_ms, legacy_0001)
 SELECT clv_score_id, scoring_run_id, entry_id, ref_venue, close_def_id, close_price_id,
     entry_quote_observation_id, d_entry_num, d_entry_den, p_close_num, p_close_den, p_ref_entry_num, p_ref_entry_den,
-    CASE WHEN p_ref_entry_num IS NULL THEN 'not_recorded' END,      -- scored before 0002 recorded a reason
     clv_ev_num, clv_ev_den, null_ev_num, null_ev_den, clv_residual_num, clv_residual_den, fee_adjusted_close_ev_num,
-    fee_adjusted_close_ev_den, exclusion_reasons, computed_ts_ms
+    fee_adjusted_close_ev_den, exclusion_reasons, computed_ts_ms, 1
 FROM temp.clv_score_rows;
 DROP TABLE temp.clv_score_rows;
 
@@ -131,6 +137,12 @@ WHEN NEW.ref_entry_tick_id IS NOT NULL AND NOT EXISTS (
     WHERE t.tick_id = NEW.ref_entry_tick_id AND v.venue = NEW.ref_venue
       AND t.observed_ts_ms <= e.decision_ts_ms)
 BEGIN SELECT RAISE(ABORT, 'reference book at entry is not the reference venue''s or was received after the decision'); END;
+
+-- Only rows copied above are legacy; every row written from here on meets 0002.
+CREATE TRIGGER close_price_new_rows_are_not_legacy BEFORE INSERT ON close_price WHEN NEW.legacy_0001 <> 0
+BEGIN SELECT RAISE(ABORT, 'only rows copied from 0001 are legacy_0001'); END;
+CREATE TRIGGER clv_score_new_rows_are_not_legacy BEFORE INSERT ON clv_score WHEN NEW.legacy_0001 <> 0
+BEGIN SELECT RAISE(ABORT, 'only rows copied from 0001 are legacy_0001'); END;
 
 CREATE TRIGGER close_price_no_update BEFORE UPDATE ON close_price BEGIN SELECT RAISE(ABORT, 'close_price is immutable: recompute as a new run'); END;
 CREATE TRIGGER close_price_no_delete BEFORE DELETE ON close_price BEGIN SELECT RAISE(ABORT, 'close_price is immutable: recompute as a new run'); END;

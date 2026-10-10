@@ -18,7 +18,9 @@ an old one (DESIGN.md §10). Checks, in order, each an unscoreable reason:
     unmapped / ambiguous_reference /    no single direct mapping of the venue to the
       mapping_inconsistent              outcome, or the book's other side contradicts it
     no_quotes                           no tick at or before the cutoff
-    collection_gap                      a gap on the book's scope overlaps (tick, cutoff]
+    collection_gap / crossed_book       a gap on the book's scope overlaps (tick, cutoff]; a quarantine
+                                        gap (a later state replaced the book and was quarantined) is
+                                        reported by its own reason
     feed_stalled                        liveness evidence older than the source's limit
     halted                              the book's venue status is not open
     venue_lag                           received more than stream.max_venue_lag_ms after venue time
@@ -41,6 +43,7 @@ from fractions import Fraction
 from clv import lineage
 from clv.close import depth
 from clv.config import param
+from clv.gaps import QUARANTINE_REASONS
 from clv.identity import Mapping, canonical_ladder
 from clv.off.resolver import RESOLVER_VERSION
 from clv.venues.protocol import PRICE_SCALE, BinaryBook, Level
@@ -193,17 +196,18 @@ def price_as_of(conn: sqlite3.Connection, ref: Reference, as_of_ms: int, d: Clos
 
     scope = f"{ref.venue}:market:{ref.native_id}" + ("/book" if source == "stream" else "")
     gap = conn.execute("""
-        SELECT 1 FROM f_collection_gap o
+        SELECT o.reason FROM f_collection_gap o
         LEFT JOIN f_collection_gap c ON c.opens_gap_id = o.collection_gap_id
         WHERE o.kind = 'open' AND o.scope = ? AND o.boundary_ts_ms < ?
-          AND (c.boundary_ts_ms IS NULL OR c.boundary_ts_ms > ?)""", (scope, as_of_ms, observed)).fetchone()
+          AND (c.boundary_ts_ms IS NULL OR c.boundary_ts_ms > ?)
+        ORDER BY o.boundary_ts_ms, o.collection_gap_id LIMIT 1""", (scope, as_of_ms, observed)).fetchone()
     limit_s = d.stream_liveness_max_s if source == "stream" else d.poll_liveness_max_s
     book = book_of(conn, tick_id, ref.venue, ref.native_id)
     bids, asks = canonical_ladder(book, ref.side, "direct")
     spread = (round((Fraction(asks[0].price) - Fraction(bids[0].price)) * PRICE_SCALE)
               if bids and asks else None)
     if gap:
-        reason = "collection_gap"
+        reason = gap[0] if gap[0] in QUARANTINE_REASONS else "collection_gap"
     elif seen["liveness_age_ms"] > limit_s * 1000:
         reason = "feed_stalled"
     elif status != d.open_status[ref.venue]:

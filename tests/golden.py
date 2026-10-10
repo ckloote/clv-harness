@@ -61,8 +61,12 @@ def _iso(ms):
     return ms_iso(ms).replace(".000Z", "Z")
 
 
-def generate_synthetic(root: Path) -> None:
-    """Write the synthetic game's archive under root/archive and its game list as root/games.toml."""
+def generate_synthetic(root: Path, crossed_before_cutoff: bool = False) -> None:
+    """Write the synthetic game's archive under root/archive and its game list as root/games.toml.
+
+    crossed_before_cutoff: a fault variant for tests, not the golden game. At S+235 s, after the
+    last probe and before the cutoff, a delta crosses the Novig book (it is quarantined), and
+    the S+400 s delta uncrosses it."""
     from raw_recorder.archive import ArchiveWriter
 
     clock = _Clock(S - 5000 * SEC)
@@ -144,8 +148,13 @@ def generate_synthetic(root: Path) -> None:
             "lifecycle": {"seq": 0, "status": "OPEN"}}}})
     send(S + 310 * SEC, "in", {"ts": S + 310 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "lifecycle": {
         "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
-    send(S + 400 * SEC, "in", {"ts": S + 400 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "book": {"seq": 12, "deltas": [
-        {"kind": "add", "orderId": "w3", "outcomeId": CWS, "price": "0.30", "qty": 100}]}}}})
+    in_play = [{"kind": "add", "orderId": "w3", "outcomeId": CWS, "price": "0.30", "qty": 100}]
+    if crossed_before_cutoff:
+        send(S + 235 * SEC, "in", {"ts": S + 235 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "book": {
+            "seq": 12, "deltas": [{"kind": "add", "orderId": "c9", "outcomeId": CLE, "price": "0.62", "qty": 100}]}}}})
+        in_play.insert(0, {"kind": "remove", "orderId": "c9", "reason": "cancel"})
+    send(S + 400 * SEC, "in", {"ts": S + 400 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "book": {
+        "seq": 13 if crossed_before_cutoff else 12, "deltas": in_play}}}})
     clock.t = S + 600 * SEC
     ws.event(conn, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=4600.0)
 
