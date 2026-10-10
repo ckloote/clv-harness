@@ -8,7 +8,7 @@
     "high_water": {
      "book_snapshot": 261,
      "book_snapshot_level": 18791,
-     "collection_gap": 22,
+     "collection_gap": 169,
      "entry": 1,
      "entry_quote_observation": 3,
      "event": 1,
@@ -165,7 +165,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -197,7 +197,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -229,7 +229,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -261,7 +261,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -293,7 +293,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -325,7 +325,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -357,7 +357,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -389,7 +389,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -421,7 +421,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -453,7 +453,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -485,7 +485,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -517,7 +517,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -549,7 +549,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -581,7 +581,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -613,7 +613,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -645,7 +645,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -721,7 +721,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -788,7 +788,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -855,7 +855,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -922,7 +922,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -989,7 +989,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -1056,7 +1056,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -1123,7 +1123,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -1190,7 +1190,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -1211,7 +1211,7 @@
    }
   ],
   "books": {
-   "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169": {
+   "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169": {
     "frame": {
      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
      "sha256": "cc9054d49c193d299404517922fe52581b11114568380b85659c213e37ede00a"
@@ -1226,7 +1226,7 @@
     "truncated": true,
     "ladder_complete": true
    },
-   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253": {
+   "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253": {
     "frame": {
      "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
      "sha256": "d81acdebea601ba1898dc0e12956b025a1176fc683e026eb0319d35c88d02ac7"
@@ -1241,7 +1241,7 @@
     "truncated": true,
     "ladder_complete": true
    },
-   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256": {
+   "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256": {
     "frame": {
      "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
      "sha256": "52411e09416cdf8c7f3a5432907538c279854f0035ac33804383c3b26c75ab7d"
@@ -1256,7 +1256,7 @@
     "truncated": true,
     "ladder_complete": true
    },
-   "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85": {
+   "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85": {
     "frame": {
      "ref": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
      "sha256": "d090d79e6136f49784a7e5b9af1c94e3e6294261d09e907b36a1e21310ec7926"
@@ -1271,7 +1271,7 @@
     "truncated": false,
     "ladder_complete": true
    },
-   "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364": {
+   "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364": {
     "frame": {
      "ref": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
      "sha256": "448e5a4d2d123afa8a7ede733514baf816df62c85485f46cfe46af84a1dcf923"
@@ -1300,7 +1300,7 @@
     "high_water": {
      "book_snapshot": 261,
      "book_snapshot_level": 18791,
-     "collection_gap": 22,
+     "collection_gap": 169,
      "entry": 1,
      "entry_quote_observation": 3,
      "event": 1,
@@ -1457,7 +1457,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -1489,7 +1489,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -1521,7 +1521,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1553,7 +1553,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1585,7 +1585,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -1617,7 +1617,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -1649,7 +1649,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1681,7 +1681,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1713,7 +1713,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -1745,7 +1745,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -1777,7 +1777,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1809,7 +1809,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1841,7 +1841,7 @@
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
     "quote_age_ms": 876,
     "liveness_age_ms": 876,
     "p_close": {
@@ -1873,7 +1873,7 @@
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
+    "book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
     "quote_age_ms": 852,
     "liveness_age_ms": 852,
     "p_close": {
@@ -1905,7 +1905,7 @@
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -1937,7 +1937,7 @@
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-10-09T00:07:04.996Z",
-    "book": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
+    "book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
     "quote_age_ms": 3782,
     "liveness_age_ms": 3782,
     "p_close": {
@@ -2010,7 +2010,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -2073,7 +2073,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -2136,7 +2136,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -2199,7 +2199,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -2262,7 +2262,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -2325,7 +2325,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -2388,7 +2388,7 @@
      "exact": "103/200",
      "decimal": "0.515000"
     },
-    "ref_entry_book": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
+    "ref_entry_book": "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-1049/23400",
@@ -2451,7 +2451,7 @@
      "exact": "41/80",
      "decimal": "0.512500"
     },
-    "ref_entry_book": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
+    "ref_entry_book": "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
     "ref_entry_reason": null,
     "clv_ev": {
      "exact": "-209/5200",
@@ -2471,7 +2471,7 @@
    }
   ],
   "books": {
-   "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169": {
+   "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169": {
     "frame": {
      "ref": "kalshi/2026-10-08/kalshi-75896a3345cd.0006.jsonl.gz#169",
      "sha256": "cc9054d49c193d299404517922fe52581b11114568380b85659c213e37ede00a"
@@ -2486,7 +2486,7 @@
     "truncated": true,
     "ladder_complete": true
    },
-   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253": {
+   "kalshi:KXMLBGAME-26OCT081700CLECWS-CLE@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253": {
     "frame": {
      "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#253",
      "sha256": "d81acdebea601ba1898dc0e12956b025a1176fc683e026eb0319d35c88d02ac7"
@@ -2501,7 +2501,7 @@
     "truncated": true,
     "ladder_complete": true
    },
-   "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256": {
+   "kalshi:KXMLBGAME-26OCT081700CLECWS-CWS@kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256": {
     "frame": {
      "ref": "kalshi/2026-10-09/kalshi-c192677396b4.0002.jsonl.gz#256",
      "sha256": "52411e09416cdf8c7f3a5432907538c279854f0035ac33804383c3b26c75ab7d"
@@ -2516,7 +2516,7 @@
     "truncated": true,
     "ladder_complete": true
    },
-   "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85": {
+   "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85": {
     "frame": {
      "ref": "novig/2026-10-08/rest-75896a3345cd.0006.jsonl.gz#85",
      "sha256": "d090d79e6136f49784a7e5b9af1c94e3e6294261d09e907b36a1e21310ec7926"
@@ -2531,7 +2531,7 @@
     "truncated": false,
     "ladder_complete": true
    },
-   "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364": {
+   "novig:01a118b6-4bf3-7c82-b3ca-03b04bea99f2@novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364": {
     "frame": {
      "ref": "novig/2026-10-09/c282f399-aa76-46d2-b5fc-d68bf52debad.0002.jsonl.gz#364",
      "sha256": "448e5a4d2d123afa8a7ede733514baf816df62c85485f46cfe46af84a1dcf923"

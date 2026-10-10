@@ -6,8 +6,8 @@ its `relpath#line` and the sha256 of that line's bytes; the segment's own
 sha256 is checked against `raw_artifact` before any line is read.
 
     off        each event's resolution and every start claim, with its frame
-    books      each stored book used, by frame: source, sequence, status, times
-               and (optionally) every stored level
+    books      each stored book used, keyed `<venue>:<instrument>@<frame ref>`: source,
+               sequence, status, times and (optionally) every stored level
     closes     per close definition, venue and outcome: cutoff, book, ages,
                p_close or the unscoreable reason, and the reference mapping
     scores     per entry, venue and definition: the entry quote frame, d_entry,
@@ -89,7 +89,10 @@ def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True
                             FROM tick t JOIN venue_instrument v USING (venue_instrument_id) WHERE tick_id = ?""",
                          (tick_id,)).fetchone()
         f = frames.frame(t[0], t[1])
-        if f["ref"] not in books:
+        # One frame can establish several instruments' books (a multi-market message, a listing
+        # that changes two tickers' status), so a book is keyed by instrument and frame.
+        key = f"{t[4]}:{t[5]}@{f['ref']}"
+        if key not in books:
             b = {"frame": f, "snapshot_frame": frames.frame(t[2], t[3]), "instrument": f"{t[4]}:{t[5]}",
                  "source": t[6], "seq": t[7], "venue_status": t[8], "venue_ts": _iso(t[9]), "observed": _iso(t[10]),
                  "truncated": bool(t[11]), "ladder_complete": bool(t[12])}
@@ -97,8 +100,8 @@ def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True
                 b["levels"] = {f"side{s}": [list(r) for r in conn.execute(
                     "SELECT price_native, qty_native, payout_cents FROM tick_level WHERE tick_id = ? AND side = ?"
                     " ORDER BY rank", (tick_id, s))] for s in (0, 1)}
-            books[f["ref"]] = b
-        return f["ref"]
+            books[key] = b
+        return key
 
     def mapping(resolution_id: int | None) -> dict | None:
         if resolution_id is None:

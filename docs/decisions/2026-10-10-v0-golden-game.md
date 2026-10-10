@@ -48,6 +48,7 @@ Supporting rules:
 - **Reference source:** Novig's reference source is whichever of its stream and public-book poll has the freshest liveness evidence. Novig was polled until 23:31:54 and streamed from 23:32:14. So the 23:05 entry's reference is the poll, and the close is the stream.
 - **Poll liveness:** `poll.liveness_max_s` (30 s) is new in DESIGN.md §10, beside `stream.liveness_max_s`.
 - **Short stored ladders:** a stored ladder that runs out before the notional fails closed as `truncated_ladder` when the tick was truncated. Otherwise it is `insufficient_depth`.
+- **Quarantined replacements:** a quarantined (crossed) state that replaces a current stored book ends that book's validity. The ingest records it as a `collection_gap` with reason `crossed_book`. The gap runs from the book's last trustworthy observation to the next stored state, so a close or null-EV reference never prices the replaced book, however fresh its earlier evidence. On 849832 this adds 74 in-play gaps, all after 00:09, and changes no pregame close.
 
 ## 4. The 849832 mapping correction verifies the DraftKings line
 
