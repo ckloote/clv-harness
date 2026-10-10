@@ -18,10 +18,12 @@ other outcome at 1 - price. `seq` is per connection, market and channel.
 
 `StreamReplay.feed()` takes frames in receive order and returns what each one
 established: a book state, a probe check, a sequence gap, a resync, a trade or
-a lifecycle transition. A sequence gap makes the book untrusted until a new
-snapshot (DESIGN.md §7.2); the replay never guesses across it. The replay is
-also the one judge of channel evidence: its coverage spans are what
-gaps.stream_gaps builds stream gaps from.
+a lifecycle status. A sequence gap makes the book untrusted until a new
+snapshot (DESIGN.md §7.2); the replay never guesses across it. A lifecycle
+status is judged by the lifecycle channel's own sequence, never the book's: one
+behind it is not emitted, even beside a current book. The replay is also the
+one judge of channel evidence: its coverage spans are what gaps.stream_gaps
+builds stream gaps from.
 """
 from __future__ import annotations
 
@@ -170,7 +172,9 @@ class StreamReplay:
         out: list = []
         if "lifecycle" in body:
             lc = body["lifecycle"]
-            out.append(Lifecycle(f.conn_id, market, lc.get("seq"), None, lc["status"], msg["ts"], f.recv_ts_ms, f.ref))
+            if self._lifecycle_seq(f, market, lc.get("seq")):
+                out.append(Lifecycle(f.conn_id, market, lc.get("seq"), None, lc["status"], msg["ts"], f.recv_ts_ms,
+                                     f.ref))
         if "book" in body:
             out += self._book_snapshot(f, msg, market, body["book"])
         if "trades" in body:
@@ -258,7 +262,7 @@ class StreamReplay:
                 out.append(self._state(f, msg, market, ch))
             elif channel == "trades":
                 out += self._trades(f, market, batch["deltas"])
-            else:
+            elif self._lifecycle_seq(f, market, batch.get("seq")):
                 for d in batch["deltas"]:
                     out.append(Lifecycle(f.conn_id, market, batch.get("seq"), d["kind"], d["status"],
                                          msg["ts"], f.recv_ts_ms, f.ref))
@@ -321,6 +325,18 @@ class StreamReplay:
         r = Resync(f.conn_id, market, channel, seq, f.recv_ts_ms, f.ref)
         self.resyncs.append(r)
         return [r]
+
+    def _lifecycle_seq(self, f: Frame, market: str, seq: int | None) -> bool:
+        """Lifecycle has its own sequence, independent of book and trades. A status whose
+        sequence is behind the latest one on this connection is stale, whatever the book
+        sequence beside it says; one without a sequence carries no evidence either way."""
+        ch = self._ch(f.conn_id, market, "lifecycle")
+        if seq is None:
+            return True
+        if ch.seq is not None and seq < ch.seq:
+            return False
+        ch.seq = seq
+        return True
 
     def _ch(self, conn: str, market: str, channel: str) -> _Channel:
         return self.channels.setdefault((conn, market, channel), _Channel())

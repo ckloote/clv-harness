@@ -195,9 +195,10 @@ def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[
     """One stream frame's outputs for one market.
 
     Order: a sequence gap first makes the stored state untrusted; then the frame's status
-    is taken (unless it came in a probe reply behind the replayed state); then the frame's
-    own book, if any, is observed with that status. Only a frame with no book of its own,
-    or whose book a probe confirmed unchanged, restates the stored book with a new status.
+    is taken (the replay has already dropped a status behind the lifecycle sequence, which
+    is independent of the book's); then the frame's own book, if any, is observed with that
+    status. Only a frame with no book of its own restates the stored book with a new status:
+    the probe confirmed the book, or was behind it and proves nothing about it.
     """
     probes = [o for o in outs if isinstance(o, novig.ProbeCheck) and o.channel == "book"]
     new_books = [o for o in outs if isinstance(o, BinaryBook)]
@@ -206,7 +207,6 @@ def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[
             books.untrusted("stream")
         elif isinstance(o, novig.Resync) and o.channel == "book":
             resynced.add(market)
-    stale = any(isinstance(o, novig.ProbeCheck) and o.status == "superseded" for o in outs)
     changed = None
     for o in outs:
         if not isinstance(o, novig.Lifecycle):
@@ -215,7 +215,7 @@ def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[
             w.insert("off_observation", dict(event_id=event_id, source=obs.source, kind=obs.kind, subject=obs.subject,
                                              detected_off_ts_ms=obs.detected_off_ts_ms,
                                              observed_ts_ms=obs.observed_ts_ms, **w.cited(o.ref)))
-        if not stale and o.status != status[market]:
+        if o.status != status[market]:
             status[market] = o.status
             changed = o
     for o in new_books:
@@ -225,7 +225,7 @@ def _stream_frame(w: _Writer, report: IngestReport, books: _Books, status: dict[
             reason = "resync" if market in resynced else "subscribe"
             resynced.discard(market)
         books.observe(o, status[market], ref, snapshot_ref, "delta_unchanged", reason, report)
-    if changed is not None and not new_books and all(p.status == "confirmed" for p in probes):
+    if changed is not None and not new_books:
         books.status_change("stream", changed.status, changed.ref, changed.recv_ts_ms, changed.venue_ts_ms, report)
     for p in probes:
         if p.status == "confirmed":
