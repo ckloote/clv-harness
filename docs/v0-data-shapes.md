@@ -62,6 +62,13 @@ My recommendation: select the first pitch as the start, accept In Progress as th
    - The 20 s handoff from the Novig public poll to the stream is a change of source, not a gap within either one.
 
    A close needs continuous coverage by the source it uses, so `collection_gap` has a companion: the first and last trustworthy observation of each subject and channel.
+
+   For the stream, coverage comes from the replay, which is the only judge of channel evidence:
+   - Each subscription of a market's channel is one span, including a market subscribed after the socket opened. A resubscription starts a new span.
+   - A span runs from its subscribe snapshot to the last trustworthy observation: a snapshot, a contiguous delta, or a confirmed probe.
+   - A confirmed probe extends the span but adds no book state, so the book's own change time stays put.
+   - A sequence gap closes at the next trusted state for that market and channel, on any connection.
+   - A deliberate unsubscribe ends a span without a gap.
 7. **Poll gaps can't detect a silent slowdown yet.** Within one recorder session, a poller that silently slows down is invisible until `poll_attempt` arrives with A4. Until then, a stale Kalshi book shows up as quote age (`close.max_quote_age_s`), not as a gap.
 
 ## Outside V0

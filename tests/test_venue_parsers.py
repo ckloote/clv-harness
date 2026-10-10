@@ -304,3 +304,57 @@ def test_first_pitch_and_status_changes_from_play_by_play():
 def test_no_plays_means_no_off_observation():
     x = exchange("/api/v1/game/1/playByPlay", {"allPlays": []}, subjects=["mlb:game:1"])
     assert mlb.first_play_events(x) == []
+
+
+# -- continuity: evidence boundaries, spans and resyncs ---------------------------------------
+
+def test_confirmed_probe_moves_the_evidence_boundary_but_not_the_book():
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000))
+    outs = r.feed(frame(snapshot(10, ORDERS, nonce=2, subscribed=False), recv=2000))
+    assert not books(outs)                                     # no new book state: economic time unchanged
+    (gap,) = r.feed(frame(delta(12, {"kind": "remove", "orderId": "o1", "reason": "cancel"}), recv=3000))
+    assert gap.last_recv_ts_ms == 2000                         # starts at the confirmed probe, not the snapshot
+    assert r.spans[0].last_ts == 2000
+
+
+def test_confirmed_trades_probe_moves_the_evidence_boundary():
+    snap = {"ts": 1, "nonce": 1, "subscribed": {}, "snapshot": {M: {"eventId": "ev", "trades": {"seq": 5, "trades": []}}}}
+    probe = {"ts": 2, "nonce": 2, "snapshot": {M: {"eventId": "ev", "trades": {"seq": 5, "trades": []}}}}
+    r = novig.StreamReplay()
+    r.feed(frame(snap, recv=1000))
+    r.feed(frame(probe, recv=2000))
+    (gap,) = r.feed(frame(delta(7, channel="trades"), recv=3000))
+    assert gap.last_recv_ts_ms == 2000
+
+
+def test_superseded_probe_does_not_move_the_evidence_boundary():
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000))
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o2", "reason": "cancel"}), recv=1500))
+    r.feed(frame(snapshot(10, ORDERS, nonce=2, subscribed=False), recv=2000))
+    (gap,) = r.feed(frame(delta(13, {"kind": "remove", "orderId": "o1", "reason": "cancel"}), recv=3000))
+    assert gap.last_recv_ts_ms == 1500
+
+
+def test_gap_on_one_connection_is_resynced_by_a_replacement_connection():
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000, conn="c1"))
+    r.feed(frame(delta(12, {"kind": "remove", "orderId": "o1", "reason": "cancel"}), recv=1100, conn="c1"))
+    outs = r.feed(frame(snapshot(50, ORDERS), recv=1500, conn="c2"))
+    (rs,) = [o for o in outs if isinstance(o, novig.Resync)]
+    assert (rs.conn_id, rs.market, rs.channel, rs.recv_ts_ms) == ("c2", M, "book", 1500)
+    assert r.resyncs == [rs] and len(r.seq_gaps) == 1 and not r.open_gaps
+
+
+def test_each_subscription_opens_its_own_span():
+    other = "mkt-2"
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=100))
+    later = snapshot(3, ORDERS)
+    later["snapshot"] = {other: later["snapshot"][M]}
+    r.feed(frame(later, recv=200))                              # subscribed after the socket opened
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o2", "reason": "cancel"}), recv=300))
+    r.feed(frame(snapshot(20, ORDERS), recv=400))               # a resubscription of M starts afresh
+    spans = [(s.market, s.first_ts, s.last_ts) for s in r.spans]
+    assert spans == [(M, 100, 300), (other, 200, 200), (M, 400, 400)]

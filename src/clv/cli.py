@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import tomllib
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from clv import archive, gaps, mlb
@@ -48,6 +49,54 @@ def fmt_book(book, side: str, names: dict[str, str]) -> str:
             f"{'' if book.complete else ' (truncated ladder)'}")
 
 
+@dataclass
+class NovigSummary:
+    """The Novig stream for one game: every frame replayed, only the game's markets kept."""
+    replay: novig.StreamReplay
+    frames: list = field(default_factory=list)
+    books: list = field(default_factory=list)
+    probes: Counter = field(default_factory=Counter)
+    seq_gaps: list = field(default_factory=list)
+    trades: int = 0
+    lifecycle: list = field(default_factory=list)
+    off_obs: list = field(default_factory=list)
+
+
+def novig_summary(frames, markets: set[str], game_pk: int) -> NovigSummary:
+    """Replay every frame (a connection can carry several games' markets), but keep only
+    outputs for `markets`: another game's GOLIVE is never this game's off observation."""
+    out = NovigSummary(novig.StreamReplay())
+    for f in frames:
+        out.frames.append(f)
+        for o in out.replay.feed(f):
+            if getattr(o, "market", None) not in markets:
+                continue
+            if isinstance(o, BinaryBook):
+                out.books.append(o)
+            elif isinstance(o, novig.ProbeCheck):
+                out.probes[(o.channel, o.status)] += 1
+            elif isinstance(o, novig.SequenceGap):
+                out.seq_gaps.append(o)
+            elif isinstance(o, novig.Trade):
+                out.trades += 1
+            elif isinstance(o, novig.Lifecycle) and o.kind:
+                out.lifecycle.append(o)
+                if (obs := sources.from_lifecycle(o, game_pk)) is not None:
+                    out.off_obs.append(obs)
+    return out
+
+
+def game_subject(scope: str, g: dict) -> bool:
+    """Whether a gap scope belongs to this game (or is source-wide, like The Odds API's sport)."""
+    subject = scope.split("/", 1)[0]
+    kind, _, ident = subject.rpartition(":")
+    if kind == "novig:market":
+        return ident in g["novig_markets"]
+    if kind == "kalshi:market":
+        return ident in g["kalshi_tickers"]
+    return True
+
+
 def inspect(root: Path, game_pk: int, games_path: Path) -> None:
     g = load_game(games_path, game_pk)
     lo, hi = capture_window(g)
@@ -71,10 +120,7 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
     first_pitch = min((o.detected_off_ts_ms for o in off_obs if o.kind == "first_pitch"), default=None)
 
     # -- Novig: stream replay, public polls and catalog
-    replay = novig.StreamReplay()
-    n_frames, books, out_kinds = 0, [], Counter()
-    probe, seq_gaps, resyncs, trades, lifecycle = Counter(), [], [], 0, []
-    stream_frames, polls, catalog = [], [], {}
+    polls, catalog = [], {}
     segs = archive.overlapping(archive.segments(root, "novig"), lo, hi)
     # A WebSocket segment's stream_id is its connection ID; poller streams are named by role.
     ws = [s for s in segs if not s.stream_id.startswith(("rest-", "catalog-", "echo-"))]
@@ -82,25 +128,9 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
         if lo <= f.recv_ts_ms <= hi:
             polls.append(f)
     # Whole connections, not a time slice: a connection's end events can fall just past the window.
-    for f in archive.iter_frames(root, ws):
-        stream_frames.append(f)
-        n_frames += 1
-        for o in replay.feed(f):
-            out_kinds[type(o).__name__] += 1
-            if isinstance(o, BinaryBook) and o.market in markets:
-                books.append(o)
-            elif isinstance(o, novig.ProbeCheck):
-                probe[(o.channel, o.status)] += 1
-            elif isinstance(o, novig.SequenceGap):
-                seq_gaps.append(o)
-            elif isinstance(o, novig.Resync):
-                resyncs.append(o)
-            elif isinstance(o, novig.Trade):
-                trades += 1
-            elif isinstance(o, novig.Lifecycle) and o.kind:
-                lifecycle.append(o)
-                if (obs := sources.from_lifecycle(o, game_pk)) is not None:
-                    off_obs.append(obs)
+    nv = novig_summary(archive.iter_frames(root, ws), markets, game_pk)
+    books = nv.books
+    off_obs += nv.off_obs
     public = []
     novig_x = list(archive.rest_exchanges(polls))
     for x in novig_x:
@@ -117,10 +147,10 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
         print(f"- catalog {m.market}: {m.description} {m.market_type}, voids {m.voids}, fee {m.fee}, "
               f"startsTs {ms_iso(m.starts_ts_ms) if m.starts_ts_ms else '—'}, outcomes "
               + ", ".join(f"{n} ({oid[-6:]})" for oid, n, _ in m.outcomes))
-    print(f"- stream: {n_frames} frames on {len({f.conn_id for f in stream_frames})} connections; "
-          f"replay outputs {dict(out_kinds)}")
-    print(f"- probe checks: {dict(probe)}; sequence gaps {len(seq_gaps)}; trades {trades}")
-    for lc in lifecycle:
+    print(f"- stream: {len(nv.frames)} frames on {len({f.conn_id for f in nv.frames})} connections; "
+          f"{len(nv.books)} book states for this game")
+    print(f"- probe checks: {dict(nv.probes)}; sequence gaps {len(nv.seq_gaps)}; trades {nv.trades}")
+    for lc in nv.lifecycle:
         print(f"- lifecycle {lc.kind} status {lc.status} at venue {ms_iso(lc.venue_ts_ms)} (conn {lc.conn_id[:8]})")
     print(f"- public book polls: {len(public)} ok, {sum(not b.complete for b in public)} with a truncated ladder"
           + (f"; {ms_iso(public[0].recv_ts_ms)} .. {ms_iso(public[-1].recv_ts_ms)}" if public else ""))
@@ -146,8 +176,12 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
     teams = {feeds[-1].home.name, feeds[-1].away.name} if feeds else set()
     qs = [q for x in ox if x.ok for q in odds_api.quotes(x) if {q.home_team, q.away_team} == teams]
     print("\n## The Odds API")
-    print(f"- polls {len(ox)} ({sum(x.ok for x in ox)} ok); quotes for this game {len(qs)} from "
-          f"{len({q.bookmaker for q in qs})} books; vendor event IDs {sorted({q.vendor_event_id for q in qs})}")
+    vendor_ids = sorted({q.vendor_event_id for q in qs})
+    print(f"- polls {len(ox)} ({sum(x.ok for x in ox)} ok); quotes for these teams {len(qs)} from "
+          f"{len({q.bookmaker for q in qs})} books; vendor event IDs {vendor_ids}")
+    if len(vendor_ids) > 1:
+        # Teams alone can't separate a doubleheader's games; event identity arrives with the schema.
+        print(f"- WARNING: {len(vendor_ids)} vendor events match these teams; the quotes below may mix games")
     if ox:
         print(f"- credits after the last poll: {odds_api.credits(ox[-1])}")
 
@@ -177,10 +211,11 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
 
     # -- Gaps
     print("\n## Gaps")
-    found = (gaps.stream_gaps("novig", stream_frames, seq_gaps, resyncs)
-             + gaps.poll_gaps("novig", novig_x, {"public_book"})
-             + gaps.poll_gaps("kalshi", kx, {"orderbook"})
-             + gaps.poll_gaps("odds_api", ox, {"odds"}))
+    found = [gp for gp in (gaps.stream_gaps("novig", nv.frames, nv.replay)
+                           + gaps.poll_gaps("novig", novig_x, {"public_book"})
+                           + gaps.poll_gaps("kalshi", kx, {"orderbook"})
+                           + gaps.poll_gaps("odds_api", ox, {"odds"}))
+             if game_subject(gp.scope, g)]
     for gp in found:
         print(f"- {gp.source} {gp.scope} {gp.reason}: {ms_iso(gp.start_ms)} .. "
               f"{ms_iso(gp.end_ms) if gp.end_ms else 'open'}")
