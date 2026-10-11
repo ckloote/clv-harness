@@ -311,6 +311,18 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_status(args) -> int:
+    from . import status
+    from .archive import now_ms
+    from .session import running_recorder
+    cfg = load_config(args.config)
+    games = load_games(cfg.games_path)
+    t = now_ms()
+    rep = status.status(cfg, games, t, running_recorder(cfg.archive_root), args.game_pk)
+    print(status.render(rep, t))
+    return rep.exit_code()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="raw-recorder", description=__doc__)
     config_help = "config.toml (default: tools/raw_recorder/config.toml)"
@@ -344,6 +356,10 @@ def main(argv: list[str] | None = None) -> int:
     p = add("verify", help="recheck sealed segments against their journals")
     p.add_argument("path", nargs="?")
     p.set_defaults(fn=cmd_verify)
+    p = add("status", help="is the recorder capturing the current (or a given) game? read-only; "
+                           "exit 0 OK, 1 WARN, 2 FAIL")
+    p.add_argument("--game-pk", type=int, help="the game to check (default: the current or next capture window)")
+    p.set_defaults(fn=cmd_status)
     p = add("report", help="volume per source/day, Odds credit spend, Novig probe counts")
     p.add_argument("--day")
     p.set_defaults(fn=cmd_report)

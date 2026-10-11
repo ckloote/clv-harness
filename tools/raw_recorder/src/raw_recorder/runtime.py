@@ -68,12 +68,20 @@ class Recorder:
         self.rec: Stream | None = None
         # Known secret values, scrubbed from any free text we archive or print.
         self.secrets = {v for v in (cfg.env(cfg.odds_api, "key_env"),) if v}
+        self.config_warnings: list[str] = []
 
     # ------------------------------------------------------------- helpers
 
     def note(self, type_: str, **fields) -> None:
         assert self.rec is not None
         self.rec.event(self.rec.stream_id, type_, **fields)
+
+    def warn_config(self, message: str) -> None:
+        """A configuration problem that silently loses evidence (a missing key, a disabled
+        source): archived by the caller, and printed now and whenever a capture window opens,
+        so it reaches the journal near game time and `raw-recorder status`."""
+        self.config_warnings.append(message)
+        warn(message)
 
     def scrub(self, text: str) -> str:
         return redact.scrub(text, self.secrets)
@@ -203,6 +211,7 @@ class Recorder:
                                    ("mlb", cfg.mlb), ("novig", cfg.novig)) if not cfg.enabled(s)]
         if disabled:
             self.note("sources_disabled", sources=disabled, config_path=str(cfg.path))
+            self.warn_config(f"sources disabled in {cfg.path}: {', '.join(disabled)}")
         return specs
 
     def _kalshi_specs(self, http: aiohttp.ClientSession) -> list:
@@ -227,6 +236,9 @@ class Recorder:
         o_rest = self.rest(http, "odds_api", "odds")
         odds = OddsPoller(o_rest, o_rest.stream, cfg.odds_api, cfg.env(cfg.odds_api, "key_env"),
                           p.odds_quota_floor)
+        if odds.api_key is None:
+            self.warn_config(f"The Odds API disabled: ${cfg.odds_api.get('key_env')} is not set, so no sportsbook "
+                             f"quotes are recorded. Set it in the service's environment file and restart.")
 
         async def odds_loop() -> None:
             await odds.check_quota()
@@ -270,6 +282,8 @@ class Recorder:
         if signer is None:
             self.note("novig_stream_disabled", reason="no read key configured "
                       f"(${cfg.novig['key_id_env']}, ${cfg.novig['key_path_env']})")
+            self.warn_config(f"Novig stream disabled: no read key (${cfg.novig['key_id_env']}, "
+                             f"${cfg.novig['key_path_env']}); only the unsigned public book is polled.")
         else:
             specs.append(("novig_streams", lambda: self.novig_streams(http, signer, n_rest)))
         if mode == "always" or (mode == "auto" and signer is None):
@@ -329,6 +343,8 @@ class Recorder:
             if active and not self.inhibitor.held:
                 err = self.inhibitor.acquire()
                 self.note("sleep_inhibit", held=err is None, error=err)
+                for message in self.config_warnings:      # again as a capture window opens
+                    warn(message)
             elif not active and self.inhibitor.held:
                 self.inhibitor.release()
                 self.note("sleep_inhibit", held=False, error=None)
@@ -339,8 +355,15 @@ class Recorder:
                 self.note("host_status", clock=clock_status(), free_disk_mb=free)
                 if free < self.p.min_free_disk_mb:
                     self.note("disk_low", free_disk_mb=free, min_free_disk_mb=self.p.min_free_disk_mb)
-                    print(f"WARNING: {free} MB free under {self.cfg.archive_root}", file=sys.stderr)
+                    warn(f"{free} MB free under {self.cfg.archive_root}")
             await asyncio.sleep(1)
+
+
+def warn(message: str) -> None:
+    """A warning on stderr. Under systemd (JOURNAL_STREAM is set) the `<4>` prefix gives it
+    warning priority, so `journalctl -p warning` and `systemctl status` show it."""
+    prefix = "<4>" if os.environ.get("JOURNAL_STREAM") else ""
+    print(f"{prefix}raw-recorder: WARNING: {message}", file=sys.stderr, flush=True)
 
 
 def signal_running_recorder(root: Path, sig: int = signal.SIGHUP) -> int | None:
