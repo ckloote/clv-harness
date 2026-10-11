@@ -9,9 +9,18 @@
 #   systemctl --user enable --now raw-recorder.service
 #   loginctl enable-linger "$USER"   # keep running while logged out
 #   journalctl --user -u raw-recorder -f
+#   uv run raw-recorder status          # is the current game being captured?
 #
 # The recorder holds a sleep inhibitor itself while a capture window is open.
-# Edit WorkingDirectory if the checkout lives elsewhere. `uv` must be on PATH.
+# Edit WorkingDirectory (and the ExecStart path) if the checkout lives elsewhere.
+# `uv` must be on PATH.
+#
+# The recorder runs from the venv directly so it stays in this service's cgroup:
+# its output, including startup warnings such as a missing key (at warning
+# priority), is in `journalctl --user -u raw-recorder` and `systemctl --user
+# status raw-recorder`, with real CPU and memory figures. Run through the uv snap
+# (`uv run`), it lands in a transient snap scope instead, outside the unit's log.
+# uv only syncs the venv first (--inexact keeps the dev tools installed).
 
 [Unit]
 Description=CLV harness R0 raw recorder
@@ -22,7 +31,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/code/clv-harness
 EnvironmentFile=-%h/.config/raw-recorder/env
-ExecStart=/usr/bin/env uv run --package raw-recorder raw-recorder run
+ExecStartPre=/usr/bin/env uv sync --inexact --package raw-recorder
+ExecStart=%h/code/clv-harness/.venv/bin/raw-recorder run
 # SIGTERM: the recorder emits process_stop and seals every active segment.
 KillSignal=SIGTERM
 TimeoutStopSec=60

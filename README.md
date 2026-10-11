@@ -64,6 +64,7 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
     provision.py            `novig-provision`: management key -> trading::read key (never part of the recorder)
     kalshi.py, odds_api.py, mlb.py   pollers for Kalshi order books, The Odds API, MLB StatsAPI
     scheduler.py, runtime.py, cli.py capture windows, the long-running process, commands
+    status.py               `raw-recorder status`: is the current game being captured, source by source
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
 tools/b0/                   P0 B0 research scripts that reproduce docs/feasibility.md (cache in b0-work/)
 deploy/raw-recorder.service systemd user unit
@@ -170,7 +171,9 @@ The recorder reads secrets from environment variables, never from files in the r
 | `NOVIG_READ_KEY_ID` | UUID of a Novig **`trading::read`** key | Novig falls back to the public book poll |
 | `NOVIG_READ_KEY_PATH` | Path to that key's PKCS#8 PEM, `chmod 600` | (same) |
 | `NOVIG_PAPER_READ_KEY_ID`, `NOVIG_PAPER_READ_KEY_PATH` | The same, for a Novig **Paper** key (`config.paper.toml` only) | Paper uses the public book |
-| `ODDS_API_KEY` | The Odds API key (the free tier is enough for R0) | Odds polling is disabled and the reason recorded |
+| `ODDS_API_KEY` | The Odds API key (the free tier is enough for R0) | Odds polling is disabled, the reason recorded, and a warning printed (below) |
+
+A missing key or disabled source is printed as `raw-recorder: WARNING: …` at startup and again whenever a capture window opens. Under systemd it is logged at warning priority, so `systemctl --user status raw-recorder` and `journalctl --user -u raw-recorder -p warning` show it. `raw-recorder status` reports it as a FAIL.
 
 **Getting a Novig read key ([DESIGN.md §13](DESIGN.md)).** You need a management key first. You create it in the web app at Settings → Novig API, which downloads a `.pem`. On **Production**, that entry appears only after Novig enables the API on your account (see `docs/decisions/2026-10-07-novig-paper.md`; ask developers@novig.com). On **Paper** (`paper.novig.com`, play money) it is always there.
 
@@ -226,7 +229,30 @@ cp deploy/raw-recorder.service ~/.config/systemd/user/
 systemctl --user enable --now raw-recorder.service
 ```
 
-Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments in the unit file.
+Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments in the unit file. After changing the env file or the unit, restart **between** capture windows: a restart mid-game is a recorded gap in every source.
+
+```bash
+systemctl --user daemon-reload
+```
+
+```bash
+systemctl --user restart raw-recorder
+```
+
+### Checking a game while it records
+
+```bash
+uv run raw-recorder status
+```
+
+`status` checks the game whose capture window is open (or the next one; `--game-pk` picks another). It is read-only, so it is safe beside the running recorder. Every line is OK, WARN or FAIL, and the exit code is 0, 1 or 2 for the worst. It checks:
+- **The recorder:** the process holds the archive lock; its session started with no source disabled (a missing key is a FAIL); no task or seal errors; disk above the minimum.
+- **Novig:** each channel (`book`, `trades`) is connected, its transport is alive (a control Ping within `stream.transport_liveness_max_s`, each answered), every snapshot probe was answered and the sequences are contiguous. Any reconnect is a WARN, with the longest stretch it left uncovered.
+- **Kalshi:** each ticker is polled at its interval, without failures; the longest interval between polls.
+- **The Odds API:** polls made against those expected in its window (3 h before first pitch), failures and credits left.
+- **StatsAPI:** the feed is fetched when the window ends.
+
+It is an operational check. After the game, `clv inspect --game-pk N` and `clv ingest` interpret the full capture and record its gaps.
 
 ### After a game
 
@@ -236,6 +262,7 @@ Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments 
 | `uv run raw-recorder seal` | Seal active segments (a running recorder gets SIGHUP and rotates) |
 | `uv run raw-recorder verify` | Recheck every sealed file's hash, size and frame count against its journal |
 | `uv run raw-recorder report` | Volume per source and day, Odds credit spend, Novig Ping and probe counts |
+| `uv run raw-recorder status --game-pk <pk>` | The checks above, for a game whose window has closed |
 | `uv run raw-recorder probe-subscriptions --market <id>` | One-off experiment: can one Novig connection carry `book` and `trades`? |
 
 `echo`, `catalog`, `mlb-feed` and `probe-subscriptions` write to the archive, so they refuse to run while `run` holds it.
