@@ -412,3 +412,25 @@ def test_no_opposite_side_means_check_2_is_unavailable(conn):
 def test_no_reference_at_entry_means_check_2_is_unavailable(conn):
     got = agreement_rows(conn, run(conn), 1, "close_live_mid_depth_1000")       # $1,000 is short at S-1h
     assert got["novig"] == (Fraction(118, 227), None, "no_reference_at_entry")
+
+
+def test_a_snapshot_from_before_a_fact_table_existed_still_replays(conn):
+    # Review of PR #9: a snapshot taken before 0003 has no mark for entry_opposite_quote. It must
+    # still trace and replay, reading that table as empty, never admitting later rows.
+    import json as _json
+    from clv import trace
+    first = run(conn)
+    marks = _json.loads(conn.execute("SELECT high_water_json FROM fact_snapshot WHERE fact_snapshot_id = ?",
+                                     (first.fact_snapshot_id,)).fetchone()[0])
+    del marks["entry_opposite_quote"]
+    old = conn.execute("INSERT INTO fact_snapshot (created_ts_ms, high_water_json, manifest_json, manifest_sha256)"
+                       " SELECT 0, ?, manifest_json, manifest_sha256 FROM fact_snapshot WHERE fact_snapshot_id = ?",
+                       (_json.dumps(marks), first.fact_snapshot_id)).lastrowid
+    assert lineage.use(conn, old)["entry_opposite_quote"] == 0
+    assert conn.execute("SELECT count(*) FROM f_entry_opposite_quote").fetchone()[0] == 0
+    replayed = scoring.run(conn, NOW, snapshot_id=old)
+    doc = trace.trace(conn, replayed.scoring_run_id, ARCHIVE)
+    assert "entry_opposite_quote" not in doc["run"]["fact_snapshot"]["high_water"]     # the marks as stored
+    (s,) = [x for x in doc["scores"] if x["definition"] == "close_live_mid_depth_500" and x["venue"] == "novig"]
+    assert s["check2"]["unavailable_reason"] == "no_opposite_quote" and s["entry"]["opposite_quote"] is None
+    assert Fraction(s["clv_ev"]["exact"]) == Fraction(-791, 11800)                       # everything else as before
