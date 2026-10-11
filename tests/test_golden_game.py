@@ -74,6 +74,12 @@ def test_the_synthetic_numbers_by_hand(synthetic):
     kalshi = pick(before, "close_live_mid_depth_500", "kalshi")
     # Kalshi CLE: YES bid 0.50; asks 1 - NO bids, $90 a level from 0.52: five levels and $50 of a sixth.
     assert q(kalshi["p_close"]) == (Fraction("0.50") + (90 * Fraction("2.70") + 50 * Fraction("0.57")) / 500) / 2
+    # Check 2: DraftKings CLE -118 / CWS +100 de-vig to 118/227, within 8 pp of either reference.
+    c2 = novig["check2"]
+    assert (q(c2["q_entry"]), q(c2["p_entry"]), c2["outlier"]) == (Fraction(118, 227), Fraction("0.499"), False)
+    assert q(c2["entry_overround"]) == Fraction(59, 109) + Fraction(1, 2) - 1
+    assert novig["entry"]["opposite_quote"]["frame"] == novig["entry"]["decision_quote"]["frame"]
+    assert q(kalshi["check2"]["difference"]) == Fraction(118, 227) - q(kalshi["p_ref_entry"])
     closes = {(c["definition"], c["venue"], c["outcome"]): c for c in before["closes"]}
     assert q(closes[("close_live_mid_depth_500", "novig", "CWS")]["p_close"]) == Fraction("0.495")
     assert closes[("close_live_mid_depth_1000", "novig", "CLE")]["unscoreable_reason"] == "insufficient_depth"
@@ -85,6 +91,7 @@ def test_the_synthetic_numbers_by_hand(synthetic):
     assert q(pick(after, "close_live_mid_depth_500", "novig")["clv_ev"]) == q(novig["clv_ev"])
     gone = pick(after, "close_live_mid_depth_500", "kalshi")
     assert (gone["p_close"], gone["clv_ev"], gone["ref_entry_reason"]) == (None, None, "unmapped")
+    assert gone["check2"]["unavailable_reason"] == "no_reference_at_entry"
     assert gone["exclusion_reasons"] == ["equivalence_pending", "unmapped"]
 
 
@@ -110,3 +117,6 @@ def test_game_849832_replays_to_its_committed_trace():
     s = pick(doc["before"], "close_live_mid_depth_500", "novig")
     assert (s["p_close"]["exact"], s["d_entry"]["exact"], s["entry"]["decision_quote"]["price_native"]) == \
         ("207/400", "217/117", "-117")
+    # Check 2: DraftKings CLE -117 / CWS -103 de-vig to 3393/6586 (0.5152) against Novig's 0.5125.
+    assert (s["entry"]["opposite_quote"]["price_native"], s["check2"]["q_entry"]["exact"], s["check2"]["outlier"]) \
+        == ("-103", "3393/6586", False)

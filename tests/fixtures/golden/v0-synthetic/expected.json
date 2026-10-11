@@ -10,6 +10,7 @@
      "book_snapshot_level": 45,
      "collection_gap": 0,
      "entry": 1,
+     "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 5,
@@ -636,6 +637,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -667,7 +677,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "1021/2000",
+      "decimal": "0.510500"
+     },
+     "difference": {
+      "exact": "4233/454000",
+      "decimal": "0.009324"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_100",
@@ -697,6 +727,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -734,7 +773,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "49/100",
+      "decimal": "0.490000"
+     },
+     "difference": {
+      "exact": "677/22700",
+      "decimal": "0.029824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -770,6 +829,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -787,7 +855,21 @@
      "mapping_unverified",
      "equivalence_pending",
      "truncated_ladder"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -823,6 +905,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -840,7 +931,21 @@
      "mapping_unverified",
      "equivalence_pending",
      "insufficient_depth"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -870,6 +975,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -907,7 +1021,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "1043/2000",
+      "decimal": "0.521500"
+     },
+     "difference": {
+      "exact": "-761/454000",
+      "decimal": "-0.001676"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -937,6 +1071,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -974,7 +1117,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "499/1000",
+      "decimal": "0.499000"
+     },
+     "difference": {
+      "exact": "4727/227000",
+      "decimal": "0.020824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -1004,6 +1167,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -1041,7 +1213,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "51/100",
+      "decimal": "0.510000"
+     },
+     "difference": {
+      "exact": "223/22700",
+      "decimal": "0.009824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -1071,6 +1263,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -1108,7 +1309,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "49/100",
+      "decimal": "0.490000"
+     },
+     "difference": {
+      "exact": "677/22700",
+      "decimal": "0.029824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    }
   ],
   "books": {
@@ -1406,6 +1627,7 @@
      "book_snapshot_level": 45,
      "collection_gap": 0,
      "entry": 1,
+     "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 5,
@@ -1960,6 +2182,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -1976,7 +2207,21 @@
     "exclusion_reasons": [
      "equivalence_pending",
      "unmapped"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_depth_100",
@@ -2003,6 +2248,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -2039,7 +2293,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "49/100",
+      "decimal": "0.490000"
+     },
+     "difference": {
+      "exact": "677/22700",
+      "decimal": "0.029824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -2072,6 +2346,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -2088,7 +2371,21 @@
     "exclusion_reasons": [
      "equivalence_pending",
      "unmapped"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -2115,6 +2412,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -2137,7 +2443,21 @@
     "exclusion_reasons": [
      "equivalence_pending",
      "insufficient_depth"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -2170,6 +2490,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -2186,7 +2515,21 @@
     "exclusion_reasons": [
      "equivalence_pending",
      "unmapped"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -2213,6 +2556,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -2249,7 +2601,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "499/1000",
+      "decimal": "0.499000"
+     },
+     "difference": {
+      "exact": "4727/227000",
+      "decimal": "0.020824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -2282,6 +2654,15 @@
        "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
        "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
       }
+     },
+     "opposite_quote": {
+      "price_native": "100",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
      }
     },
     "d_entry": {
@@ -2298,7 +2679,21 @@
     "exclusion_reasons": [
      "equivalence_pending",
      "unmapped"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": null,
+     "difference": null,
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": null,
+     "unavailable_reason": "no_reference_at_entry"
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -2325,6 +2720,15 @@
      },
      "decision_quote": {
       "price_native": "-118",
+      "observed": "2026-04-01T10:58:20.040Z",
+      "venue_ts": "2026-04-01T10:57:50.000Z",
+      "frame": {
+       "ref": "odds_api/2026-04-01/odds-syn.0001.jsonl.gz#4",
+       "sha256": "75d3591c678e6448097b737ad3be5ff9c3d1364452bba0329573f5268ff4277f"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "100",
       "observed": "2026-04-01T10:58:20.040Z",
       "venue_ts": "2026-04-01T10:57:50.000Z",
       "frame": {
@@ -2361,7 +2765,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "118/227",
+      "decimal": "0.519824"
+     },
+     "p_entry": {
+      "exact": "49/100",
+      "decimal": "0.490000"
+     },
+     "difference": {
+      "exact": "677/22700",
+      "decimal": "0.029824"
+     },
+     "entry_overround": {
+      "exact": "9/218",
+      "decimal": "0.041284"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    }
   ],
   "books": {

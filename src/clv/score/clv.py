@@ -12,6 +12,11 @@ A run reads one fact snapshot (clv.lineage) and writes, all against it:
         null_ev      = p_ref_entry * d_entry - 1      (the reference at the decision time)
         clv_residual = (p_close - p_ref_entry) * d_entry
 
+    and check 2's per-entry comparison (DESIGN.md §9.2): q_e, the entry venue's two-way
+    proportional de-vig of the decision quote and its opposite side, against
+    p_e = p_ref_entry, flagged when |q_e - p_e| > controls.agreement_outlier_pp. The
+    slope and the outlier reviews need many events and arrive with G1/B3.
+
 `d_entry` comes from the entry's decision quote. Every value is an exact
 rational. A score with a missing input keeps the row, with the reason; the
 cohort exclusions (mapping status, settlement equivalence, book licensing,
@@ -29,6 +34,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 from clv import lineage
+from clv.config import param
 from clv.close import definitions as close
 from clv.identity import current_mappings, write_resolutions
 from clv.off import resolver
@@ -103,6 +109,7 @@ def _run(conn, now_ms, analysis_spec, snapshot_id) -> RunResult:
             ORDER BY e.entry_id""").fetchall():
         (entry_id, event_id, outcome_id, iid, side, decision, venue, operator, quote_id, dn, dd) = e
         d_entry = Fraction(dn, dd)
+        q_entry = _q_entry(conn, entry_id, d_entry)
         cohort = _entry_exclusions(heads, iid, side, outcome_id, venue, operator)
         off = offs[event_id]
         for d, def_id in defs:
@@ -120,7 +127,7 @@ def _run(conn, now_ms, analysis_spec, snapshot_id) -> RunResult:
                     ref_reasons = [] if ref.mapping.eligible else [ref.mapping.ineligible_reason]
                 reasons = _unique(cohort + ref_reasons + timing + ([cp.reason] if cp.reason else []))
                 _insert_score(conn, run_id, entry_id, venue_ref, def_id, cid, quote_id, d_entry, cp.p, at_entry,
-                              reasons, now_ms)
+                              q_entry, reasons, now_ms)
                 scores += 1
     return RunResult(run_id, snap, len(closes), scores)
 
@@ -136,6 +143,27 @@ def _entry_exclusions(heads, iid: int, side: int, outcome_id: int, venue: str, o
     if venue == "odds_api" and operator not in LICENSED_BOOKS:
         out.append("unlicensed_book")
     return out
+
+
+def _q_entry(conn, entry_id: int, d_entry: Fraction) -> Fraction | None:
+    """q_e = π_side / (π_side + π_other) with π = 1/d: the fixed check-2 de-vig, exact. None
+    without the opposite side of the same observation: no other method is substituted."""
+    if param("controls.agreement_devig_method") != "proportional_two_way":
+        raise ValueError("check 2's de-vig is fixed to proportional_two_way (DESIGN.md §9.2)")
+    row = conn.execute("SELECT d_num, d_den FROM f_entry_opposite_quote WHERE entry_id = ?", (entry_id,)).fetchone()
+    if row is None:
+        return None
+    d_other = Fraction(row[0], row[1])
+    return d_other / (d_entry + d_other)
+
+
+def agreement(q_entry: Fraction | None, p_entry: Fraction | None) -> tuple[int | None, str | None]:
+    """(outlier flag, None) for check 2's per-entry comparison, or (None, why it is unavailable)."""
+    if q_entry is None:
+        return None, "no_opposite_quote"
+    if p_entry is None:
+        return None, "no_reference_at_entry"
+    return int(abs(q_entry - p_entry) > Fraction(param("controls.agreement_outlier_pp")) / 100), None
 
 
 def _unique(xs: list[str]) -> list[str]:
@@ -158,8 +186,9 @@ def _insert_close(conn, snap, def_id, off_id, venue, outcome_id, mres, cutoff, p
 
 
 def _insert_score(conn, run_id, entry_id, venue, def_id, close_id, quote_id, d: Fraction, p_close: Fraction | None,
-                  at_entry: close.Price, reasons: list[str], now_ms) -> int:
+                  at_entry: close.Price, q_entry: Fraction | None, reasons: list[str], now_ms) -> int:
     p_ref = at_entry.p
+    outlier, agreement_reason = agreement(q_entry, p_ref)
     clv_ev = None if p_close is None else p_close * d - 1
     null_ev = None if p_ref is None else p_ref * d - 1
     residual = None if p_close is None or p_ref is None else (p_close - p_ref) * d
@@ -168,8 +197,8 @@ def _insert_score(conn, run_id, entry_id, venue, def_id, close_id, quote_id, d: 
         " entry_quote_observation_id, d_entry_num, d_entry_den, p_close_num, p_close_den, p_ref_entry_num,"
         " p_ref_entry_den, ref_entry_tick_id, ref_entry_reason, clv_ev_num, clv_ev_den, null_ev_num, null_ev_den,"
         " clv_residual_num, clv_residual_den, fee_adjusted_close_ev_num, fee_adjusted_close_ev_den,"
-        " exclusion_reasons, computed_ts_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-        " NULL, NULL, ?, ?)",
+        " q_entry_num, q_entry_den, agreement_outlier, agreement_reason, exclusion_reasons, computed_ts_ms)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)",
         (run_id, entry_id, venue, def_id, close_id, quote_id, d.numerator, d.denominator, *_nd(p_close), *_nd(p_ref),
          at_entry.tick_id, at_entry.reason, *_nd(clv_ev), *_nd(null_ev),
-         *_nd(residual), json.dumps(reasons), now_ms)).lastrowid
+         *_nd(residual), *_nd(q_entry), outlier, agreement_reason, json.dumps(reasons), now_ms)).lastrowid

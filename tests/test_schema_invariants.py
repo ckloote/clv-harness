@@ -11,7 +11,7 @@ from clv import db
 
 FACTS = ["raw_artifact", "event", "event_alias", "outcome", "venue_instrument", "instrument_mapping_observation",
          "tick", "tick_level", "book_snapshot", "book_snapshot_level", "liveness_evidence", "collection_gap",
-         "off_observation", "signal", "entry", "entry_quote_observation"]
+         "off_observation", "signal", "entry", "entry_quote_observation", "entry_opposite_quote"]
 DERIVED = ["fact_snapshot", "mapping_resolution", "off_resolution", "close_def", "close_price", "scoring_run",
            "clv_score"]
 H = "a" * 64
@@ -81,6 +81,12 @@ def seed(c) -> dict:
                        created_ts_ms=T)
     ids["quote"] = ins(c, "entry_quote_observation", entry_id=ids["entry"], concept="observed_quote", price_native="-118",
                        d_entry_num=109, d_entry_den=59, venue_ts_ms=T - 529_000, observed_ts_ms=T - 528_000, **cite)
+    ids["dquote"] = ins(c, "entry_quote_observation", entry_id=ids["entry"], concept="decision_quote",
+                        price_native="-118", d_entry_num=109, d_entry_den=59, venue_ts_ms=T - 529_000,
+                        observed_ts_ms=T - 528_000, **cite)
+    if has_table(c, "entry_opposite_quote"):                                         # from 0003
+        ids["opposite"] = ins(c, "entry_opposite_quote", entry_id=ids["entry"], side=0, price_native="100",
+                              d_num=2, d_den=1, venue_ts_ms=T - 529_000, observed_ts_ms=T - 528_000, **cite)
     ids["fs"] = ins(c, "fact_snapshot", created_ts_ms=T, high_water_json="{}", manifest_json="[]", manifest_sha256=H)
     ins(c, "mapping_resolution", fact_snapshot_id=ids["fs"], resolver_version="v0", venue_instrument_id=ids["novig"],
         side=1, mapping_obs_id=ids["map_novig"], primary_eligible=0, ineligible_reason="equivalence_pending",
@@ -97,6 +103,10 @@ def seed(c) -> dict:
                      analysis_spec="v0", created_ts_ms=T)
     ids["score"] = score(c, ids, "novig")
     return ids
+
+
+def has_table(c, name):
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
 
 
 def add_event(c, game_pk):
@@ -127,8 +137,11 @@ def score(c, ids, venue, **over):
     row = dict(scoring_run_id=ids["run"], entry_id=ids["entry"], ref_venue=venue, close_def_id=ids["cdef"],
                close_price_id=ids[f"close_{venue}"], entry_quote_observation_id=ids["quote"], d_entry_num=109,
                d_entry_den=59, computed_ts_ms=T)
-    if "ref_entry_reason" in {r[1] for r in c.execute("PRAGMA table_info(clv_score)")}:     # from 0002
+    columns = {r[1] for r in c.execute("PRAGMA table_info(clv_score)")}
+    if "ref_entry_reason" in columns:                                                  # from 0002
         row["ref_entry_reason"] = "no_quotes"
+    if "agreement_reason" in columns:                                                  # from 0003
+        row["agreement_reason"] = "no_reference_at_entry"
     row.update(over)
     return ins(c, "clv_score", **row)
 
@@ -258,12 +271,14 @@ def test_invalid_values_are_rejected(conn, table, over):
         "liveness_evidence": dict(venue_instrument_id=ids["novig"], source="poll", kind="poll_unchanged",
                                   observed_ts_ms=T, raw_artifact_id=ids["art"], raw_line=1),
         "collection_gap": dict(kind="open", source="novig", scope="s", reason="r", boundary_ts_ms=T, observed_ts_ms=T),
-        "entry_quote_observation": dict(entry_id=ids["entry"], concept="decision_quote", price_native="-118",
+        "entry_quote_observation": dict(entry_id=entry(conn, ids), concept="decision_quote", price_native="-118",
                                         d_entry_num=109, d_entry_den=59, observed_ts_ms=T - 528_000,
                                         raw_artifact_id=ids["art"], raw_line=1),
     }[table]
     ins(conn, table, **base)                          # the base row is valid
     base.update(over)
+    if table == "entry_quote_observation":            # one quote per entry and concept: use a fresh entry,
+        base["entry_id"] = entry(conn, ids)           # so only the invalid value can refuse the row
     with pytest.raises(sqlite3.IntegrityError):
         ins(conn, table, **base)
 
@@ -368,7 +383,7 @@ def test_0002_keeps_every_valid_0001_row_exactly_and_marks_it_legacy():
     score(c, ids, "kalshi", p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800)
     score(c, ids, "novig", **fresh_close(c, ids), clv_ev_num=-791, clv_ev_den=11800)
     old = {t: [tuple(r) for r in c.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in ("close_price", "clv_score")}
-    assert db.migrate(c) == [2]
+    assert db.migrate(c) == [2, 3]
     for t, rows in old.items():
         width = len(rows[0])
         assert [tuple(r)[:width] for r in c.execute(f"SELECT {', '.join(cols(c, t)[:width])} FROM {t} ORDER BY 1")] \
@@ -394,6 +409,39 @@ def fresh_close(c, ids):
     """A close under a new definition, so another score of the same entry and venue is allowed."""
     d = new_def(c)
     return dict(close_def_id=d, close_price_id=close(c, ids, "novig", ids["tick"], close_def_id=d))
+
+
+def test_the_opposite_quote_is_the_other_side_of_the_decision_quotes_observation(conn):
+    ids = seed(conn)
+    e2 = entry(conn, ids)
+    ins(conn, "entry_quote_observation", entry_id=e2, concept="decision_quote", price_native="-118",
+        d_entry_num=109, d_entry_den=59, observed_ts_ms=T - 528_000, raw_artifact_id=ids["art"], raw_line=0)
+    good = dict(entry_id=e2, side=0, price_native="100", d_num=2, d_den=1, observed_ts_ms=T - 528_000,
+                raw_artifact_id=ids["art"], raw_line=0)
+    for bad in (dict(side=1),                       # the entry's own side
+                dict(raw_line=1),                   # another frame
+                dict(observed_ts_ms=T - 527_000)):  # another observation
+        with pytest.raises(sqlite3.IntegrityError, match="not the other side of the decision quote"):
+            ins(conn, "entry_opposite_quote", **dict(good, **bad))
+    ins(conn, "entry_opposite_quote", **good)
+    with pytest.raises(sqlite3.IntegrityError):     # one per entry
+        ins(conn, "entry_opposite_quote", **good)
+
+
+def test_check_2_columns_must_agree(conn):
+    ids = seed(conn)
+    early = ins(conn, "tick", venue_instrument_id=ids["novig"], source="poll", venue_status="OPEN",
+                observed_ts_ms=T - 510_000, bid0_e4=4800, bid1_e4=5150, levels0=0, levels1=0, truncated=0,
+                ladder_complete=1, raw_artifact_id=ids["art"], raw_line=2)
+    priced = dict(p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800, ref_entry_reason=None,
+                  ref_entry_tick_id=early, q_entry_num=118, q_entry_den=227)
+    for bad in (dict(agreement_outlier=None, agreement_reason=None),       # neither a flag nor a reason
+                dict(agreement_outlier=0, agreement_reason="x"),           # both
+                dict(agreement_outlier=2, agreement_reason=None),
+                dict(q_entry_num=None, agreement_outlier=0, agreement_reason=None)):
+        with pytest.raises(sqlite3.IntegrityError, match="check 2 columns"):
+            score(conn, ids, "novig", **fresh_close(conn, ids), **dict(priced, **bad))
+    score(conn, ids, "novig", **fresh_close(conn, ids), **dict(priced, agreement_outlier=0, agreement_reason=None))
 
 
 def cols(c, table):

@@ -15,7 +15,8 @@ import sqlite3
 
 FACT_TABLES = ("raw_artifact", "event", "event_alias", "outcome", "venue_instrument",
                "instrument_mapping_observation", "tick", "tick_level", "book_snapshot", "book_snapshot_level",
-               "liveness_evidence", "collection_gap", "off_observation", "signal", "entry", "entry_quote_observation")
+               "liveness_evidence", "collection_gap", "off_observation", "signal", "entry", "entry_quote_observation",
+               "entry_opposite_quote")
 
 
 def canonical_json(obj) -> str:
@@ -35,14 +36,19 @@ def take(conn: sqlite3.Connection, now_ms: int) -> int:
 
 
 def use(conn: sqlite3.Connection, snapshot_id: int) -> dict[str, int]:
-    """Point the `f_<table>` views at a snapshot; returns its high-water marks."""
+    """Point the `f_<table>` views at a snapshot; returns its high-water marks.
+
+    A fact table a snapshot has no mark for did not exist when the snapshot was taken (it
+    arrived with a later migration, e.g. entry_opposite_quote in 0003), so its mark is 0:
+    the snapshot keeps exactly its original inputs, and later rows never leak into it."""
     row = conn.execute("SELECT high_water_json FROM fact_snapshot WHERE fact_snapshot_id = ?", (snapshot_id,)).fetchone()
     if row is None:
         raise KeyError(f"no fact_snapshot {snapshot_id}")
-    marks = json.loads(row[0])
+    stored = json.loads(row[0])
+    marks = {t: int(stored.get(t, 0)) for t in FACT_TABLES}
     for t in FACT_TABLES:
         conn.execute(f"DROP VIEW IF EXISTS temp.f_{t}")
-        conn.execute(f"CREATE TEMP VIEW f_{t} AS SELECT * FROM main.{t} WHERE rowid <= {int(marks[t])}")
+        conn.execute(f"CREATE TEMP VIEW f_{t} AS SELECT * FROM main.{t} WHERE rowid <= {marks[t]}")
     return marks
 
 

@@ -4,7 +4,7 @@ Date: 2026-10-10
 
 Status: decided (V0 part 3)
 
-This records the choices V0 part 3 made in closing and scoring the golden-game candidate, CLE @ CWS, ALDS Game 4 (`gamePk` 849832). It covers the off resolver, the close function, scoring, the mapping-correction replay and the golden-game fixture (DESIGN.md §13, V0).
+This records the choices V0 parts 3 and 4 made in closing and scoring the golden-game candidate, CLE @ CWS, ALDS Game 4 (`gamePk` 849832). It covers the off resolver, the close function, scoring, the mapping-correction replay and the golden-game fixture (DESIGN.md §13, V0).
 
 ## 1. The golden game is committed as a synthetic game; 849832's raw frames stay local
 
@@ -58,7 +58,17 @@ Run 1 lists `mapping_unverified`; run 2 does not. The numbers are identical. Rec
 
 The synthetic game's correction also rejects a Kalshi ticker that the game list named wrongly: the next day's game, a planted error. That shows a correction changing numbers. Kalshi's CLE closes and scores become `unmapped`, and the original run survives.
 
-## 5. Results on 849832 (local replay)
+## 5. Check 2, per entry
+
+V0's entry exercises check 2's per-entry comparison (DESIGN.md §9.2), added after V0 part 3 in migration `0003_v0_agreement`. It compares `q_e` with `p_e`:
+- `q_e` is the entry venue's two-way proportional de-vig of the decision quote and its opposite side, both from the same response frame (`entry_opposite_quote`).
+- `p_e` is the reference at the decision time (`p_ref_entry`).
+
+An entry is flagged when the two differ by more than `controls.agreement_outlier_pp`. The slope regression and outlier dispositions need many events and `control_outlier_review`, so they wait for G1/B3.
+
+On 849832, DraftKings' −117 / −103 (overround 4.66%) de-vigs to `q_e` = 3393/6586 (0.5152). Against Novig (0.5125) that is +0.27 pp, and against Kalshi (0.515) +0.02 pp. Neither is flagged. Null EV against Novig (−4.95%) is in line with DraftKings' own overround, as §9.2 expects.
+
+## 6. Results on 849832 (local replay)
 
 The entry is DraftKings Guardians at −117 (`d_entry` 217/117), decided 2026-10-08 23:05Z on the quote received at 23:02:08.
 

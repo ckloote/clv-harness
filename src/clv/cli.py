@@ -293,17 +293,20 @@ def print_scores(conn, run_id: int) -> None:
     pct = lambda n, d: "" if n is None else f"{100 * float(Fraction(n, d)):+.2f}"
     prob = lambda n, d: "" if n is None else f"{float(Fraction(n, d)):.4f}"
     print(f"  {'definition':26} {'venue':6} {'outcome':7} {'d_entry':>8} {'p_close':>7} {'p_ref':>7} "
-          f"{'clv_ev%':>8} {'null_ev%':>8}  reasons")
+          f"{'clv_ev%':>8} {'null_ev%':>8} {'q-p pp':>7}  reasons")
     for r in conn.execute("""
             SELECT d.name, s.ref_venue, o.team_abbreviation, s.d_entry_num, s.d_entry_den, s.p_close_num, s.p_close_den,
                    s.p_ref_entry_num, s.p_ref_entry_den, s.clv_ev_num, s.clv_ev_den, s.null_ev_num, s.null_ev_den,
-                   s.exclusion_reasons, s.ref_entry_reason
+                   s.exclusion_reasons, s.ref_entry_reason, s.q_entry_num, s.q_entry_den, s.agreement_outlier
             FROM clv_score s JOIN close_def d USING (close_def_id) JOIN entry e USING (entry_id)
             JOIN outcome o ON o.outcome_id = e.outcome_id WHERE s.scoring_run_id = ?
             ORDER BY e.entry_id, d.name, s.ref_venue""", (run_id,)):
-        reasons = ", ".join(json.loads(r[13]) + ([f"ref at entry: {r[14]}"] if r[14] else []))
+        reasons = ", ".join(json.loads(r[13]) + ([f"ref at entry: {r[14]}"] if r[14] else [])
+                            + (["check 2 outlier"] if r[17] else []))
+        q_minus_p = "" if r[15] is None or r[7] is None else \
+            f"{100 * float(Fraction(r[15], r[16]) - Fraction(r[7], r[8])):+.2f}"
         print(f"  {r[0]:26} {r[1]:6} {r[2]:7} {prob(r[3], r[4]):>8} {prob(r[5], r[6]):>7} {prob(r[7], r[8]):>7} "
-              f"{pct(r[9], r[10]):>8} {pct(r[11], r[12]):>8}  {reasons}")
+              f"{pct(r[9], r[10]):>8} {pct(r[11], r[12]):>8} {q_minus_p:>7}  {reasons}")
 
 
 if __name__ == "__main__":
