@@ -2,7 +2,7 @@
 # is named beside it. Change a value there first (with a dated decision record
 # for provisional values), then here. Secrets never go in this file.
 
-games_file = "games.toml"         # relative to this file
+games_file = "games.toml"         # relative to this file: hand-checked games, overriding discovery
 
 [archive]
 root = "../../archive"            # relative to this file: <repo>/archive
@@ -49,3 +49,12 @@ key_env = "ODDS_API_KEY"
 
 [mlb]
 base_url = "https://statsapi.mlb.com"
+refetch_after_s = [43200]                   # feeds again 12 h after each window ends: final data, scoring corrections
+
+# Which games to record (raw_recorder.discovery): the StatsAPI schedule and the Novig
+# and Kalshi catalogs, archived, matched and merged into <archive>/games.discovered.toml.
+[discovery]
+enabled = true
+interval_s = 3600                           # one round at startup, then hourly
+days_ahead = 1                              # today and tomorrow (US Eastern)
+game_types = ["F", "D", "L", "W"]           # StatsAPI gameType: the postseason rounds; add "R" for the regular season
