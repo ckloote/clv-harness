@@ -6,25 +6,25 @@
    "analysis_spec": "v0",
    "fact_snapshot": {
     "high_water": {
-     "book_snapshot": 261,
-     "book_snapshot_level": 18791,
-     "collection_gap": 169,
+     "book_snapshot": 251,
+     "book_snapshot_level": 18411,
+     "collection_gap": 23,
      "entry": 1,
      "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 4,
      "instrument_mapping_observation": 24,
-     "liveness_evidence": 2373,
+     "liveness_evidence": 494,
      "off_observation": 14,
      "outcome": 2,
-     "raw_artifact": 30,
+     "raw_artifact": 29,
      "signal": 2,
-     "tick": 21888,
-     "tick_level": 421062,
+     "tick": 8459,
+     "tick_level": 152633,
      "venue_instrument": 12
     },
-    "manifest_sha256": "fab543de581635110b1f33866860f9cb4c58ee56d24307b11f38f1c69cdfdeec"
+    "manifest_sha256": "0c4304d726e3a71554151f68aa10c28a2c10690deb00d83a950a879d635d4b06"
    }
   },
   "off": [
@@ -1531,25 +1531,25 @@
    "analysis_spec": "v0",
    "fact_snapshot": {
     "high_water": {
-     "book_snapshot": 261,
-     "book_snapshot_level": 18791,
-     "collection_gap": 169,
+     "book_snapshot": 251,
+     "book_snapshot_level": 18411,
+     "collection_gap": 23,
      "entry": 1,
      "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 4,
      "instrument_mapping_observation": 26,
-     "liveness_evidence": 2373,
+     "liveness_evidence": 494,
      "off_observation": 14,
      "outcome": 2,
-     "raw_artifact": 30,
+     "raw_artifact": 29,
      "signal": 2,
-     "tick": 21888,
-     "tick_level": 421062,
+     "tick": 8459,
+     "tick_level": 152633,
      "venue_instrument": 12
     },
-    "manifest_sha256": "fab543de581635110b1f33866860f9cb4c58ee56d24307b11f38f1c69cdfdeec"
+    "manifest_sha256": "0c4304d726e3a71554151f68aa10c28a2c10690deb00d83a950a879d635d4b06"
    }
   },
   "off": [

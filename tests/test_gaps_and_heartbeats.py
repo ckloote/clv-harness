@@ -140,6 +140,23 @@ def test_sequence_gap_is_closed_by_the_replacement_connection():
     assert got == [("reconnect", "a/book", 150, 300), ("sequence_gap", "a/book", 150, 300)]
 
 
+def test_lifecycle_transition_is_a_gap_until_a_snapshot_on_any_connection():
+    golive = {"ts": 200, "delta": {"a": {"eventId": "ev", "lifecycle": {"seq": 1, "deltas": [
+        {"kind": "GOLIVE", "status": "OPEN"}]}}}}
+    probe = {"ts": 210, "nonce": 2, "snapshot": {"a": {"eventId": "ev", "book": {"seq": 11, "orders": ORDERS}}}}
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a", seq=10), delta(150, "c1", "a", 11),
+                      fr(200, "c1", "in", golive), delta(205, "c1", "a", 12), fr(210, "c1", "in", probe),
+                      disconnected(400, "c1", "recorder_stop"))
+    assert got == [("lifecycle_reset", "a/book", 200, 210)]
+    # The same transition on a second connection's book is the same gap, not another.
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a", seq=10),
+                      connect(99, "c2", ["a"]), subscribe(101, "c2", "a", seq=10), delta(150, "c1", "a", 11),
+                      delta(151, "c2", "a", 11), fr(200, "c1", "in", golive),
+                      fr(201, "c2", "in", golive), disconnected(400, "c1", "recorder_stop"),
+                      disconnected(400, "c2", "recorder_stop"))
+    assert got == [("lifecycle_reset", "a/book", 200, None)]
+
+
 def test_overlapping_connections_leave_no_gap():
     assert stream_gaps(one_connection("c1", 100, 400, "recorder_stop"), one_connection("c2", 200, 500, "no_active_markets")) == []
 

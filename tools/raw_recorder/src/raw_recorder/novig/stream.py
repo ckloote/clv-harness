@@ -14,6 +14,10 @@ Per connection (new conn_id each time; stream_id == conn_id):
   (book 16, trades 4 per market; the `stream` bucket refills 4/s), so they
   never draw the shared bucket below `r0.stream_probe_reserve_fraction` of
   capacity; a probe that cannot be afforded is archived as `probe_skipped`.
+* Lifecycle probes: on a `book` connection, a lifecycle delta for a market
+  (e.g. GOLIVE) gets that market a probe on the next maintenance tick, busy or
+  not. The venue drops resting orders at GOLIVE without book deltas, so replay
+  distrusts the book from the transition until a snapshot taken after it.
 * Disconnects reconnect with backoff and resubscribe. No sequence
   interpretation or gap repair: later replay finds gaps from raw `seq`.
 
@@ -182,6 +186,7 @@ class _Connection:
         self.markets: set[str] = set()
         self.last_activity: dict[str, float] = {}
         self.last_probe: dict[str, float] = {}
+        self.transitioned: set[str] = set()     # markets with a lifecycle delta awaiting a book probe
         self.opened = owner.mono()
         self.close_reason: str | None = None
 
@@ -206,6 +211,7 @@ class _Connection:
             await self.send({"unsubscribe": [f"market:{m}" for m in sorted(markets)]})
             self.o.budget.spend(len(markets))
             self.markets -= markets
+            self.transitioned -= markets
 
     def note_activity(self, text: str) -> None:
         try:
@@ -219,8 +225,12 @@ class _Connection:
             body = obj.get(key)
             if isinstance(body, dict):
                 for market_id, payload in body.items():
-                    if isinstance(payload, dict) and self.o.channel in payload:
+                    if not isinstance(payload, dict):
+                        continue
+                    if self.o.channel in payload:
                         self.last_activity[market_id] = now
+                    if key == "delta" and "lifecycle" in payload and self.o.channel == "book":
+                        self.transitioned.add(market_id)
 
     async def serve(self, desired: frozenset[str]) -> None:
         """Receive and maintain until either stops; a failure in either one
@@ -276,7 +286,8 @@ class _Connection:
                 return
 
     async def maintain(self) -> None:
-        """Once a second: follow the desired market set and probe quiet channels."""
+        """Once a second: follow the desired market set, and probe quiet channels and books
+        after a lifecycle transition."""
         interval = self.o.params.channel_probe_interval_s
         while True:
             await asyncio.sleep(1)
@@ -290,15 +301,19 @@ class _Connection:
 
             now = self.o.mono()
             due = sorted(m for m in self.markets
-                         if now - max(self.last_activity.get(m, float("-inf")),
-                                      self.last_probe.get(m, float("-inf"))) >= interval)
+                         if m in self.transitioned or now - max(self.last_activity.get(m, float("-inf")),
+                                                                self.last_probe.get(m, float("-inf"))) >= interval)
             if not due:
                 continue
             for m in due:
                 self.last_probe[m] = now
             tokens = self.o.budget.available()
             affordable = max(0, int((tokens - self.o.reserve) // self.o.weight))
+            # After a transition the book is untrusted until a probe: those go first, and one
+            # that cannot be afforded stays due and is retried next tick.
+            due.sort(key=lambda m: m not in self.transitioned)
             send, skip = due[:affordable], due[affordable:]
+            self.transitioned -= set(send)
             if send:
                 nonce = await self.send({"snapshot": {"markets": {m: self.o.channel for m in send}}})
                 self.o.budget.spend(self.o.weight * len(send))

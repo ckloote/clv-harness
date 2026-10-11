@@ -340,9 +340,12 @@ def test_a_quarantined_update_ends_the_stored_books_validity(crossed):
     assert got[("novig", "CWS")] == (None, "crossed_book", S - 600 * SEC)
     gaps = [tuple(r) for r in crossed.execute(
         "SELECT kind, scope, reason, boundary_ts_ms FROM collection_gap WHERE source = 'novig'")]
-    # From the last trustworthy observation (the probe) to the next stored state (the S+400 s uncross).
+    # From the last trustworthy observation (the probe) to the next stored state: the snapshot after
+    # GOLIVE, which dropped the crossing order. GOLIVE itself is a gap until that snapshot.
     assert gaps == [("open", BOOK_SCOPE, "crossed_book", S + 230 * SEC + 50),
-                    ("close", BOOK_SCOPE, "crossed_book", S + 400 * SEC)]
+                    ("close", BOOK_SCOPE, "crossed_book", S + 311 * SEC + 50),
+                    ("open", BOOK_SCOPE, "lifecycle_reset", S + 310 * SEC),
+                    ("close", BOOK_SCOPE, "lifecycle_reset", S + 311 * SEC + 50)]
 
 
 def test_a_quarantine_after_the_decision_leaves_null_ev_alone(crossed):

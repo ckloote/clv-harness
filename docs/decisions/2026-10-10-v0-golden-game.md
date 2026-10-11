@@ -48,7 +48,7 @@ Supporting rules:
 - **Reference source:** Novig's reference source is whichever of its stream and public-book poll has the freshest liveness evidence. Novig was polled until 23:31:54 and streamed from 23:32:14. So the 23:05 entry's reference is the poll, and the close is the stream.
 - **Poll liveness:** `poll.liveness_max_s` (30 s) is new in DESIGN.md §10, beside `stream.liveness_max_s`.
 - **Short stored ladders:** a stored ladder that runs out before the notional fails closed as `truncated_ladder` when the tick was truncated. Otherwise it is `insufficient_depth`.
-- **Quarantined replacements:** a quarantined (crossed) state that replaces a current stored book ends that book's validity. The ingest records it as a `collection_gap` with reason `crossed_book`. The gap runs from the book's last trustworthy observation to the next stored state, so a close or null-EV reference never prices the replaced book, however fresh its earlier evidence. On 849832 this adds 74 in-play gaps, all after 00:09, and changes no pregame close.
+- **Quarantined replacements:** a quarantined (crossed) state that replaces a current stored book ends that book's validity. The ingest records it as a `collection_gap` with reason `crossed_book`. The gap runs from the book's last trustworthy observation to the next stored state, so a close or null-EV reference never prices the replaced book, however fresh its earlier evidence. On 849832 this first added 74 in-play gaps; since 2026-10-11 there are none, because that "crossing" was stale pregame orders and the book is untrusted from `GOLIVE` (`lifecycle_reset`). No pregame close changes either way.
 
 ## 4. The 849832 mapping correction verifies the DraftKings line
 
@@ -77,7 +77,7 @@ The entry is DraftKings Guardians at −117 (`d_entry` 217/117), decided 2026-10
 | Novig (stream, book 3.8 s old) | 0.5175 | 0.5125 (poll) | −4.02% | −4.95% |
 | Kalshi (poll, book 0.9 s old) | 0.515 | 0.515 | −4.48% | −4.48% |
 
-Both books held more than $1,000 of payout at the top levels, so every depth benchmark equals the top-of-book midpoint. The Novig close book is from 00:07:01.214, before the first pitch and before the in-play crossing quarantined at ingest (from 00:09:11).
+Both books held more than $1,000 of payout at the top levels, so every depth benchmark equals the top-of-book midpoint. The Novig close book is from 00:07:01.214, before the first pitch and before `GOLIVE`, from which the stream book is untrusted (no snapshot followed it in this capture).
 
 ## Revisit when
 
