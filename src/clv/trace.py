@@ -11,8 +11,9 @@ sha256 is checked against `raw_artifact` before any line is read.
     closes     per close definition, venue and outcome: cutoff, book, ages,
                p_close or the unscoreable reason, and the reference mapping
     scores     per entry, venue and definition: the entry quote frame, d_entry,
-               p_close, the reference at the decision time, the metrics and the
-               cohort exclusions
+               p_close, the reference at the decision time, the metrics, the
+               cohort exclusions and check 2's per-entry comparison (q_e, p_e, the
+               entry market's overround and the outlier flag)
 
 Rationals are written exactly ("21/10") and as 6-place decimals for reading.
 """
@@ -157,23 +158,34 @@ def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True
                q.raw_artifact_id, q.raw_line, s.d_entry_num, s.d_entry_den, s.p_close_num, s.p_close_den,
                s.p_ref_entry_num, s.p_ref_entry_den, s.ref_entry_tick_id, s.ref_entry_reason, s.clv_ev_num,
                s.clv_ev_den, s.null_ev_num, s.null_ev_den, s.clv_residual_num, s.clv_residual_den,
-               s.exclusion_reasons
+               s.exclusion_reasons, s.q_entry_num, s.q_entry_den, s.agreement_outlier, s.agreement_reason,
+               e.entry_id
         FROM clv_score s JOIN close_def d USING (close_def_id) JOIN entry e USING (entry_id)
         JOIN signal sg ON sg.signal_id = e.signal_id
         JOIN outcome o ON o.outcome_id = e.outcome_id
         JOIN venue_instrument v ON v.venue_instrument_id = e.venue_instrument_id
         JOIN entry_quote_observation q ON q.entry_quote_observation_id = s.entry_quote_observation_id
         WHERE s.scoring_run_id = ? ORDER BY e.entry_id, d.name, s.ref_venue""", (run_id,)).fetchall():
+        opp = conn.execute("SELECT price_native, observed_ts_ms, venue_ts_ms, raw_artifact_id, raw_line, d_num, d_den"
+                           " FROM f_entry_opposite_quote WHERE entry_id = ?", (s[34],)).fetchone()
+        d_entry, q_entry, p_entry = _frac(s[15], s[16]), _frac(s[30], s[31]), _frac(s[19], s[20])
+        check2 = {"q_entry": _q(q_entry), "p_entry": _q(p_entry),
+                  "difference": _q(None if q_entry is None or p_entry is None else q_entry - p_entry),
+                  "entry_overround": _q(None if opp is None else 1 / d_entry + 1 / Fraction(opp[5], opp[6]) - 1),
+                  "outlier": None if s[32] is None else bool(s[32]), "unavailable_reason": s[33]}
         scores.append({
             "definition": s[0], "venue": s[1],
             "entry": {"outcome": s[2], "producer": s[3], "decision": _iso(s[4]), "instrument": f"{s[5]}:{s[6]}",
                       "operator": s[7], "side": s[9], "mapping": mapping(resolution_of(s[8], s[9])),
                       "decision_quote": {"price_native": s[10], "observed": _iso(s[11]), "venue_ts": _iso(s[12]),
-                                         "frame": frames.frame(s[13], s[14])}},
+                                         "frame": frames.frame(s[13], s[14])},
+                      "opposite_quote": None if opp is None else {
+                          "price_native": opp[0], "observed": _iso(opp[1]), "venue_ts": _iso(opp[2]),
+                          "frame": frames.frame(opp[3], opp[4])}},
             "d_entry": _q(_frac(s[15], s[16])), "p_close": _q(_frac(s[17], s[18])),
             "p_ref_entry": _q(_frac(s[19], s[20])), "ref_entry_book": book(s[21]), "ref_entry_reason": s[22],
             "clv_ev": _q(_frac(s[23], s[24])), "null_ev": _q(_frac(s[25], s[26])),
-            "clv_residual": _q(_frac(s[27], s[28])), "exclusion_reasons": json.loads(s[29])})
+            "clv_residual": _q(_frac(s[27], s[28])), "exclusion_reasons": json.loads(s[29]), "check2": check2})
 
     signals = [{"outcome": r[0], "producer": r[1], "kind": r[2], "decision": _iso(r[3]), "would_bet": bool(r[4]),
                 "has_entry": bool(r[5])} for r in conn.execute("""
