@@ -124,7 +124,7 @@ def test_a_stopped_recorder_fails_only_inside_a_window(tmp_path):
     assert ("recorder", "FAIL") in got and rep.exit_code() == 2
     before = status.status(cfg_for(tmp_path), [GAME], S - 4 * 3_600_000, None)
     assert before.phase == "before window" and before.worst == "WARN"
-    assert {a for _, a, _ in before.checks} == {"recorder", "disk", "window"}
+    assert {a for _, a, _ in before.checks} == {"recorder", "disk", "window", "games"}
 
 
 def test_the_game_can_be_chosen_and_an_unknown_one_fails(tmp_path):

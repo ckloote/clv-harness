@@ -28,8 +28,8 @@ async def fetch_markets(rest: RestRecorder, base: str, tickers: tuple[str, ...])
                            subjects=[subject(t) for t in tickers], purpose="catalog")
 
 
-async def fetch_series(rest: RestRecorder, base: str, series_ticker: str) -> list[dict]:
-    """All open markets of a series, paginated; archived and returned for `catalog`."""
+async def fetch_series(rest: RestRecorder, base: str, series_ticker: str) -> tuple[list[dict], bool]:
+    """All open markets of a series, paginated and archived, and whether every page was read."""
     markets, cursor = [], None
     while True:
         params = {"series_ticker": series_ticker, "status": "open", "limit": "200"}
@@ -38,9 +38,9 @@ async def fetch_series(rest: RestRecorder, base: str, series_ticker: str) -> lis
         res = await rest.request("GET", base, "/markets", params=params,
                                  subjects=[f"kalshi:series:{series_ticker}"], purpose="catalog")
         if not res.ok or res.body is None:
-            return markets
+            return markets, False
         page = json.loads(res.body)
         markets.extend(page.get("markets", []))
         cursor = page.get("cursor")
         if not cursor:
-            return markets
+            return markets, True

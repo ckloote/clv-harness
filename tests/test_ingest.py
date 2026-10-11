@@ -441,3 +441,37 @@ def test_recorded_849832_ingests():
     assert not rep.quarantined
     assert q(c, "SELECT count(*), max(observed_ts_ms) < ?, sum(truncated), sum(1 - ladder_complete) FROM tick "
                 "WHERE source = 'stream'", golive_recv) == [(1633, 1, 0, 0)]
+
+
+def test_a_discovered_game_ingests_as_fuzzy_candidates(tmp_path):
+    # The recorder's discovery matched this game by rule: nothing was checked by hand, so its
+    # instruments enter quarantine until a correction verifies them (measurement contract §4).
+    root = tmp_path / "archive"
+    write_archive(root, tmp_path / "found.toml")
+    (root / "games.discovered.toml").write_text(
+        (tmp_path / "found.toml").read_text() + 'notes = ["2 Kalshi events, all recorded: check which is this game"]\n')
+    c = db.connect(":memory:")
+    db.migrate(c)
+    ingest_game(c, root, PK, tmp_path / "no-games.toml", now_ms=NOW)
+    exchange_maps = ("SELECT DISTINCT m.mapping_status FROM instrument_mapping_observation m "
+                     "JOIN venue_instrument v USING (venue_instrument_id) WHERE v.venue IN ('kalshi', 'novig')")
+    maps = q(c, exchange_maps)
+    aliases = q(c, "SELECT DISTINCT provider, status, method FROM event_alias WHERE provider IN ('kalshi', 'novig') ORDER BY 1")
+    assert maps == [("fuzzy_candidate",)]
+    assert aliases == [("kalshi", "fuzzy_candidate", "recorder discovery"), ("novig", "fuzzy_candidate", "recorder discovery")]
+    (evidence,) = q(c, "SELECT DISTINCT evidence FROM event_alias WHERE provider = 'kalshi'")
+    assert "not checked" in evidence[0] and "check which is this game" in evidence[0]
+    # A hand-checked games.toml entry for the same gamePk wins: manual_verified.
+    c2 = db.connect(":memory:")
+    db.migrate(c2)
+    ingest_game(c2, root, PK, tmp_path / "found.toml", now_ms=NOW)
+    assert q(c2, exchange_maps) == [("manual_verified",)]
+
+
+def test_the_recorder_and_harness_agree_on_novig_abbreviations():
+    from raw_recorder import discovery
+    from raw_recorder.config import DISCOVERED_FILE
+
+    from clv import games, identity
+    assert discovery.NOVIG_ABBR == identity.NOVIG_ABBR
+    assert DISCOVERED_FILE == games.DISCOVERED

@@ -14,7 +14,9 @@ Checks, for one game's capture window (the current one by default):
 - Kalshi: every ticker is polled at its interval, without failures;
 - The Odds API: polled through its window, without failures, with credits left;
 - StatsAPI: the feed is fetched once the window has ended;
-- free disk above r0.min_free_disk_mb.
+- free disk above r0.min_free_disk_mb;
+- game discovery (when on) ran within two of its intervals, and the game's
+  entry is reported with its source and any notes (an ambiguous match).
 
 Sequence contiguity here is an operational signal only; `clv inspect` and
 `clv ingest` own the interpretation and record gaps (DESIGN.md §7.2).
@@ -92,7 +94,8 @@ def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
     rep = Report()
     w = pick_window(cfg, games, now_ms, game_pk)
     if w is None:
-        rep.add(FAIL, "games", f"no game{f' {game_pk}' if game_pk else ''} in {cfg.games_path}")
+        rep.add(FAIL, "games", f"no game{f' {game_pk}' if game_pk else ''} in {cfg.games_path} "
+                               f"or {cfg.discovered_path}")
         return rep
     rep.game, rep.window = w.game, w
     in_window = w.contains(now_ms)
@@ -121,6 +124,7 @@ def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
             rep.add(FAIL, "recorder", "disk_low reported this session")
     free = free_disk_mb(root)
     rep.add(OK if free >= p.min_free_disk_mb else FAIL, "disk", f"{free:,} MB free (minimum {p.min_free_disk_mb:,})")
+    _discovery(rep, cfg, w.game, now_ms)
 
     if now_ms < w.start_ms:
         rep.add(OK, "window", "not open yet: nothing to check per source")
@@ -290,3 +294,17 @@ def render(rep: Report, now_ms: int) -> str:
         lines.append(f"[{level:>4}] {area:<{width}}  {message}")
     lines.append(f"overall: {rep.worst}")
     return "\n".join(lines)
+
+
+def _discovery(rep: Report, cfg: Config, game: Game, now_ms: int) -> None:
+    from .discovery import last_run
+    rep.add(OK, "games", f"{game.game_pk} is {'hand-checked (games.toml)' if game.source == 'manual' else 'discovered'}"
+            + "".join(f"; {n}" for n in game.notes))
+    if not cfg.discovery.get("enabled", False):
+        return
+    at, _ = last_run(cfg.discovered_path)
+    limit_ms = 2 * float(cfg.discovery.get("interval_s", 3600)) * 1000
+    if at is None:
+        rep.add(WARN, "games", "discovery has not run yet")
+    else:
+        rep.add(OK if now_ms - at <= limit_ms else WARN, "games", f"discovery last ran {_age(now_ms, at)}")

@@ -275,7 +275,7 @@ def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: 
                 now_ms: int | None = None) -> IngestReport:
     """Ingest one game in a single transaction. Refuses a game already in the database."""
     now = int(time.time() * 1000) if now_ms is None else now_ms
-    g = load_game(game_pk, games_path)
+    g = load_game(game_pk, games_path, root)
     lo, hi = capture_window(g)
     if conn.execute("SELECT 1 FROM event WHERE league = 'MLB' AND league_game_id = ?", (str(game_pk),)).fetchone():
         raise IngestError(f"gamePk {game_pk} is already ingested; ingest into a clean database")
@@ -337,7 +337,15 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                                              detected_off_ts_ms=o.detected_off_ts_ms, observed_ts_ms=o.observed_ts_ms,
                                              **w.cited(x.body.ref)))
 
-    hand_checked = f"listed for gamePk {game_pk} in tools/raw_recorder/games.toml, checked by hand ({g['label']})"
+    # A hand-checked entry makes its links manual_verified; a discovered one is a rule match,
+    # fuzzy_candidate until a correction verifies it (clv.games, measurement contract §4).
+    if g["source"] == "manual":
+        link_status, link_method = "manual_verified", "games.toml"
+        link_evidence = f"listed for gamePk {game_pk} in tools/raw_recorder/games.toml, checked by hand ({g['label']})"
+    else:
+        link_status, link_method = "fuzzy_candidate", "recorder discovery"
+        link_evidence = (f"matched to gamePk {game_pk} by the recorder's discovery rules, not checked "
+                        f"({g['label']}{''.join('; ' + n for n in g.get('notes', []))})")
 
     # -- Novig: catalog, instruments, mappings -------------------------------------------------
     novig_segs = archive.overlapping(archive.segments(root, "novig"), lo, hi)
@@ -367,7 +375,7 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
             event_id=event_id, provider="novig", provider_event_id=m.event, title=None,
             scheduled_start_ms=m.starts_ts_ms,
             detail_json=json.dumps({"market": market, "market_description": m.description, "voids": m.voids}),
-            status="manual_verified", method="games.toml", evidence=hand_checked, observed_ts_ms=m.recv_ts_ms,
+            status=link_status, method=link_method, evidence=link_evidence, observed_ts_ms=m.recv_ts_ms,
             **w.cited(x.body.ref)))
         by_abbr = {novig_abbr(a): oid for a, oid in abbr_to_outcome.items()}
         for side, (_, name, _) in enumerate(m.outcomes):
@@ -375,8 +383,8 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                 raise IngestError(f"Novig outcome {name!r} names neither team of gamePk {game_pk}")
             w.insert("instrument_mapping_observation", dict(
                 venue_instrument_id=iid, side=side, outcome_id=by_abbr[name], polarity="direct",
-                mapping_status="manual_verified", settlement_equivalence="pending",
-                method="outcome name = team abbreviation", evidence=f"Novig outcome {name!r}; market {hand_checked}",
+                mapping_status=link_status, settlement_equivalence="pending",
+                method="outcome name = team abbreviation", evidence=f"Novig outcome {name!r}; market {link_evidence}",
                 rules_native=None, effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None,
                 **w.cited(x.body.ref)))
         novig_books[market] = _Books(w, iid, f"novig:market:{market}", (s0, s1),
@@ -450,7 +458,7 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                 event_id=event_id, provider="kalshi", provider_event_id=m.event_ticker, title=m.event_ticker,
                 scheduled_start_ms=None, detail_json=json.dumps({"occurrence_datetime": m.occurrence_datetime,
                                                                  "close_time": m.close_time}),
-                status="manual_verified", method="games.toml", evidence=hand_checked, observed_ts_ms=m.recv_ts_ms,
+                status=link_status, method=link_method, evidence=link_evidence, observed_ts_ms=m.recv_ts_ms,
                 **w.cited(x.body.ref)))
         team = ticker.rsplit("-", 1)[1]
         if team not in abbr_to_outcome:
@@ -459,9 +467,9 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
         for side, polarity in ((0, "direct"), (1, "complement")):
             w.insert("instrument_mapping_observation", dict(
                 venue_instrument_id=iid, side=side, outcome_id=abbr_to_outcome[team], polarity=polarity,
-                mapping_status="manual_verified", settlement_equivalence="pending",
+                mapping_status=link_status, settlement_equivalence="pending",
                 method="ticker team suffix = team abbreviation; YES direct, NO its complement",
-                evidence=f"Kalshi {ticker} ({m.title!r}); ticker {hand_checked}", rules_native=rules,
+                evidence=f"Kalshi {ticker} ({m.title!r}); ticker {link_evidence}", rules_native=rules,
                 effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None, **w.cited(x.body.ref)))
         kbooks[ticker] = _Books(w, iid, f"kalshi:market:{ticker}", kalshi.SIDES, int(cents))
         kstatus[ticker] = m.status

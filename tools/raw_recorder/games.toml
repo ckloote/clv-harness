@@ -1,6 +1,8 @@
-# Games to record. Hand-maintained and committed, so the archive's market
-# choices have provenance. Generate candidates with `raw-recorder catalog`
-# (it archives the catalog responses it used) and check every match by hand.
+# Hand-checked games. The recorder discovers games itself (archive/games.discovered.toml,
+# docs/decisions/2026-10-11-recorder-game-discovery.md); an entry here overrides the
+# discovered one with its game_pk whole, and its links ingest as manual_verified. Add one
+# only to fix or check a game by hand, and commit it: that keeps its provenance. The
+# running recorder rereads this file within seconds; no restart.
 #
 # Per game: game_pk (MLB StatsAPI), scheduled_start_utc, Novig MONEY market IDs,
 # Kalshi KXMLBGAME tickers. Optional: capture_lead_s / capture_tail_s to

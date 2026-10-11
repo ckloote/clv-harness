@@ -1,8 +1,12 @@
-"""The recorder's hand-maintained game list (tools/raw_recorder/games.toml).
+"""The recorder's game lists: which venue instruments it recorded for which game.
 
-Each entry was checked by hand when it was added: its gamePk, Novig MONEY
-markets and Kalshi tickers belong to one game. The harness reads it as the
-provenance for those instrument-to-game links (measurement contract §4).
+Two lists, as the recorder reads them (raw_recorder.config):
+- `tools/raw_recorder/games.toml`, committed: each entry was checked by hand when
+  it was added, so its links are `manual_verified` (measurement contract §4).
+- `<archive>/games.discovered.toml`, written by the recorder's discovery from the
+  archived schedule and catalogs. Its links are rule matches, never checked, so
+  they are `fuzzy_candidate` until a correction verifies them (`clv correct`).
+A game in both is the hand-checked entry. `source` says which one an entry is.
 """
 from __future__ import annotations
 
@@ -14,15 +18,20 @@ from clv.timeutil import iso_ms
 
 REPO = Path(__file__).resolve().parents[2]
 GAMES = REPO / "tools" / "raw_recorder" / "games.toml"
+DISCOVERED = "games.discovered.toml"        # in the archive root (raw_recorder.config.DISCOVERED_FILE)
 
 
-def load_game(game_pk: int, path: Path = GAMES) -> dict:
-    with open(path, "rb") as f:
-        games = tomllib.load(f)["game"]
-    for g in games:
-        if g["game_pk"] == game_pk:
-            return g
-    raise SystemExit(f"game_pk {game_pk} is not in {path}")
+def load_game(game_pk: int, path: Path = GAMES, archive_root: Path | None = None) -> dict:
+    """The game's entry, with `source` "manual" or "discovered"."""
+    lists = [(path, "manual")] + ([(Path(archive_root) / DISCOVERED, "discovered")] if archive_root else [])
+    for p, source in lists:
+        if not p.exists():
+            continue
+        with open(p, "rb") as f:
+            for g in tomllib.load(f).get("game", []):
+                if g["game_pk"] == game_pk:
+                    return dict(g, source=source)
+    raise SystemExit(f"game_pk {game_pk} is in neither {' nor '.join(str(p) for p, _ in lists)}")
 
 
 def capture_window(g: dict) -> tuple[int, int]:
