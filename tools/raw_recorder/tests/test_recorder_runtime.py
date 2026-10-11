@@ -238,10 +238,9 @@ def test_paper_config_differs_only_where_it_must():
     assert cfg.novig["ws_url"].startswith("wss://api.paper.novig.com/")
     assert cfg.novig["key_id_env"] != load_config(DEFAULT_CONFIG).novig["key_id_env"]
     assert [cfg.enabled(s) for s in (cfg.kalshi, cfg.odds_api, cfg.mlb, cfg.novig)] == [False, False, False, True]
-    games = load_games(cfg.games_path)
-    assert games and all(not g.kalshi_tickers for g in games)
-    prod_markets = {m for g in load_games(load_config(DEFAULT_CONFIG).games_path) for m in g.novig_markets}
-    assert not prod_markets & {m for g in games for m in g.novig_markets}
+    # Paper finds its own games (Novig only) into its own archive; no hand list needed.
+    assert cfg.discovery["enabled"] and cfg.discovered_path.parent.name == "archive-paper"
+    assert cfg.games_path != load_config(DEFAULT_CONFIG).games_path
 
 
 async def test_disabled_sources_do_not_run(tmp_path):

@@ -30,7 +30,7 @@ src/clv/
   identity.py               team naming across venues, polarity normalization, current mappings and corrections
   lineage.py                fact snapshots: the exact facts a derived run reads
   entries.py                signals and entries from a spec file, each quote cited to its frame
-  games.py                  the recorder's hand-checked game list
+  games.py                  the recorder's game lists: hand-checked (games.toml) and discovered
   archive.py                reads sealed §7.1 segments, checks their hashes, cites frames, joins REST envelopes
   venues/protocol.py        normalized two-sided books: native prices and quantities, bids per venue side
   venues/novig/parser.py    Novig stream replay (snapshot + deltas, sequence and probe checks), public book, catalog
@@ -52,9 +52,8 @@ tests/                      parameters, schema invariants, polarity, archive rea
   fixtures/golden/          the synthetic golden game (archive included) and 849832's specs and trace
 tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp + cryptography only)
   config.toml               recorder parameters, each copied from DESIGN.md §10
-  games.toml                the games, Novig markets and Kalshi tickers to record
+  games.toml                hand-checked games, Novig markets and Kalshi tickers; override discovery
   config.paper.toml         Novig Paper (play money) test configuration: own archive, Novig only
-  games.paper.toml          the same games under Paper's market IDs
   src/raw_recorder/
     archive.py              §7.1 archive: append, rotate, seal, journal, read, verify
     rest.py                 REST envelope: every request, body and failure under its request_id
@@ -63,6 +62,7 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
     novig/public.py         Novig unsigned catalog and public order book
     provision.py            `novig-provision`: management key -> trading::read key (never part of the recorder)
     kalshi.py, odds_api.py, mlb.py   pollers for Kalshi order books, The Odds API, MLB StatsAPI
+    discovery.py            finds the games to record from the schedule and catalogs (archived)
     scheduler.py, runtime.py, cli.py capture windows, the long-running process, commands
     status.py               `raw-recorder status`: is the current game being captured, source by source
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
@@ -109,7 +109,7 @@ uv run pytest -s tests/test_calibration_simulation.py
 uv run clv inspect --game-pk 849832
 ```
 
-`inspect` runs every V0 parser over one game's capture window from `tools/raw_recorder/games.toml` and prints what each source shows: the Novig stream replay and its checks, Kalshi and Odds API polls, StatsAPI identity and result, off observations, the books at first pitch minus `close.buffer_s`, and collection gaps. It reads sealed segments only, checks each one's hash, and writes nothing. The Novig stream for a two-hour game takes about 15 s.
+`inspect` runs every V0 parser over one game's capture window (from `tools/raw_recorder/games.toml`, or the recorder's discovered list in the archive) and prints what each source shows: the Novig stream replay and its checks, Kalshi and Odds API polls, StatsAPI identity and result, off observations, the books at first pitch minus `close.buffer_s`, and collection gaps. It reads sealed segments only, checks each one's hash, and writes nothing. The Novig stream for a two-hour game takes about 15 s.
 
 ## Loading a recorded game
 
@@ -193,7 +193,7 @@ uv run raw-recorder echo
 
 `echo` sends a signed `POST /v3/echo`, reads `/v3/limits`, and confirms the key is not a management key. Everything it does is archived. For the Paper key, add `--config tools/raw_recorder/config.paper.toml` (it goes before the subcommand).
 
-**Testing on Paper.** `--config tools/raw_recorder/config.paper.toml` switches every command to Paper. It uses Paper's host, `NOVIG_PAPER_READ_KEY_*`, `games.paper.toml`, and its own archive, `archive-paper/`, and it records only Novig. Paper books are play money: they test the signer and stream against the real API, never the measurement. A Paper recorder can run alongside the Production one.
+**Testing on Paper.** `--config tools/raw_recorder/config.paper.toml` switches every command to Paper. It uses Paper's host, `NOVIG_PAPER_READ_KEY_*`, and its own archive, `archive-paper/`, discovers Paper's markets itself, and records only Novig. Paper books are play money: they test the signer and stream against the real API, never the measurement. A Paper recorder can run alongside the Production one.
 
 ```bash
 uv run raw-recorder --config tools/raw_recorder/config.paper.toml probe-subscriptions --market <paper market id>
@@ -205,11 +205,21 @@ uv run raw-recorder --config tools/raw_recorder/config.paper.toml run
 
 ### Choosing games
 
+The recorder finds games itself. At startup and then hourly it reads the StatsAPI schedule for today and tomorrow (US Eastern) and the Novig and Kalshi catalogs, archiving every response. It matches each postseason game (`[discovery] game_types`) to its markets:
+- **Novig:** the `MONEY` market whose outcome names are the two teams and whose `startsTs` is within 6 h of the StatsAPI start.
+- **Kalshi:** the event on the game's Eastern date whose two tickers name the two teams.
+
+It writes the result to `archive/games.discovered.toml` and starts recording at once; no restart and no commit. If the venues disagree on the start time, the window stretches to cover every claimed start. If a match is ambiguous (a doubleheader, say), it records every candidate and prints a warning.
+
+Each game records from 3 h before scheduled first pitch to 90 min after it. Odds polling runs only during the 3 h before first pitch.
+
+Discovered links are rule matches, so `clv ingest` loads them as `fuzzy_candidate`: outside the primary cohort until a `corrections.toml` verifies them for the game you score. To override discovery, or to add a game it can't find, put a hand-checked `[[game]]` entry in `tools/raw_recorder/games.toml` and commit it. That entry replaces the discovered one whole, and its links ingest as `manual_verified`. The recorder rereads both files within seconds of a change. An entry can override its window (`capture_lead_s`, `capture_tail_s`), for example for a rain delay.
+
 ```bash
-uv run raw-recorder catalog --days 2
+uv run raw-recorder games
 ```
 
-This archives the StatsAPI schedule and the Novig and Kalshi catalogs, then prints suggested `[[game]]` entries. Check each match by hand and paste it into `tools/raw_recorder/games.toml`. Each game records from 3 h before scheduled first pitch to 90 min after it. Odds polling runs only during the 3 h before first pitch. A game can override its window (`capture_lead_s`, `capture_tail_s`), for example for a rain delay.
+`games` is read-only and lists what the recorder will record over the next two days: each game's source, windows in ET, markets and notes, and when discovery last ran. It exits 1 if discovery is stale or a `games.toml` entry hides markets that discovery found. With no recorder running, `uv run raw-recorder catalog` runs one discovery round by hand.
 
 ### Recording
 
@@ -229,7 +239,7 @@ cp deploy/raw-recorder.service ~/.config/systemd/user/
 systemctl --user enable --now raw-recorder.service
 ```
 
-Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments in the unit file. After changing the env file or the unit, restart **between** capture windows: a restart mid-game is a recorded gap in every source.
+Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments in the unit file. New games and edits to `games.toml` need no restart. After changing the env file, the unit or the recorder's code, restart **between** capture windows: a restart mid-game is a recorded gap in every source.
 
 ```bash
 systemctl --user daemon-reload
@@ -251,6 +261,7 @@ uv run raw-recorder status
 - **Kalshi:** each ticker is polled at its interval, without failures; the longest interval between polls.
 - **The Odds API:** polls made against those expected in its window (3 h before first pitch), failures and credits left.
 - **StatsAPI:** the feed is fetched when the window ends.
+- **Games:** whether the game was discovered or hand-checked (with any notes), and whether discovery ran within the last two hours.
 
 It is an operational check. After the game, `clv inspect --game-pk N` and `clv ingest` interpret the full capture and record its gaps.
 
@@ -258,7 +269,7 @@ It is an operational check. After the game, `clv inspect --game-pk N` and `clv i
 
 | Command | What it does |
 |---|---|
-| `uv run raw-recorder mlb-feed --date 2026-10-07` | Re-archive StatsAPI feeds, e.g. the next day for final data and corrections |
+| `uv run raw-recorder mlb-feed --date 2026-10-07` | Re-archive StatsAPI feeds by hand. The recorder already fetches each feed when the window ends and again 12 h later (`[mlb] refetch_after_s`) |
 | `uv run raw-recorder seal` | Seal active segments (a running recorder gets SIGHUP and rotates) |
 | `uv run raw-recorder verify` | Recheck every sealed file's hash, size and frame count against its journal |
 | `uv run raw-recorder report` | Volume per source and day, Odds credit spend, Novig Ping and probe counts |

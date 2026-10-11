@@ -6,20 +6,18 @@ import asyncio
 import json
 import os
 import sys
-from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from . import RECORDER_VERSION, kalshi, mlb
+from . import RECORDER_VERSION, discovery, mlb
 from .archive import (ArchiveWriter, build_manifest, find_parts, iter_archive,
-                      iter_file, read_journal, recover_orphans, verify)
-from .config import Config, load_config, load_games
-from .novig import public as novig_public
+                      iter_file, now_ms, read_journal, recover_orphans, verify)
+from .config import Config, load_all_games, load_config, load_games, shadowed
 from .novig.stream import CHANNEL_WEIGHT
 from .rest import RestRecorder
 from .runtime import Recorder, RecorderBusy, load_signer, signal_running_recorder
@@ -64,11 +62,12 @@ def _rest(archive: ArchiveWriter, http, source: str, name: str, sid: str, cfg: C
 
 def cmd_run(args) -> int:
     cfg = load_config(args.config)
-    games_path = args.games or os.environ.get("RAW_RECORDER_GAMES") or cfg.games_path
+    games_path = Path(args.games or os.environ.get("RAW_RECORDER_GAMES") or cfg.games_path)
     games = load_games(games_path)
-    if not games:
-        print(f"warning: no games in {games_path}; only housekeeping will run", file=sys.stderr)
-    asyncio.run(Recorder(cfg, games).run())
+    if not games and not cfg.discovery.get("enabled", False):
+        print(f"warning: no games in {games_path} and discovery is off; only housekeeping will run",
+              file=sys.stderr)
+    asyncio.run(Recorder(cfg, games, games_path=games_path).run())
     return 0
 
 
@@ -100,67 +99,66 @@ def cmd_echo(args) -> int:
     return asyncio.run(_echo(load_config(args.config)))
 
 
-def _kalshi_start_utc(event_ticker: str) -> datetime | None:
-    """KXMLBGAME-26OCT071800LADATL -> 2026-10-07 18:00 ET, as UTC."""
-    try:
-        code = event_ticker.split("-")[1][:11]
-        return datetime.strptime(code, "%y%b%d%H%M").replace(tzinfo=ET).astimezone(timezone.utc)
-    except (IndexError, ValueError):
-        return None
-
-
-async def _catalog(cfg: Config, days: int) -> int:
-    today = datetime.now(timezone.utc).astimezone(ET).date()
+async def _catalog(cfg: Config) -> int:
+    """One discovery round by hand, for when no recorder is running (a running recorder
+    discovers on its own schedule): archived, merged into the discovered list, and printed."""
     async with short_session(cfg, "catalog") as (archive, http, sid):
-        m_rest = _rest(archive, http, "mlb_statsapi", "catalog", sid, cfg)
-        res = await m_rest.request("GET", cfg.mlb["base_url"], "/api/v1/schedule",
-                                   params={"sportId": "1", "startDate": today.isoformat(),
-                                           "endDate": (today + timedelta(days=days)).isoformat(),
-                                           "hydrate": "team"},
-                                   subjects=["mlb:schedule"], purpose="catalog")
-        games = [g for d in json.loads(res.body or b"{}").get("dates", []) for g in d.get("games", [])]
-        _, n_markets = await novig_public.fetch_catalog(
-            _rest(archive, http, "novig", "catalog", sid, cfg), cfg.novig["host"])
-        k_markets = []
-        if cfg.enabled(cfg.kalshi):
-            k_markets = await kalshi.fetch_series(_rest(archive, http, "kalshi", "catalog", sid, cfg),
-                                                  cfg.kalshi["base_url"], cfg.kalshi["series_ticker"])
-
-    print(f"# Suggested entries for {cfg.games_path.name} (Novig host {cfg.novig['host']}).")
-    print("# The responses behind them are archived;")
-    print("# check every match by hand before recording.\n")
-    for g in games:
-        if g.get("status", {}).get("startTimeTBD"):
-            continue
-        start = datetime.fromisoformat(g["gameDate"].replace("Z", "+00:00"))
-        away, home = g["teams"]["away"]["team"], g["teams"]["home"]["team"]
-        abbrs = {away.get("abbreviation"), home.get("abbreviation")}
-        start_ms = int(start.timestamp() * 1000)
-        novig = [m for m in n_markets if m.get("startsTs") == start_ms]
-        if len(novig) > 1:
-            novig = [m for m in novig if {o["name"] for o in m.get("outcomes", [])} == abbrs] or novig
-        k_events = defaultdict(list)
-        for m in k_markets:
-            if _kalshi_start_utc(m.get("event_ticker", "")) == start:
-                k_events[m["event_ticker"]].append(m["ticker"])
-        status = g.get("status", {}).get("detailedState", "")
-        print("[[game]]")
-        print(f"game_pk = {g['gamePk']}")
-        print(f'label = "{away["name"]} @ {home["name"]}, {g.get("seriesDescription", "")}, '
-              f'{start.astimezone(ET):%a %b %d %H:%M} ET ({status})"')
-        print(f'scheduled_start_utc = "{start:%Y-%m-%dT%H:%M:%SZ}"')
-        print(f"novig_markets = {json.dumps([m['marketId'] for m in novig])}"
-              + ("" if len(novig) == 1 else f"  # CHECK: {len(novig)} candidates"))
-        tickers = [t for ts in k_events.values() for t in sorted(ts)]
-        print(f"kalshi_tickers = {json.dumps(tickers)}"
-              + ("" if len(k_events) == 1 or not cfg.enabled(cfg.kalshi)
-                 else f"  # CHECK: {len(k_events)} candidate events"))
-        print()
+        rests = (_rest(archive, http, "mlb_statsapi", "catalog", sid, cfg),
+                 _rest(archive, http, "novig", "catalog", sid, cfg),
+                 _rest(archive, http, "kalshi", "catalog", sid, cfg) if cfg.enabled(cfg.kalshi) else None)
+        merged, found = await discovery.discover(cfg, *rests, now_ms())
+    print(f"# Matched this round; merged into {cfg.discovered_path} ({len(merged)} games in all).")
+    print("# The responses behind them are archived. Copy an entry into games.toml to override it.\n")
+    print(discovery.render(found.games, now_ms(), found.warnings + found.notes))
     return 0
 
 
 def cmd_catalog(args) -> int:
-    return asyncio.run(_catalog(load_config(args.config), args.days))
+    return asyncio.run(_catalog(load_config(args.config)))
+
+
+def cmd_games(args) -> int:
+    """Read-only: the games the recorder records over the next days, and how fresh discovery is."""
+    from .scheduler import capture_windows
+    cfg = load_config(args.config)
+    t = now_ms()
+    games = load_all_games(cfg)
+    code = 0
+    if cfg.discovery.get("enabled", False):
+        at, notes = discovery.last_run(cfg.discovered_path)
+        stale_ms = 2 * float(cfg.discovery.get("interval_s", 3600)) * 1000
+        if at is None:
+            print(f"discovery: has not run yet ({cfg.discovered_path} missing)")
+            code = 1
+        else:
+            age = (t - at) / 60000
+            print(f"discovery: last run {_et_time(at)} ({age:,.0f} min ago){'  STALE' if t - at > stale_ms else ''}")
+            code = 1 if t - at > stale_ms else 0
+        for n in notes:
+            print(f"  note: {n}")
+    else:
+        print("discovery: off in this config; only games.toml is recorded")
+    for message in shadowed(load_games(cfg.games_path), load_games(cfg.discovered_path, "discovered")):
+        print(f"WARNING: {message}")
+        code = max(code, 1)
+    lo, hi = t - args.past_hours * 3_600_000, t + args.days * 86_400_000
+    shown = [w for w in capture_windows(games, cfg.params) if w.end_ms >= lo and w.start_ms <= hi]
+    print(f"\n{len(shown)} game(s) with a capture window from {args.past_hours} h ago to {args.days} day(s) ahead:")
+    for w in shown:
+        g = w.game
+        phase = "open" if w.contains(t) else ("ended" if w.end_ms <= t else "upcoming")
+        print(f"\n- {g.game_pk} {g.label} [{g.source}, {phase}]")
+        print(f"    first pitch {_et_time(g.scheduled_start_ms)}; capture {_et_time(w.start_ms)} to {_et_time(w.end_ms)}; "
+              f"odds from {_et_time(g.scheduled_start_ms - cfg.params.odds_window_lead_s * 1000)}")
+        print(f"    Novig {', '.join(g.novig_markets) or 'none'}")
+        print(f"    Kalshi {', '.join(g.kalshi_tickers) or 'none'}")
+        for n in g.notes:
+            print(f"    note: {n}")
+    return code
+
+
+def _et_time(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, timezone.utc).astimezone(ET).strftime("%a %b %d %H:%M ET")
 
 
 async def _probe_subscriptions(cfg: Config, market: str, event: str | None, wait_s: float) -> int:
@@ -316,7 +314,7 @@ def cmd_status(args) -> int:
     from .archive import now_ms
     from .session import running_recorder
     cfg = load_config(args.config)
-    games = load_games(cfg.games_path)
+    games = load_all_games(cfg)
     t = now_ms()
     rep = status.status(cfg, games, t, running_recorder(cfg.archive_root), args.game_pk)
     print(status.render(rep, t))
@@ -340,9 +338,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--games", type=Path, help="games file (default: the config's games_file)")
     p.set_defaults(fn=cmd_run)
     add("echo", help="test the Novig read key: signed POST /v3/echo, limits, scope").set_defaults(fn=cmd_echo)
-    p = add("catalog", help="archive MLB/Novig/Kalshi catalogs and print games.toml suggestions")
-    p.add_argument("--days", type=int, default=2)
-    p.set_defaults(fn=cmd_catalog)
+    add("catalog", help="run one game discovery round (when no recorder is running) and print the matches"
+        ).set_defaults(fn=cmd_catalog)
+    p = add("games", help="read-only: the games being recorded over the next days, and discovery's freshness")
+    p.add_argument("--days", type=float, default=2, help="how far ahead to list (default 2 days)")
+    p.add_argument("--past-hours", type=float, default=12, help="also list windows that ended this recently")
+    p.set_defaults(fn=cmd_games)
     p = add("probe-subscriptions", help="experiment: book and trades on one Novig connection")
     p.add_argument("--market", required=True)
     p.add_argument("--event")

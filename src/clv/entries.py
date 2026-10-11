@@ -55,7 +55,7 @@ def record(conn: sqlite3.Connection, root: Path, spec_path: Path, now_ms: int, g
     if ev is None:
         raise EntryError(f"gamePk {game_pk} is not ingested")
     event_id = ev[0]
-    lo, hi = capture_window(load_game(game_pk, games_path))
+    lo, hi = capture_window(load_game(game_pk, games_path, root))
     segs = archive.overlapping(archive.segments(root, "odds_api"), lo, hi)
     w = Writer(conn, now_ms)
     w.know(segs)

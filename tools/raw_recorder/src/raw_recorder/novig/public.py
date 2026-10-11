@@ -30,25 +30,27 @@ async def fetch_markets(rest: RestRecorder, host: str, market_ids: frozenset[str
                            subjects=[subject(market_id)], purpose="catalog")
 
 
-async def _paged(rest: RestRecorder, host: str, path: str, params: dict, subject_: str) -> list[dict]:
+async def _paged(rest: RestRecorder, host: str, path: str, params: dict, subject_: str) -> tuple[list[dict], bool]:
+    """Every page's items, and whether every page was read."""
     items, after = [], None
     while True:
         p = dict(params, **({"after": after} if after else {}))
         res = await rest.request("GET", host, path, params=p, subjects=[subject_], purpose="catalog")
         if not res.ok or res.body is None:
-            return items
+            return items, False
         page = json.loads(res.body)
         items.extend(page.get("items", []))
         after = page.get("next")
         if not after:
-            return items
+            return items, True
 
 
-async def fetch_catalog(rest: RestRecorder, host: str, league: str = "MLB") -> tuple[list[dict], list[dict]]:
-    """Open events and moneyline (`MONEY`) markets for a league, archived."""
-    events = await _paged(rest, host, "/v3/public/catalog/events",
-                          {"league": league, "limit": "100"}, f"novig:league:{league}")
-    markets = await _paged(rest, host, "/v3/public/catalog/markets",
-                           {"league": league, "marketType": "MONEY", "limit": "100"},
-                           f"novig:league:{league}")
-    return events, markets
+async def fetch_catalog(rest: RestRecorder, host: str, league: str = "MLB") -> tuple[list[dict], list[dict], bool]:
+    """Open events and moneyline (`MONEY`) markets for a league, archived, and whether
+    the market list is complete (a failed page leaves it partial)."""
+    events, _ = await _paged(rest, host, "/v3/public/catalog/events",
+                             {"league": league, "limit": "100"}, f"novig:league:{league}")
+    markets, complete = await _paged(rest, host, "/v3/public/catalog/markets",
+                                     {"league": league, "marketType": "MONEY", "limit": "100"},
+                                     f"novig:league:{league}")
+    return events, markets, complete

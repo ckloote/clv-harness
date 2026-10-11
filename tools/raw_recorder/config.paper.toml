@@ -4,7 +4,7 @@
 # Only Novig is recorded; the [r0] and [stream] tables must equal config.toml's
 # (tests enforce this). Use:  raw-recorder --config tools/raw_recorder/config.paper.toml ...
 
-games_file = "games.paper.toml"   # Paper market IDs differ from Production
+games_file = "games.paper.toml"   # optional hand-checked games; Paper market IDs differ from Production
 
 [archive]
 root = "../../archive-paper"      # relative to this file: <repo>/archive-paper
@@ -54,3 +54,9 @@ key_env = "ODDS_API_KEY"
 [mlb]
 enabled = false                             # recorded by the Production config
 base_url = "https://statsapi.mlb.com"
+
+[discovery]                                 # reads the schedule even with [mlb] off; Novig markets only
+enabled = true
+interval_s = 3600
+days_ahead = 1
+game_types = ["F", "D", "L", "W"]
