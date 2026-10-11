@@ -10,6 +10,7 @@
      "book_snapshot_level": 18791,
      "collection_gap": 169,
      "entry": 1,
+     "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 4,
@@ -707,6 +708,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -738,7 +748,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_100",
@@ -774,6 +804,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -805,7 +844,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -841,6 +900,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -872,7 +940,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -908,6 +996,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -939,7 +1036,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -969,6 +1086,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -1006,7 +1132,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -1036,6 +1182,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -1073,7 +1228,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -1103,6 +1278,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -1140,7 +1324,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -1170,6 +1374,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -1207,7 +1420,27 @@
     "exclusion_reasons": [
      "mapping_unverified",
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    }
   ],
   "books": {
@@ -1302,6 +1535,7 @@
      "book_snapshot_level": 18791,
      "collection_gap": 169,
      "entry": 1,
+     "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 4,
@@ -1996,6 +2230,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -2026,7 +2269,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_100",
@@ -2059,6 +2322,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -2089,7 +2361,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -2122,6 +2414,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -2152,7 +2453,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_1000",
@@ -2185,6 +2506,15 @@
        "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
        "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
       }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
      }
     },
     "d_entry": {
@@ -2215,7 +2545,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -2242,6 +2592,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -2278,7 +2637,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_depth_500",
@@ -2305,6 +2684,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -2341,7 +2729,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -2368,6 +2776,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -2404,7 +2821,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "103/200",
+      "decimal": "0.515000"
+     },
+     "difference": {
+      "exact": "121/658600",
+      "decimal": "0.000184"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    },
    {
     "definition": "close_live_mid_top",
@@ -2431,6 +2868,15 @@
      },
      "decision_quote": {
       "price_native": "-117",
+      "observed": "2026-10-08T23:02:08.065Z",
+      "venue_ts": "2026-10-08T23:01:46.000Z",
+      "frame": {
+       "ref": "odds_api/2026-10-08/odds-75896a3345cd.0003.jsonl.gz#9",
+       "sha256": "ea1892596f06a875c87438ade437f54660f82139f9d587ed0ce314b42a50921d"
+      }
+     },
+     "opposite_quote": {
+      "price_native": "-103",
       "observed": "2026-10-08T23:02:08.065Z",
       "venue_ts": "2026-10-08T23:01:46.000Z",
       "frame": {
@@ -2467,7 +2913,27 @@
     },
     "exclusion_reasons": [
      "equivalence_pending"
-    ]
+    ],
+    "check2": {
+     "q_entry": {
+      "exact": "3393/6586",
+      "decimal": "0.515184"
+     },
+     "p_entry": {
+      "exact": "41/80",
+      "decimal": "0.512500"
+     },
+     "difference": {
+      "exact": "707/263440",
+      "decimal": "0.002684"
+     },
+     "entry_overround": {
+      "exact": "293/6293",
+      "decimal": "0.046560"
+     },
+     "outlier": false,
+     "unavailable_reason": null
+    }
    }
   ],
   "books": {

@@ -5,7 +5,9 @@ Every emission is a signal, including `would_bet = 0`. A signal with an
 that book and outcome that the archive had *received* by the decision time is
 both the observed and the decision quote, and `d_entry` is derived exactly
 from its native American price. A displayed sportsbook price says nothing
-about fill or stake, so the execution assumption is `unavailable`.
+about fill or stake, so the execution assumption is `unavailable`. The other
+side of the same market in the same response is recorded too
+(`entry_opposite_quote`): check 2 de-vigs the two together (DESIGN.md §9.2).
 
     game_pk = 849832
 
@@ -95,14 +97,16 @@ def _signal(w: Writer, event_id: int, s: dict, exchanges: list) -> Recorded:
     e = s["entry"]
     if e["venue"] != "odds_api":
         raise EntryError(f"entry venue {e['venue']!r}: V0 records sportsbook entries only")
-    iid, side, mapping_obs_id, native_event, side_name = _line(w.conn, event_id, outcome_id, e["operator"])
+    iid, side, mapping_obs_id, native_event, side_name, other_name = _line(w.conn, event_id, outcome_id,
+                                                                            e["operator"])
     found = _decision_quote(exchanges, native_event, e["operator"], side_name, decision)
     if found is None:
         raise EntryError(f"no {e['operator']} quote for {side_name!r} received by {s['decision']}")
     entry_id = w.insert("entry", dict(
         kind="signal", signal_id=signal_id, event_id=event_id, outcome_id=outcome_id, venue_instrument_id=iid,
         side=side, mapping_obs_id=mapping_obs_id, decision_ts_ms=decision, created_ts_ms=w.now))
-    quote, body_ref = found
+    quote, x = found
+    body_ref = x.body.ref
     d = odds_api.american_to_decimal(quote.price_american)
     for concept in ("observed_quote", "decision_quote", "execution_assumption"):
         w.insert("entry_quote_observation", dict(
@@ -110,11 +114,21 @@ def _signal(w: Writer, event_id: int, s: dict, exchanges: list) -> Recorded:
             d_entry_den=d.denominator, venue_ts_ms=quote.book_last_update_ms, observed_ts_ms=quote.recv_ts_ms,
             stake_usd_cents=None, latency_s=None,
             feasibility="unavailable" if concept == "execution_assumption" else None, **w.cited(body_ref)))
+    opposite = [q for q in odds_api.quotes(x) if (q.vendor_event_id, q.bookmaker, q.market, q.outcome_name)
+                == (quote.vendor_event_id, quote.bookmaker, "h2h", other_name)]
+    if len(opposite) == 1:              # else check 2 is unavailable for this entry: no other method is used
+        (o,) = opposite
+        do = odds_api.american_to_decimal(o.price_american)
+        w.insert("entry_opposite_quote", dict(
+            entry_id=entry_id, side=1 - side, price_native=str(o.price_american), d_num=do.numerator,
+            d_den=do.denominator, venue_ts_ms=o.book_last_update_ms, observed_ts_ms=o.recv_ts_ms,
+            **w.cited(body_ref)))
     return Recorded(signal_id, entry_id)
 
 
-def _line(conn, event_id: int, outcome_id: int, operator: str) -> tuple[int, int, int, str, str]:
-    """The operator's moneyline for this event, and the side whose current mapping is the outcome."""
+def _line(conn, event_id: int, outcome_id: int, operator: str) -> tuple[int, int, int, str, str, str]:
+    """The operator's moneyline for this event, the side whose current mapping is the outcome, and
+    both sides' outcome names (entry side first)."""
     heads = current_mappings(conn, "instrument_mapping_observation")
     found = []
     for iid, native_event, s0, s1 in conn.execute(
@@ -126,14 +140,14 @@ def _line(conn, event_id: int, outcome_id: int, operator: str) -> tuple[int, int
                 continue
             event = conn.execute("SELECT event_id FROM outcome WHERE outcome_id = ?", (m.outcome_id,)).fetchone()[0]
             if event == event_id and (m.polarity == "direct") == (m.outcome_id == outcome_id):
-                found.append((iid, side, m.mapping_obs_id, native_event, name))
+                found.append((iid, side, m.mapping_obs_id, native_event, name, s1 if side == 0 else s0))
     if len(found) != 1:
         raise EntryError(f"{operator}: expected one line side for the outcome, found {len(found)}")
     return found[0]
 
 
 def _decision_quote(exchanges: list, vendor_event: str, operator: str, name: str, decision_ms: int):
-    """The latest matching quote received by the decision time, with its response frame."""
+    """The latest matching quote received by the decision time, with its exchange."""
     latest = None
     for x in exchanges:
         if x.body.recv_ts_ms > decision_ms:
@@ -141,5 +155,5 @@ def _decision_quote(exchanges: list, vendor_event: str, operator: str, name: str
         for q in odds_api.quotes(x):
             if (q.vendor_event_id, q.bookmaker, q.market, q.outcome_name) == (vendor_event, operator, "h2h", name):
                 if latest is None or q.recv_ts_ms > latest[0].recv_ts_ms:
-                    latest = (q, x.body.ref)
+                    latest = (q, x)
     return latest
