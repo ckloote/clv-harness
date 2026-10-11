@@ -14,7 +14,7 @@ Capture window: 2026-10-08 18:00 to 2026-10-09 01:30 UTC.
 
 | Source | Parsed |
 |---|---|
-| Novig stream | 82,341 frames on two connections (`book`, `trades`) from 23:32:14 to 01:30:00. 78,562 book states (the subscribe snapshot plus one per delta), 1,942 trades (66 of them from the subscribe snapshot's recent-trade list), `GOLIVE` on each connection. No sequence gaps. All 68 probe replies confirmed the replayed state: the 2 `book` replies order for order, the 66 `trades` replies by sequence |
+| Novig stream | 82,341 frames on two connections (`book`, `trades`) from 23:32:14 to 01:30:00. 78,562 book states (the subscribe snapshot plus one per delta; since 2026-10-11 only the 1,633 before `GOLIVE` are trusted, as no snapshot followed it: `docs/vendor-capabilities.md`), 1,942 trades (66 of them from the subscribe snapshot's recent-trade list), `GOLIVE` on each connection. No sequence gaps. All 68 probe replies confirmed the replayed state: the 2 `book` replies order for order, the 66 `trades` replies by sequence |
 | Novig public book | 1,968 polls from 18:00:07 to 23:31:54, every ladder complete (5–9 levels per side). The poll stops when the stream starts |
 | Novig catalog | One `MONEY` market. Outcomes `CWS` and `CLE` by abbreviation; `voids: FMV`; fee coefficient 0.06, `WHEN_LIVE`; `startsTs` 00:00:00 |
 | Kalshi | 5,350 order-book polls, all 200, for `…CLECWS-CLE` and `…CLECWS-CWS`; four market listings (status `active`, no result) |
@@ -68,6 +68,7 @@ The resolver selects the first pitch as the start and takes In Progress as the e
    - A span runs from its subscribe snapshot to the last trustworthy observation: a snapshot, a contiguous delta, or a confirmed probe.
    - A confirmed probe extends the span but adds no book state, so the book's own change time stays put.
    - A sequence gap closes at the next trusted state for that market and channel, on any connection.
+   - So does a lifecycle transition (`lifecycle_reset`): the venue drops orders at `GOLIVE` without deltas. That gap starts at the transition and closes only at a snapshot the venue took after it.
    - A deliberate unsubscribe ends a span without a gap. That is decided from the subscribe and unsubscribe commands the recorder sent, so frames already in flight that arrive after the unsubscribe can't turn it into an outage.
 7. **Poll gaps can't detect a silent slowdown yet.** Within one recorder session, a poller that silently slows down is invisible until `poll_attempt` arrives with A4. Until then, a stale Kalshi book shows up as quote age (`close.max_quote_age_s`), not as a gap.
 

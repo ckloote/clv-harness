@@ -130,7 +130,7 @@ def test_lifecycle_status_is_judged_by_its_own_sequence():
     assert probe(10, 0, "OPEN", 3) == []
     (same,) = probe(10, 1, "CLOSED", 4)                        # the same lifecycle seq is current
     assert (same.seq, same.status) == (1, "CLOSED")
-    (golive,) = r.feed(frame(delta(2, {"kind": "GOLIVE", "status": "OPEN"}, channel="lifecycle")))
+    golive, _reset = r.feed(frame(delta(2, {"kind": "GOLIVE", "status": "OPEN"}, channel="lifecycle")))
     assert golive.status == "OPEN"
     assert probe(10, 1, "CLOSED", 5) == []                     # behind the GOLIVE delta
 
@@ -162,12 +162,88 @@ def test_probe_ahead_of_replay_is_a_gap_and_resyncs():
     ({"kind": "add", "orderId": "o1", "outcomeId": A, "price": "0.4", "qty": 1}, "add of resting"),
     ({"kind": "remove", "orderId": "o1", "reason": "expired"}, "reason"),
     ({"kind": "amend", "orderId": "o1"}, "unknown book delta kind"),
+    ({"kind": "remove", "orderId": "o9", "reason": "cancel"}, "remove of unknown order"),   # the snapshot was not cut
+    ({"kind": "update", "orderId": "o9", "remaining": 1}, "update of unknown order"),
 ])
 def test_unexpected_book_deltas_are_refused(d, match):
     r = novig.StreamReplay()
     r.feed(frame(snapshot(10, ORDERS)))
     with pytest.raises(ValueError, match=match):
         r.feed(frame(delta(11, d)))
+
+
+def test_golive_makes_the_book_untrusted_until_a_snapshot():
+    # 849831: at GOLIVE the venue dropped every pregame order with no book delta, so a book
+    # replayed across it kept orders that no longer existed (locked, then crossed, in play).
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000))
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o2", "reason": "cancel"}), recv=1100))
+    lc, reset = r.feed(frame(delta(1, {"kind": "GOLIVE", "status": "OPEN"}, channel="lifecycle", ts=1990), recv=2000))
+    assert isinstance(lc, novig.Lifecycle) and isinstance(reset, novig.SequenceGap)
+    # Trustworthy up to the transition itself, which starts the gap.
+    assert (reset.reason, reset.channel, reset.last_seq, reset.got_seq, reset.last_recv_ts_ms) == (
+        "lifecycle_reset", "book", 11, None, 2000)
+    live = {A: [{"orderId": "i1", "price": "0.44", "qty": 5}], B: [{"orderId": "i2", "price": "0.55", "qty": 6}]}
+    in_play = delta(12, *({"kind": "add", "orderId": o["orderId"], "outcomeId": side, **o}
+                          for side, lst in live.items() for o in lst))
+    assert r.feed(frame(in_play, recv=2100)) == []                     # not applied to the stale book
+    # A probe reply the venue took before GOLIVE, arriving after it, shows the dropped orders: refused.
+    late = r.feed(frame(snapshot(11, {A: ORDERS[A], B: []}, nonce=2, subscribed=False, ts=1980), recv=2150))
+    assert [(type(o).__name__, getattr(o, "status", None)) for o in late] == [("ProbeCheck", "superseded")]
+    outs = r.feed(frame(snapshot(12, live, nonce=3, subscribed=False, ts=2190), recv=2200))
+    assert [type(o).__name__ for o in outs] == ["Resync", "BinaryBook"]     # its lifecycle seq 0 is behind
+    assert books(outs)[0].bids == {A: (Level("0.44", Decimal(5)),), B: (Level("0.55", Decimal(6)),)}
+    assert r.resyncs[0].recv_ts_ms == 2200 and not r.open_gaps
+    # A lifecycle status in a snapshot is not a transition.
+    assert not [o for o in r.feed(frame(snapshot(12, live, nonce=4, subscribed=False, ts=2290), recv=2300))
+                if isinstance(o, novig.SequenceGap)]
+
+
+def ladder(side, n, top="0.50", step="0.005", prefix="x"):
+    """n price levels for one outcome, one order each, from `top` down."""
+    return [{"orderId": f"{prefix}{i}", "price": str(Decimal(top) - i * Decimal(step)), "qty": 10} for i in range(n)]
+
+
+def test_a_snapshot_at_the_level_cap_is_cut_and_the_book_shows_only_what_is_known():
+    # 849831: snapshots list at most 20 price levels per outcome; a cancel of an order below
+    # the 20th arrived later, for an order the replay had never been shown.
+    r = novig.StreamReplay()
+    deep = {A: ladder(A, novig.SNAPSHOT_MAX_LEVELS), B: ORDERS[B]}
+    floor = Decimal("0.50") - 19 * Decimal("0.005")                       # 0.405
+    (b0,) = books(r.feed(frame(snapshot(10, deep))))
+    assert not b0.complete and len(b0.bids[A]) == 20 and b0.bids[A][-1].price == str(floor)
+    # Below the floor: a cancel or partial fill of an order never shown changes nothing, and a new
+    # order there is not shown, since its level may hold orders the snapshot cut.
+    (b1,) = books(r.feed(frame(delta(11, {"kind": "remove", "orderId": "hidden1", "reason": "cancel"},
+                                     {"kind": "update", "orderId": "hidden2", "remaining": 3},
+                                     {"kind": "add", "orderId": "n1", "outcomeId": A, "price": "0.30", "qty": 9}))))
+    assert b1.bids == b0.bids
+    # At or above it every order is known, and changes apply as usual.
+    (b2,) = books(r.feed(frame(delta(12, {"kind": "add", "orderId": "n2", "outcomeId": A, "price": "0.405", "qty": 1},
+                                     {"kind": "remove", "orderId": "x0", "reason": "fill"}))))
+    assert b2.bids[A][0].price == "0.495" and b2.bids[A][-1] == Level("0.405", Decimal(11))
+    assert not b2.complete
+    # The other outcome's side was not cut: its depth is complete.
+    assert b2.bids[B] == (Level("0.51", Decimal(300)),)
+
+
+def test_probes_compare_only_where_both_books_are_complete():
+    r = novig.StreamReplay()
+    deep = {A: ladder(A, 20), B: ORDERS[B]}
+    r.feed(frame(snapshot(10, deep)))
+    r.feed(frame(delta(11, {"kind": "add", "orderId": "n1", "outcomeId": A, "price": "0.30", "qty": 9})))
+    # The reply, also cut, lists an order below the floor the replay never saw, and not n1: confirmed.
+    reply = {A: ladder(A, 20) + [{"orderId": "h1", "price": "0.20", "qty": 5}], B: ORDERS[B]}
+    (check,) = [o for o in r.feed(frame(snapshot(11, reply, nonce=2, subscribed=False))) if isinstance(o, novig.ProbeCheck)]
+    assert check.status == "confirmed"
+    # A difference above the floor is a mismatch; the reply is installed with its own floor.
+    reply = {A: ladder(A, 20)[1:], B: ORDERS[B]}                       # 19 levels: not cut
+    outs = r.feed(frame(snapshot(11, reply, nonce=3, subscribed=False)))
+    assert [o.status for o in outs if isinstance(o, novig.ProbeCheck)] == ["mismatch"]
+    (b,) = books(outs)
+    assert b.complete and len(b.bids[A]) == 19
+    with pytest.raises(ValueError, match="remove of unknown order"):    # no floor now: a defect again
+        r.feed(frame(delta(12, {"kind": "remove", "orderId": "hidden1", "reason": "cancel"})))
 
 
 def test_trades_deduplicate_across_snapshot_and_deltas():
@@ -188,7 +264,7 @@ def test_trades_deduplicate_across_snapshot_and_deltas():
 def test_golive_is_a_venue_off_observation():
     r = novig.StreamReplay()
     r.feed(frame(snapshot(10, ORDERS)))
-    (lc,) = r.feed(frame({"ts": 1791504503244, "delta": {M: {"eventId": "ev", "lifecycle": {
+    lc, _reset = r.feed(frame({"ts": 1791504503244, "delta": {M: {"eventId": "ev", "lifecycle": {
         "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}}, recv=1791504503299))
     obs = sources.from_lifecycle(lc, 849832)
     assert (obs.source, obs.kind, obs.detected_off_ts_ms, obs.observed_ts_ms) == \

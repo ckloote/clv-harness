@@ -19,11 +19,22 @@ other outcome at 1 - price. `seq` is per connection, market and channel.
 `StreamReplay.feed()` takes frames in receive order and returns what each one
 established: a book state, a probe check, a sequence gap, a resync, a trade or
 a lifecycle status. A sequence gap makes the book untrusted until a new
-snapshot (DESIGN.md §7.2); the replay never guesses across it. A lifecycle
+snapshot (DESIGN.md §7.2); the replay never guesses across it. So does a
+lifecycle transition: at GOLIVE the venue drops its resting pregame orders
+without book deltas for them (849831, docs/vendor-capabilities.md), so a book
+replayed across one would keep orders that no longer exist. A lifecycle
 status is judged by the lifecycle channel's own sequence, never the book's: one
-behind it is not emitted, even beside a current book. The replay is also the
-one judge of channel evidence: its coverage spans are what gaps.stream_gaps
-builds stream gaps from.
+behind it is not emitted, even beside a current book.
+
+A book snapshot lists at most `SNAPSHOT_MAX_LEVELS` price levels per outcome,
+each with all its orders. An outcome showing that many may have been cut, so its
+lowest shown price becomes a floor: the replayed book shows only levels at or
+above it (where every order is known, since every later change streams) and is
+marked incomplete; a remove or update of an unknown order is taken to be below
+it. A probe is compared only where both the replay and the reply are complete.
+
+The replay is also the one judge of channel evidence: its coverage spans are
+what gaps.stream_gaps builds stream gaps from.
 """
 from __future__ import annotations
 
@@ -37,6 +48,7 @@ from clv.venues.protocol import BinaryBook, aggregate
 
 VENUE = "novig"
 PAYOUT_USD_PER_CONTRACT = Decimal("0.01")     # docs/vendor-capabilities.md, Prices and quantities
+SNAPSHOT_MAX_LEVELS = 20                      # per outcome; docs/vendor-capabilities.md, Production observed
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,8 @@ class ProbeCheck:
     status: `confirmed` (same seq, same orders), `mismatch` (same seq, different
     orders: a parser or venue defect), `gap` (the reply is ahead: deltas were
     missed), `superseded` (the reply is behind: deltas already covered it).
+    Orders are compared only at prices where both sides list every order: at
+    or above each outcome's floor, the replay's or the reply's, whichever is higher.
     """
     conn_id: str
     market: str
@@ -60,15 +74,24 @@ class ProbeCheck:
 
 @dataclass(frozen=True)
 class SequenceGap:
+    """The channel's state is untrusted from here until a snapshot (a `Resync`).
+
+    reason: `sequence_gap` (deltas were missed), or `lifecycle_reset` (a lifecycle
+    transition, after which the venue may have dropped orders without deltas; the
+    book was trustworthy up to the transition's frame, so that frame starts the gap
+    and `got_seq` is None; only a snapshot the venue took after the transition, by
+    venue time, re-establishes the book).
+    """
     conn_id: str
     market: str
     channel: str
     last_seq: int
-    got_seq: int
-    last_ref: str | None        # the last frame of the contiguous run
+    got_seq: int | None
+    last_ref: str | None        # the last trustworthy frame: the end of the contiguous run
     last_recv_ts_ms: int | None
     ref: str                    # the frame exposing the gap
     recv_ts_ms: int
+    reason: str = "sequence_gap"
 
 
 @dataclass(frozen=True)
@@ -130,6 +153,7 @@ class _Channel:
     def __init__(self):
         self.seq: int | None = None         # None: no trusted state
         self.orders: dict[str, tuple[str, str, int]] = {}   # orderId -> (outcomeId, price, qty)
+        self.floors: dict[str, Decimal] = {}    # outcomeId -> lowest price a cut snapshot showed
         self.outcomes: tuple[str, ...] = ()
         self.last_ref: str | None = None    # last trustworthy observation (channel evidence)
         self.last_ts: int | None = None
@@ -152,6 +176,7 @@ class StreamReplay:
         self.seq_gaps: list[SequenceGap] = []
         self.resyncs: list[Resync] = []
         self.open_gaps: set[tuple[str, str]] = set()             # (market, channel) awaiting a resync
+        self.transition_ts: dict[str, int] = {}                   # market -> venue time of its last lifecycle transition
 
     def feed(self, f: Frame) -> list:
         if f.dir != "in":
@@ -209,11 +234,21 @@ class StreamReplay:
         subscribed = "subscribed" in msg
         orders = {o["orderId"]: (outcome, o["price"], o["qty"])
                   for outcome, lst in book["orders"].items() for o in lst}
+        floors = _floors(book["orders"])
         outcomes = tuple(book["orders"])
         out: list = []
+        if msg["ts"] < self.transition_ts.get(market, msg["ts"]):
+            # Taken before the market's last lifecycle transition, so it may list orders the
+            # transition dropped; the sequence cannot tell, since the drop has no deltas.
+            if not subscribed:
+                out.append(ProbeCheck(f.conn_id, market, "book", msg.get("nonce"), ch.seq, book["seq"], "superseded",
+                                      f.recv_ts_ms, f.ref))
+            return out
         if ch.seq is not None and not subscribed:
             if book["seq"] == ch.seq:
-                status = "confirmed" if orders == ch.orders else "mismatch"
+                both = {o: max(p for p in (floors.get(o), ch.floors.get(o)) if p is not None)
+                        for o in floors.keys() | ch.floors.keys()}
+                status = "confirmed" if _shown(orders, both) == _shown(ch.orders, both) else "mismatch"
             elif book["seq"] > ch.seq:
                 status = "gap"
             else:
@@ -231,7 +266,7 @@ class StreamReplay:
                 out.append(self._gap(ch, f, market, "book", book["seq"]))
             # A mismatch installs the authoritative snapshot; the ProbeCheck reports the defect.
         out += self._resync(f, market, "book", book["seq"])
-        ch.seq, ch.orders, ch.snapshot_ref = book["seq"], orders, f.ref
+        ch.seq, ch.orders, ch.floors, ch.snapshot_ref = book["seq"], orders, floors, f.ref
         ch.outcomes = outcomes or ch.outcomes
         self._evidence(ch, f, market, "book", new_span=subscribed)
         out.append(self._state(f, msg, market, ch))
@@ -266,11 +301,17 @@ class StreamReplay:
                 for d in batch["deltas"]:
                     out.append(Lifecycle(f.conn_id, market, batch.get("seq"), d["kind"], d["status"],
                                          msg["ts"], f.recv_ts_ms, f.ref))
+                if batch["deltas"]:
+                    out += self._lifecycle_reset(f, market, msg["ts"])
         return out
 
     @staticmethod
     def _apply(ch: _Channel, d: dict, f: Frame) -> None:
         kind, oid = d["kind"], d["orderId"]
+        if kind in ("update", "remove") and oid not in ch.orders:
+            if not ch.floors:
+                raise ValueError(f"{f.ref}: {kind} of unknown order {oid}")
+            return                  # below a cut snapshot's floor: never shown, so nothing to change
         if kind == "add":
             if oid in ch.orders:
                 raise ValueError(f"{f.ref}: add of resting order {oid}")
@@ -317,6 +358,22 @@ class StreamReplay:
         self.open_gaps.add((market, channel))
         return gap
 
+    def _lifecycle_reset(self, f: Frame, market: str, venue_ts: int) -> list:
+        """A lifecycle transition makes every trusted book of the market untrusted until a
+        snapshot the venue took after it: at GOLIVE the venue drops resting orders without
+        deltas. The book was trustworthy up to this frame, which starts the gap."""
+        self.transition_ts[market] = max(venue_ts, self.transition_ts.get(market, venue_ts))
+        out = []
+        for (conn, m, channel), ch in self.channels.items():
+            if m == market and channel == "book" and ch.seq is not None:
+                gap = SequenceGap(conn, market, "book", ch.seq, None, f.ref, f.recv_ts_ms, f.ref, f.recv_ts_ms,
+                                  "lifecycle_reset")
+                ch.seq = None
+                self.seq_gaps.append(gap)
+                self.open_gaps.add((market, "book"))
+                out.append(gap)
+        return out
+
     def _resync(self, f: Frame, market: str, channel: str, seq: int) -> list:
         """Trusted state for a market and channel with an open gap, on any connection."""
         if (market, channel) not in self.open_gaps:
@@ -344,14 +401,29 @@ class StreamReplay:
     @staticmethod
     def _state(f: Frame, msg: dict, market: str, ch: _Channel) -> BinaryBook:
         per_side: dict[str, list] = {o: [] for o in ch.outcomes}
-        for outcome, price, qty in ch.orders.values():
+        for outcome, price, qty in _shown(ch.orders, ch.floors).values():
             per_side.setdefault(outcome, []).append((price, Decimal(qty)))
         if len(per_side) != 2:
             raise ValueError(f"{f.ref}: market {market} has outcomes {sorted(per_side)}; expected two")
         refs = (ch.snapshot_ref,) if ch.snapshot_ref == f.ref else (ch.snapshot_ref, f.ref)
         return BinaryBook(VENUE, market, {o: aggregate(v) for o, v in per_side.items()},
-                          PAYOUT_USD_PER_CONTRACT, complete=True, source="stream", seq=ch.seq,
+                          PAYOUT_USD_PER_CONTRACT, complete=not ch.floors, source="stream", seq=ch.seq,
                           venue_ts_ms=msg["ts"], recv_ts_ms=f.recv_ts_ms, refs=refs)
+
+
+def _floors(orders: dict[str, list]) -> dict[str, Decimal]:
+    """Per outcome, the lowest shown price of a snapshot side that may have been cut."""
+    out = {}
+    for outcome, lst in orders.items():
+        prices = {Decimal(o["price"]) for o in lst}
+        if len(prices) >= SNAPSHOT_MAX_LEVELS:
+            out[outcome] = min(prices)
+    return out
+
+
+def _shown(orders: dict[str, tuple[str, str, int]], floors: dict[str, Decimal]) -> dict[str, tuple[str, str, int]]:
+    """The orders at or above their outcome's floor: the part of a book known in full."""
+    return {k: v for k, v in orders.items() if v[0] not in floors or Decimal(v[1]) >= floors[v[0]]}
 
 
 # -- REST ------------------------------------------------------------------------

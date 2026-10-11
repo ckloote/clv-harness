@@ -7,8 +7,8 @@
    "fact_snapshot": {
     "high_water": {
      "book_snapshot": 7,
-     "book_snapshot_level": 45,
-     "collection_gap": 0,
+     "book_snapshot_level": 42,
+     "collection_gap": 2,
      "entry": 1,
      "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
@@ -20,11 +20,11 @@
      "outcome": 2,
      "raw_artifact": 5,
      "signal": 2,
-     "tick": 6,
+     "tick": 7,
      "tick_level": 39,
      "venue_instrument": 5
     },
-    "manifest_sha256": "915d062fec02369e0b3c7212767060205e5e8bb06bddbbc4870622bcb1616edc"
+    "manifest_sha256": "14887a06027efc5609eb8efbb43f35d4bdab606cfd6ee1de69a8006f2f8baca5"
    }
   },
   "off": [
@@ -1624,8 +1624,8 @@
    "fact_snapshot": {
     "high_water": {
      "book_snapshot": 7,
-     "book_snapshot_level": 45,
-     "collection_gap": 0,
+     "book_snapshot_level": 42,
+     "collection_gap": 2,
      "entry": 1,
      "entry_opposite_quote": 1,
      "entry_quote_observation": 3,
@@ -1637,11 +1637,11 @@
      "outcome": 2,
      "raw_artifact": 5,
      "signal": 2,
-     "tick": 6,
+     "tick": 7,
      "tick_level": 39,
      "venue_instrument": 5
     },
-    "manifest_sha256": "915d062fec02369e0b3c7212767060205e5e8bb06bddbbc4870622bcb1616edc"
+    "manifest_sha256": "14887a06027efc5609eb8efbb43f35d4bdab606cfd6ee1de69a8006f2f8baca5"
    }
   },
   "off": [

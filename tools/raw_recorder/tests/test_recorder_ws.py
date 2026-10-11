@@ -41,7 +41,19 @@ def snapshot_reply(nonce, markets, channel):
         for m in markets}})
 
 
-def make_app(state, close_after_subscribe=False):
+def make_app(state, close_after_subscribe=False, golive_at_s=None):
+    async def busy(ws, market):
+        """A book delta every 0.1 s, so the channel is never quiet, and GOLIVE once."""
+        seq, t0 = 7, asyncio.get_running_loop().time()
+        while not ws.closed:
+            await asyncio.sleep(0.1)
+            seq += 1
+            await ws.send_str(json.dumps({"ts": seq, "delta": {market: {"eventId": "e1", "book": {"seq": seq, "deltas": []}}}}))
+            if golive_at_s is not None and asyncio.get_running_loop().time() - t0 >= golive_at_s:
+                await ws.send_str(json.dumps({"ts": seq, "delta": {market: {"eventId": "e1", "lifecycle": {
+                    "seq": 2, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}}))
+                return
+
     async def ws_handler(request):
         state["upgrades"].append(dict(request.headers))
         ws = web.WebSocketResponse(autoping=False)
@@ -56,6 +68,7 @@ def make_app(state, close_after_subscribe=False):
                 state["pings_sent"] += 1
 
         task = asyncio.create_task(pinger())
+        feeder = None
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.PONG:
@@ -67,10 +80,14 @@ def make_app(state, close_after_subscribe=False):
                         if verb in req:
                             sel = req[verb]["markets"]
                             await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values()))))
+                    if golive_at_s is not None and "subscribe" in req:
+                        feeder = asyncio.create_task(busy(ws, next(iter(req["subscribe"]["markets"]))))
                     if close_after_subscribe and "subscribe" in req:
                         await ws.close()
         finally:
             task.cancel()
+            if feeder:
+                feeder.cancel()
         return ws
 
     app = web.Application()
@@ -82,8 +99,9 @@ def new_state():
     return {"upgrades": [], "requests": [], "pongs": [], "pings_sent": 0}
 
 
-async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=False, **param_overrides):
-    srv = TestServer(make_app(state, close_after_subscribe))
+async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=False, golive_at_s=None,
+                 **param_overrides):
+    srv = TestServer(make_app(state, close_after_subscribe, golive_at_s))
     await srv.start_server()
     archive = ArchiveWriter(tmp_path, session_id="w" * 32, segment_max_s=3600, fsync_interval_s=5)
     try:
@@ -139,6 +157,19 @@ async def test_quiet_market_transport_vs_channel_evidence(tmp_path):
     assert outs == state["requests"]
     assert outs[0] == {"nonce": 1, "subscribe": {"markets": {MARKET: "book"}}}
     assert verify(tmp_path) == []
+
+
+async def test_lifecycle_transition_gets_a_book_probe_on_a_busy_channel(tmp_path):
+    # The venue drops resting orders at GOLIVE without book deltas: the harness distrusts the
+    # book until a snapshot, so the recorder asks for one at once, though the channel is busy.
+    state = new_state()
+    frames = await record(tmp_path, state, seconds=2.0, golive_at_s=0.5, channel_probe_interval_s=60)
+    (conn,) = ws_evidence(frames).values()
+    sent = [e for e in conn.events if e["type"] == "probe_sent"]
+    assert len(sent) == 1 and sent[0]["markets"] == [MARKET] and sent[0]["channel"] == "book"
+    probe = conn.probes[sent[0]["nonce"]]
+    golive = next(f for f in frames if f["dir"] == "in" and "GOLIVE" in f["frame"])
+    assert probe.reply is not None and 0 < probe.sent_ts_ms - golive["recv_ts_ms"] <= 1500
 
 
 async def test_disconnect_reconnects_with_new_conn_id_and_resubscribes(tmp_path):

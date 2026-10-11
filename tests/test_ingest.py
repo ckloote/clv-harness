@@ -142,16 +142,22 @@ def write_archive(root: Path, games: Path, crossed_resync: str | None = None, la
                     CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}]}}, "lifecycle": {"seq": 2, "status": "OPEN"}}}})
             ev(T - 200_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
         else:
+            # GOLIVE: the venue drops the pregame orders without book deltas, so the book is untrusted
+            # until the snapshot the recorder requests next. The in-play adds before it are not applied.
             send(T + 503_244, "in", {"ts": T + 503_244, "delta": {M: {"eventId": "ev1", "lifecycle": {
                 "seq": 2, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
-            send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
-                {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})      # crossed: in-play
+            live = {CWS: [{"orderId": "w1", "price": "0.48", "qty": 300}], CLE: [{"orderId": "l1", "price": "0.50", "qty": 400}]}
+            send(T + 503_600, "in", {"ts": T + 503_600, "delta": {M: {"eventId": "ev1", "book": {"seq": 13, "deltas": [
+                {"kind": "add", "orderId": o["orderId"], "outcomeId": side, **o} for side, lst in live.items() for o in lst]}}}})
+            send(T + 504_000, "out", {"nonce": 4, "snapshot": {"markets": {M: "book"}}})
+            send(T + 504_050, "in", {"ts": T + 504_049, "nonce": 4, "snapshot": {
+                M: {"eventId": "ev1", "book": {"seq": 13, "orders": live}, "lifecycle": {"seq": 2, "status": "OPEN"}}}})
+            send(T + 560_000, "in", {"ts": T + 560_000, "delta": {M: {"eventId": "ev1", "book": {"seq": 14, "deltas": [
+                {"kind": "add", "orderId": "l9", "outcomeId": CLE, "price": "0.53", "qty": 50}]}}}})      # crossed: a fault
             # A probe confirming the crossed (quarantined) state must not vouch for the last stored tick.
-            send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 4, "snapshot": {
-                M: {"eventId": "ev1", "book": {"seq": 13, "orders": {
-                    CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
-                          {"orderId": "w8", "price": "0.40", "qty": 1}],
-                    CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, {"orderId": "l0", "price": "0.51", "qty": 500}]}},
+            send(T + 580_000, "in", {"ts": T + 579_999, "nonce": 5, "snapshot": {
+                M: {"eventId": "ev1", "book": {"seq": 14, "orders": {
+                    CWS: live[CWS], CLE: [{"orderId": "l9", "price": "0.53", "qty": 50}, *live[CLE]]}},
                     "lifecycle": {"seq": 2, "status": "OPEN"}}}})
             ev(T + 600_000, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
     # Kalshi: listing, then three polls per ticker; the third is unchanged but follows a failed poll
@@ -265,8 +271,8 @@ def test_books_ticks_evidence_and_snapshots(recorded):
                  GROUP BY 1, 2 ORDER BY 1, 2""")
     # Kalshi: 4 good polls per ticker, each a tick: changed, or re-established after a failed poll
     # or a restart even when unchanged. Novig poll: 2, the second unchanged. Novig stream: the
-    # snapshot, two deltas, and two status changes with the book unchanged (CLOSED, then OPEN at
-    # GOLIVE); the crossed in-play state is quarantined.
+    # snapshot, two deltas, a status change with the book unchanged (CLOSED), and the resync after
+    # GOLIVE (no tick at GOLIVE itself: the book is untrusted there); the crossed state is quarantined.
     assert by == [("kalshi", "poll", 8), ("novig", "poll", 1), ("novig", "stream", 5)]
     # Probes: the first, and the CLOSED one. The probe confirming the quarantined crossed state adds none.
     assert q(c, "SELECT source, kind, count(*) FROM liveness_evidence GROUP BY 1, 2 ORDER BY 1, 2") == [
@@ -275,14 +281,16 @@ def test_books_ticks_evidence_and_snapshots(recorded):
     # Complete ladders: each recorder session's first poll, the recovery after the failed polls, the
     # subscription, and every book.full_snapshot_interval_s (the fixture's events are minutes apart).
     assert q(c, "SELECT reason, source, count(*) FROM book_snapshot GROUP BY 1, 2 ORDER BY 1, 2") == [
-        ("first_poll", "poll", 5), ("periodic", "poll", 2), ("periodic", "stream", 3), ("resync", "poll", 2),
-        ("subscribe", "stream", 1)]
+        ("first_poll", "poll", 5), ("periodic", "poll", 2), ("periodic", "stream", 2), ("resync", "poll", 2),
+        ("resync", "stream", 1), ("subscribe", "stream", 1)]
     snap = q(c, """SELECT bid0_e4, bid1_e4, seq, venue_status, levels0, levels1 FROM tick
                    WHERE source = 'stream' ORDER BY observed_ts_ms""")
     assert snap == [(4800, 5100, 10, "OPEN", 1, 1), (4850, 5100, 11, "OPEN", 2, 1), (4850, 5100, 12, "OPEN", 3, 1),
-                    (4850, 5100, 12, "CLOSED", 3, 1), (4850, 5100, 12, "OPEN", 3, 1)]
+                    (4850, 5100, 12, "CLOSED", 3, 1), (4800, 5000, 13, "OPEN", 1, 1)]
     status_ticks = q(c, "SELECT observed_ts_ms, venue_ts_ms FROM tick WHERE source = 'stream' AND seq = 12 ORDER BY 1")
-    assert status_ticks[1:] == [(T - 400_000, T - 400_001), (T + 503_244, T + 503_244)]   # at each status change
+    assert status_ticks[1:] == [(T - 400_000, T - 400_001)]          # at the status change
+    resync = q(c, "SELECT observed_ts_ms, ladder_complete FROM tick WHERE source = 'stream' AND seq = 13")
+    assert resync == [(T + 504_050, 1)]                                # the snapshot after GOLIVE
     levels = q(c, """SELECT side, rank, price_native, price_e4, qty_native, payout_cents FROM tick_level
                      WHERE tick_id = (SELECT min(tick_id) FROM tick WHERE seq = 12) ORDER BY side, rank""")
     assert levels == [(0, 0, "0.485", 4850, "200", 200), (0, 1, "0.48", 4800, "1000", 1000),
@@ -298,9 +306,12 @@ def test_off_observations_and_gaps(recorded):
         ("mlb_statsapi", "status_in_progress", T + 484_996, 2), ("novig_stream", "venue_golive", T + 503_244, 1),
         ("mlb_statsapi", "first_pitch", T + 531_917, 2)]
     gaps = q(c, "SELECT kind, scope, reason, boundary_ts_ms FROM collection_gap ORDER BY collection_gap_id")
-    # The in-play crossed delta replaces the stored book (the GOLIVE status tick): a quarantine gap
-    # opens there and never closes, since the book stays crossed (review of PR #8).
-    expected = [("open", f"novig:market:{M}/book", "crossed_book", T + 503_244)]
+    # GOLIVE makes the book untrusted until the snapshot after it. The crossed delta then replaces
+    # that stored book: a quarantine gap opens there and never closes, since the book stays crossed
+    # (review of PR #8).
+    expected = [("open", f"novig:market:{M}/book", "crossed_book", T + 504_050),
+                ("open", f"novig:market:{M}/book", "lifecycle_reset", T + 503_244),
+                ("close", f"novig:market:{M}/book", "lifecycle_reset", T + 504_050)]
     for ticker in TICKERS:
         expected += [("open", f"kalshi:market:{ticker}", "request_failed", T - 1_999_995),
                      ("close", f"kalshi:market:{ticker}", "request_failed", T - 1_989_995),
@@ -419,15 +430,14 @@ def test_recorded_849832_ingests():
     assert q(c, "PRAGMA foreign_key_check") == []
     assert rep.rows["venue_instrument"] == 12 and rep.rows["instrument_mapping_observation"] == 24
     assert rep.rows["off_observation"] == 14
-    # 11 restart gaps, all closed, and 74 in-play quarantine gaps, the last still open at the end.
-    assert q(c, "SELECT reason, kind, count(*) FROM collection_gap GROUP BY 1, 2 ORDER BY 1, 2") == [
-        ("crossed_book", "close", 73), ("crossed_book", "open", 74), ("recorder_restart", "close", 11),
-        ("recorder_restart", "open", 11)]
-    assert q(c, "SELECT min(boundary_ts_ms) > ? FROM collection_gap WHERE reason = 'crossed_book'",
-             iso_ms("2026-10-09T00:09:00Z")) == [(1,)]
-    # Every stream state before GOLIVE is uncrossed and complete; the crossing is all in-play.
-    golive = q(c, "SELECT detected_off_ts_ms FROM off_observation WHERE kind = 'venue_golive'")[0][0]
-    span = rep.quarantine_span["crossed_book"]
-    assert span[2] > golive and rep.quarantined["crossed_book"] == 61_621
-    assert q(c, """SELECT count(*) FROM tick WHERE source = 'stream' AND observed_ts_ms < ? AND truncated = 1""",
-             golive) == [(0,)]
+    # 11 restart gaps, all closed, and the book untrusted from GOLIVE to the end: no snapshot followed
+    # it. (Before the lifecycle reset, the stale pregame orders crossed the in-play book 61,621 times.)
+    golive_recv = iso_ms("2026-10-09T00:08:23.299Z")
+    assert q(c, "SELECT reason, kind, count(*), min(boundary_ts_ms) FROM collection_gap GROUP BY 1, 2 ORDER BY 1, 2")[0] == (
+        "lifecycle_reset", "open", 1, golive_recv)
+    assert q(c, "SELECT reason, kind, count(*) FROM collection_gap GROUP BY 1, 2 ORDER BY 1, 2")[1:] == [
+        ("recorder_restart", "close", 11), ("recorder_restart", "open", 11)]
+    # Every stream state is pregame, uncrossed and complete.
+    assert not rep.quarantined
+    assert q(c, "SELECT count(*), max(observed_ts_ms) < ?, sum(truncated), sum(1 - ladder_complete) FROM tick "
+                "WHERE source = 'stream'", golive_recv) == [(1633, 1, 0, 0)]

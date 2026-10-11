@@ -13,9 +13,11 @@ What the archive can prove in V0:
   itself, which arrives with `poll_attempt` in A4.
 - Streams (Novig): coverage is the stream replay's spans, one per subscription
   of a market's channel, extended by every trustworthy observation (snapshot,
-  contiguous delta, confirmed probe). A gap at every sequence gap, until trusted
-  state returns on any connection; and between spans of the same market and
-  channel that neither overlap nor were separated by a deliberate unsubscribe.
+  contiguous delta, confirmed probe). A gap at every sequence gap and every
+  lifecycle transition (`lifecycle_reset`: the venue may drop orders without
+  deltas), until trusted state returns on any connection; and between spans of
+  the same market and channel that neither overlap nor were separated by a
+  deliberate unsubscribe.
   A subscription the recorder ended on purpose (unsubscribed, stopped, or the
   capture window ended) ends coverage; it is not a gap. Any other end is an
   open gap from that market's last trustworthy observation.
@@ -47,8 +49,8 @@ QUARANTINE_REASONS = frozenset({"crossed_book"})
 class Gap:
     source: str
     scope: str                  # a subject ("kalshi:market:<ticker>") or "<subject>/<channel>" for streams
-    reason: str                 # request_failed | recorder_restart | sequence_gap | reconnect
-                                # | connection_lost | connection_end_unrecorded
+    reason: str                 # request_failed | recorder_restart | sequence_gap | lifecycle_reset
+                                # | reconnect | connection_lost | connection_end_unrecorded
     start_ms: int               # last trustworthy observation
     end_ms: int | None          # first trustworthy observation after; None while open
     start_ref: str | None
@@ -141,11 +143,15 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
             reason = "connection_lost" if reach.conn_id in end_reason else "connection_end_unrecorded"
             gaps.append(Gap(source, scope, reason, reach.last_ts, None, reach.last_ref, None))
     resyncs = sorted(replay.resyncs, key=lambda r: r.recv_ts_ms)
+    seen = set()
     for g in replay.seq_gaps:
+        if (key := (g.market, g.channel, g.reason, g.ref)) in seen:
+            continue                # one lifecycle transition, several connections' books: one gap
+        seen.add(key)
         # Closed by trusted state for the same market and channel on any connection.
         end = next((r for r in resyncs if (r.market, r.channel) == (g.market, g.channel)
                     and r.recv_ts_ms >= g.recv_ts_ms), None)
-        gaps.append(Gap(source, f"novig:market:{g.market}/{g.channel}", "sequence_gap",
+        gaps.append(Gap(source, f"novig:market:{g.market}/{g.channel}", g.reason,
                         g.last_recv_ts_ms if g.last_recv_ts_ms is not None else g.recv_ts_ms,
                         end.recv_ts_ms if end else None, g.last_ref, end.ref if end else None))
     return sorted(gaps, key=lambda g: (g.scope, g.start_ms))
