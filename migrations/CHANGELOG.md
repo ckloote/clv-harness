@@ -41,3 +41,14 @@ Computing closes and scores on the golden-game candidate forced two changes to d
 | **Each metric exists exactly when its inputs do**: `clv_ev` with `p_close`, `null_ev` with `p_ref_entry`, `clv_residual` with both | Not constrained | A score row is kept when an input is missing, so the constraint is what stops a metric without its inputs |
 
 **Rows copied from 0001 are kept exactly and marked `legacy_0001 = 1`.** They were valid under 0001, so the constraints 0002 adds bind only new rows; nothing is invented for them (no reference book, no reason). A trigger stops a new row claiming `legacy_0001`.
+
+## 0003_v0_agreement (V0, 2026-10-11)
+
+V0 must exercise check 2's per-entry comparison (DESIGN.md §13, V0; §9.2). That comparison needs both sides of the entry's two-way market from one observation.
+
+| Change | Against | Why |
+|---|---|---|
+| **`entry_opposite_quote`** (new fact table): the other side of an entry's two-way market. A trigger requires it to be the instrument's other side, from the same raw frame and observation time as the decision quote | Not in §8.1 | `q_e = π_side / (π_side + π_other)` (§9.2) must use the same two-way market and the same as-of observation. As a fact cited to that frame, the de-vig is reproducible and traceable. Without it, check 2 is unavailable for the entry, and no other method is substituted |
+| **`clv_score` adds `q_entry_num/den`, `agreement_outlier` and `agreement_reason`**. A trigger requires an outlier flag exactly when both `q_e` and `p_e` (`p_ref_entry`) exist, and otherwise a reason (`no_opposite_quote`, `no_reference_at_entry`) | §8.2 lists CLV, null EV and residual | The per-entry comparison is per entry, reference venue and benchmark, as `p_e` is. Rows scored before 0003 have none of these columns set |
+
+The slope regression needs `controls.min_clusters` events. Outlier dispositions need `control_outlier_review`, which DESIGN.md §8.5 schedules for G1 or B3. Both arrive then.

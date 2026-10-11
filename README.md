@@ -2,7 +2,7 @@
 
 Measurement infrastructure for evaluating sports-betting entries by **closing-line value (CLV)**: did an entry get a better price than an independent, defensible estimate of the same outcome's pre-event fair probability? It is deliberately built **before** any betting model. Its job is to make a claimed edge testable and to expose apparent edge that depends on timestamp errors, stale prices, mismatched contracts, illiquid reference markets or research choices.
 
-**Status: V0 built.** The R0 raw postseason recorder is built and recording. V0 has the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/`), an ingest of one recorded game, and its off resolution, closes, CLV and null EV scores, traced to raw frames, with a mapping-correction replay and a golden game in CI. See the implementation plan in [DESIGN.md §13](DESIGN.md) and the V0 results in [docs/decisions/2026-10-10-v0-golden-game.md](docs/decisions/2026-10-10-v0-golden-game.md).
+**Status: V0 built.** The R0 raw postseason recorder is built and recording. V0 has the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/`), an ingest of one recorded game, and its off resolution, closes, CLV and null EV scores and check 2's per-entry comparison, traced to raw frames, with a mapping-correction replay and a golden game in CI. See the implementation plan in [DESIGN.md §13](DESIGN.md) and the V0 results in [docs/decisions/2026-10-10-v0-golden-game.md](docs/decisions/2026-10-10-v0-golden-game.md).
 
 | Document | What it is |
 |---|---|
@@ -21,6 +21,7 @@ pyproject.toml              uv workspace root: the `clv` harness package
 config/params.toml          every threshold the harness uses, from DESIGN.md §10; authoritative
 migrations/0001_v0.sql      the V0 schema: facts and derived tables, constraints, append-only triggers
 migrations/0002_v0_scoring.sql  V0 changes forced by scoring: a close with no cutoff, null EV lineage
+migrations/0003_v0_agreement.sql  V0 check 2 per entry: the opposite quote, q_e and the outlier flag
 migrations/CHANGELOG.md     schema changes forced by real data, against DESIGN.md §8
 src/clv/
   config.py                 loads params.toml; an unknown key is an error, never a default
@@ -69,7 +70,7 @@ deploy/raw-recorder.service systemd user unit
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
-The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage, and `0002_v0_scoring.sql` the changes scoring forced.
+The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage, and `0002` and `0003` are the changes scoring and check 2 forced.
 
 ## Install
 
@@ -127,7 +128,7 @@ uv run clv record --spec tests/fixtures/golden/849832/entries.toml
 uv run clv score
 ```
 
-`record` writes the spec's signals and entries: each entry's decision quote is the latest one the archive had received by the decision time, cited to its frame. `score` takes a fact snapshot and writes one run against it: every mapping's eligibility, each game's off resolution, the closes per definition, reference venue and outcome, and per entry CLV, null EV and the residual, as exact fractions with every exclusion reason listed. It prints the scores.
+`record` writes the spec's signals and entries: each entry's decision quote is the latest one the archive had received by the decision time, cited to its frame. `score` takes a fact snapshot and writes one run against it: every mapping's eligibility, each game's off resolution, the closes per definition, reference venue and outcome, and per entry CLV, null EV and the residual, as exact fractions with every exclusion reason listed, and check 2's per-entry comparison of the entry book's de-vigged price with the reference at the decision time. It prints the scores.
 
 ```bash
 uv run clv correct --spec tests/fixtures/golden/849832/corrections.toml

@@ -354,3 +354,61 @@ def test_a_quarantine_after_the_decision_leaves_null_ev_alone(crossed):
     # And once the book is stored again, it prices again.
     ref = novig_ref(crossed)
     assert close.price_as_of(crossed, ref, S + 410 * SEC, close.live_defs()[0]).reason is None
+
+
+# -- check 2, per entry (DESIGN.md §9.2) -------------------------------------------------------------
+
+def agreement_rows(c, r, entry_id, definition="close_live_mid_depth_500"):
+    return {row[0]: (None if row[1] is None else Fraction(row[1], row[2]), row[3], row[4]) for row in c.execute("""
+        SELECT s.ref_venue, s.q_entry_num, s.q_entry_den, s.agreement_outlier, s.agreement_reason
+        FROM clv_score s JOIN close_def d USING (close_def_id)
+        WHERE s.scoring_run_id = ? AND s.entry_id = ? AND d.name = ?""", (r.scoring_run_id, entry_id, definition))}
+
+
+def test_check_2_de_vigs_the_entry_market_exactly(conn):
+    # DraftKings CLE -118 (pi = 59/109) and CWS +100 (pi = 1/2): q_e = (59/109) / (59/109 + 1/2) = 118/227.
+    got = agreement_rows(conn, run(conn), 1)
+    assert got == {"novig": (Fraction(118, 227), 0, None), "kalshi": (Fraction(118, 227), 0, None)}
+    opp = conn.execute("""SELECT o.side, o.price_native, o.raw_artifact_id, o.raw_line, o.observed_ts_ms
+                          FROM entry_opposite_quote o""").fetchone()
+    dq = conn.execute("""SELECT raw_artifact_id, raw_line, observed_ts_ms FROM entry_quote_observation
+                         WHERE concept = 'decision_quote'""").fetchone()
+    assert tuple(opp)[:2] == (0, "100") and tuple(opp)[2:] == tuple(dq)      # the same response frame
+
+
+def manual_entry(c, cle_price, d_cle, cws=None):
+    """A CLE entry at DraftKings at S-1h priced by hand, citing the real S-3700 s response frame."""
+    art, line, observed = c.execute("SELECT raw_artifact_id, raw_line, observed_ts_ms FROM entry_quote_observation"
+                                    " WHERE concept = 'decision_quote'").fetchone()
+    sig = c.execute("SELECT signal_id FROM signal WHERE would_bet = 1").fetchone()[0]
+    iid, side, mapping = c.execute("SELECT venue_instrument_id, side, mapping_obs_id FROM entry").fetchone()
+    eid = c.execute("INSERT INTO entry (kind, signal_id, event_id, outcome_id, venue_instrument_id, side,"
+                    " mapping_obs_id, decision_ts_ms, created_ts_ms) VALUES ('signal', ?, 1, ?, ?, ?, ?, ?, 0)",
+                    (sig, outcome(c, "CLE"), iid, side, mapping, S - 3600 * SEC)).lastrowid
+    c.execute("INSERT INTO entry_quote_observation (entry_id, concept, price_native, d_entry_num, d_entry_den,"
+              " observed_ts_ms, raw_artifact_id, raw_line) VALUES (?, 'decision_quote', ?, ?, ?, ?, ?, ?)",
+              (eid, cle_price, d_cle.numerator, d_cle.denominator, observed, art, line))
+    if cws is not None:
+        price, d = cws
+        c.execute("INSERT INTO entry_opposite_quote (entry_id, side, price_native, d_num, d_den, observed_ts_ms,"
+                  " raw_artifact_id, raw_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                  (eid, 1 - side, price, d.numerator, d.denominator, observed, art, line))
+    return eid
+
+
+def test_a_disagreeing_entry_is_flagged(conn):
+    # CLE -400 / CWS +300 de-vigs to 0.762 against a reference of 0.499: a polarity or wrong-game fault.
+    eid = manual_entry(conn, "-400", Fraction(5, 4), ("300", Fraction(4)))
+    got = agreement_rows(conn, run(conn), eid)
+    assert got["novig"] == (Fraction(4) / (Fraction(5, 4) + 4), 1, None)
+
+
+def test_no_opposite_side_means_check_2_is_unavailable(conn):
+    eid = manual_entry(conn, "-118", Fraction(109, 59))
+    got = agreement_rows(conn, run(conn), eid)
+    assert got["novig"] == (None, None, "no_opposite_quote")
+
+
+def test_no_reference_at_entry_means_check_2_is_unavailable(conn):
+    got = agreement_rows(conn, run(conn), 1, "close_live_mid_depth_1000")       # $1,000 is short at S-1h
+    assert got["novig"] == (Fraction(118, 227), None, "no_reference_at_entry")
