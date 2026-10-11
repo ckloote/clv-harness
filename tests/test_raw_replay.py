@@ -141,25 +141,26 @@ G4_MARKET = "01a118b6-4bf3-7c82-b3ca-03b04bea99f2"
 
 
 @pytest.mark.skipif(not (ARCHIVE / "novig" / "2026-10-08").exists(), reason="raw archive not present")
-def test_recorded_849832_stream_replays_without_gaps_and_every_probe_confirms():
+def test_recorded_849832_stream_replays_to_golive_and_every_probe_confirms():
     from clv.venues.novig.parser import Lifecycle, ProbeCheck, SequenceGap, StreamReplay
     from clv.venues.protocol import BinaryBook
 
     segs = [s for s in archive.segments(ARCHIVE, "novig", days=["2026-10-08", "2026-10-09"])
             if s.stream_id in ("c282f399-aa76-46d2-b5fc-d68bf52debad", "e1f90139-624a-4249-945f-7f0abc817159")]
     r = StreamReplay()
-    probes, golive, n_books, gaps_seen = [], [], 0, 0
+    probes, golive, n_books, gaps_seen = [], [], 0, []
     for f in archive.iter_frames(ARCHIVE, segs):
         for o in r.feed(f):
             if isinstance(o, ProbeCheck):
                 probes.append((o.channel, o.status))
             elif isinstance(o, SequenceGap):
-                gaps_seen += 1
+                gaps_seen.append((o.reason, o.channel, o.recv_ts_ms))
             elif isinstance(o, Lifecycle) and o.kind == "GOLIVE":
                 golive.append(o.venue_ts_ms)
             elif isinstance(o, BinaryBook) and o.market == G4_MARKET:
                 n_books += 1
-    assert gaps_seen == 0
+    # No sequence gap. GOLIVE makes the book untrusted, and no snapshot followed it in this capture.
+    assert gaps_seen == [("lifecycle_reset", "book", 1791504503299)]
     assert sorted(set(probes)) == [("book", "confirmed"), ("trades", "confirmed")] and len(probes) == 68
     assert golive == [1791504503244, 1791504503244]       # 00:08:23.244Z on both connections
-    assert n_books == 78_562                               # the subscribe snapshot plus every book delta
+    assert n_books == 1_633                                # the subscribe snapshot and every pregame book delta

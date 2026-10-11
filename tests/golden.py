@@ -65,8 +65,8 @@ def generate_synthetic(root: Path, crossed_before_cutoff: bool = False) -> None:
     """Write the synthetic game's archive under root/archive and its game list as root/games.toml.
 
     crossed_before_cutoff: a fault variant for tests, not the golden game. At S+235 s, after the
-    last probe and before the cutoff, a delta crosses the Novig book (it is quarantined), and
-    the S+400 s delta uncrosses it."""
+    last probe and before the cutoff, a delta crosses the Novig book (it is quarantined); GOLIVE
+    drops the crossing order, and the snapshot after it is the next stored state."""
     from raw_recorder.archive import ArchiveWriter
 
     clock = _Clock(S - 5000 * SEC)
@@ -146,15 +146,27 @@ def generate_synthetic(root: Path, crossed_before_cutoff: bool = False) -> None:
     send(S + 230 * SEC + 50, "in", {"ts": S + 230 * SEC + 20, "nonce": 3, "snapshot": {
         M: {"eventId": "syn-ev", "book": {"seq": 11, "orders": orders(after)},
             "lifecycle": {"seq": 0, "status": "OPEN"}}}})
+    seq = 11
+    if crossed_before_cutoff:
+        seq = 12
+        send(S + 235 * SEC, "in", {"ts": S + 235 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "book": {
+            "seq": seq, "deltas": [{"kind": "add", "orderId": "c9", "outcomeId": CLE, "price": "0.62", "qty": 100}]}}}})
+    # GOLIVE at S+310s: as on Production, the venue drops every pregame order with no book delta,
+    # so the book is untrusted until the snapshot the recorder requests right after the transition.
+    # The in-play adds before that reply are not applied; the reply carries them.
     send(S + 310 * SEC, "in", {"ts": S + 310 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "lifecycle": {
         "seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}})
-    in_play = [{"kind": "add", "orderId": "w3", "outcomeId": CWS, "price": "0.30", "qty": 100}]
-    if crossed_before_cutoff:
-        send(S + 235 * SEC, "in", {"ts": S + 235 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "book": {
-            "seq": 12, "deltas": [{"kind": "add", "orderId": "c9", "outcomeId": CLE, "price": "0.62", "qty": 100}]}}}})
-        in_play.insert(0, {"kind": "remove", "orderId": "c9", "reason": "cancel"})
+    live = {CWS: [{"orderId": "i2", "price": "0.50", "qty": 20000}],
+            CLE: [{"orderId": "i1", "price": "0.45", "qty": 20000}]}
+    send(S + 310 * SEC + 500, "in", {"ts": S + 310 * SEC + 470, "delta": {M: {"eventId": "syn-ev", "book": {
+        "seq": seq + 1, "deltas": [{"kind": "add", "orderId": o["orderId"], "outcomeId": side, **o}
+                                   for side, lst in live.items() for o in lst]}}}})
+    send(S + 311 * SEC, "out", {"nonce": 4, "snapshot": {"markets": {M: "book"}}})
+    send(S + 311 * SEC + 50, "in", {"ts": S + 311 * SEC + 20, "nonce": 4, "snapshot": {
+        M: {"eventId": "syn-ev", "book": {"seq": seq + 1, "orders": live},
+            "lifecycle": {"seq": 1, "status": "OPEN"}}}})
     send(S + 400 * SEC, "in", {"ts": S + 400 * SEC - 30, "delta": {M: {"eventId": "syn-ev", "book": {
-        "seq": 13 if crossed_before_cutoff else 12, "deltas": in_play}}}})
+        "seq": seq + 2, "deltas": [{"kind": "add", "orderId": "w3", "outcomeId": CWS, "price": "0.30", "qty": 100}]}}}})
     clock.t = S + 600 * SEC
     ws.event(conn, "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=4600.0)
 

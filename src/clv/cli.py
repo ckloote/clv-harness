@@ -143,8 +143,9 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
               f"startsTs {ms_iso(m.starts_ts_ms) if m.starts_ts_ms else '—'}, outcomes "
               + ", ".join(f"{n} ({oid[-6:]})" for oid, n, _ in m.outcomes))
     print(f"- stream: {len(nv.frames)} frames on {len({f.conn_id for f in nv.frames})} connections; "
-          f"{len(nv.books)} book states for this game")
-    print(f"- probe checks: {dict(nv.probes)}; sequence gaps {len(nv.seq_gaps)}; trades {nv.trades}")
+          f"{len(nv.books)} book states for this game, {sum(not b.complete for b in nv.books)} after a cut snapshot")
+    print(f"- probe checks: {dict(nv.probes)}; untrusted until a snapshot: "
+          f"{dict(Counter(g.reason for g in nv.seq_gaps))}; trades {nv.trades}")
     for lc in nv.lifecycle:
         print(f"- lifecycle {lc.kind} status {lc.status} at venue {ms_iso(lc.venue_ts_ms)} (conn {lc.conn_id[:8]})")
     print(f"- public book polls: {len(public)} ok, {sum(not b.complete for b in public)} with a truncated ladder"
