@@ -59,6 +59,25 @@ class ArchiveLock:
             self._fd = None
 
 
+def running_recorder(root: Path) -> int | None:
+    """The PID holding the archive lock, or None. Read-only: unlike `ArchiveLock.acquire`,
+    it never writes the lock file, so it is safe beside a running recorder."""
+    path = Path(root) / LOCK_NAME
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return ArchiveLock(root).holder_pid() or -1
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return None
+    finally:
+        os.close(fd)
+
+
 def clock_status() -> dict:
     """Best-effort NTP/clock evidence from the host (§12 time health)."""
     for cmd in (["chronyc", "tracking"], ["timedatectl", "timesync-status"],
