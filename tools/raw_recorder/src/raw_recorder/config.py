@@ -1,21 +1,27 @@
-"""Recorder configuration: parameters (config.toml) and the game list (games.toml).
+"""Recorder configuration: parameters (config.toml) and the games to record.
 
 Every numeric parameter is copied from DESIGN.md §10; config.toml names the
 §10 key beside each value. Secrets never live in these files: they come from
 environment variables (a systemd EnvironmentFile in deployment).
+
+Games come from two lists. The recorder discovers games itself and writes them
+to `<archive>/games.discovered.toml` (raw_recorder.discovery). `games.toml`,
+committed and checked by hand, adds games or overrides a discovered one: for a
+gamePk in both, the hand-checked entry wins whole.
 """
 from __future__ import annotations
 
 import hashlib
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 DEFAULT_DIR = Path(__file__).resolve().parents[2]   # tools/raw_recorder/
 DEFAULT_CONFIG = DEFAULT_DIR / "config.toml"
 DEFAULT_GAMES = DEFAULT_DIR / "games.toml"
+DISCOVERED_FILE = "games.discovered.toml"           # in the archive root; clv.games reads it too
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,8 @@ class Game:
     kalshi_tickers: tuple[str, ...]
     capture_lead_s: int | None = None
     capture_tail_s: int | None = None
+    source: str = "manual"                  # "manual" (games.toml, checked by hand) | "discovered"
+    notes: tuple[str, ...] = ()             # why a discovered entry looks the way it does
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,11 @@ class Config:
     odds_api: dict
     mlb: dict
     games_path: Path = DEFAULT_GAMES
+    discovery: dict = field(default_factory=lambda: {"enabled": False})
+
+    @property
+    def discovered_path(self) -> Path:
+        return self.archive_root / DISCOVERED_FILE
 
     def enabled(self, section: dict) -> bool:
         return bool(section.get("enabled", True))
@@ -113,10 +126,11 @@ def load_config(path: Path | None = None) -> Config:
         games = (path.parent / games).resolve()
     return Config(path=path, sha256=hashlib.sha256(raw).hexdigest(), archive_root=root,
                   params=params, novig=doc["novig"], kalshi=doc["kalshi"],
-                  odds_api=doc["odds_api"], mlb=doc["mlb"], games_path=games)
+                  odds_api=doc["odds_api"], mlb=doc["mlb"], games_path=games,
+                  discovery=doc.get("discovery", {"enabled": False}))
 
 
-def load_games(path: Path | None = None) -> list[Game]:
+def load_games(path: Path | None = None, source: str = "manual") -> list[Game]:
     path = Path(path or os.environ.get("RAW_RECORDER_GAMES") or DEFAULT_GAMES)
     if not path.exists():
         return []
@@ -131,8 +145,37 @@ def load_games(path: Path | None = None) -> list[Game]:
             kalshi_tickers=tuple(g.get("kalshi_tickers", ())),
             capture_lead_s=g.get("capture_lead_s"),
             capture_tail_s=g.get("capture_tail_s"),
+            source=source,
+            notes=tuple(g.get("notes", ())),
         ))
     pks = [g.game_pk for g in games]
     if len(pks) != len(set(pks)):
-        raise ValueError("duplicate game_pk in games.toml")
+        raise ValueError(f"duplicate game_pk in {path.name}")
     return games
+
+
+def combine(manual: list[Game], discovered: list[Game]) -> list[Game]:
+    """Every game once: a hand-checked entry replaces a discovered one with its gamePk."""
+    by_pk = {g.game_pk: g for g in discovered}
+    by_pk.update((g.game_pk, g) for g in manual)
+    return sorted(by_pk.values(), key=lambda g: (g.scheduled_start_ms, g.game_pk))
+
+
+def shadowed(manual: list[Game], discovered: list[Game]) -> list[str]:
+    """Hand-checked entries that hide markets discovery found for the same game."""
+    found = {g.game_pk: g for g in discovered}
+    out = []
+    for g in manual:
+        d = found.get(g.game_pk)
+        if d is None:
+            continue
+        missing = sorted((set(d.novig_markets) - set(g.novig_markets)) | (set(d.kalshi_tickers) - set(g.kalshi_tickers)))
+        if missing:
+            out.append(f"games.toml entry {g.game_pk} overrides discovery, which also found {', '.join(missing)}: "
+                       f"add them there or delete the entry")
+    return out
+
+
+def load_all_games(cfg: Config, games_path: Path | None = None) -> list[Game]:
+    """The games the recorder records: games.toml (or `games_path`) over the discovered list."""
+    return combine(load_games(games_path or cfg.games_path), load_games(cfg.discovered_path, "discovered"))

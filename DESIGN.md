@@ -780,7 +780,7 @@ A one-week collector pilot should measure raw archive growth, normalized row siz
 **Scope:** a standalone tool in `tools/raw_recorder/` with minimal dependencies.
 
 - `NOVIG-V3` signing, validated against Novig's published sample signatures and `POST /v3/echo`, using the read key only.
-- Select MLB postseason moneyline markets (a hand-maintained list is acceptable) and archive the catalog responses used.
+- Select MLB postseason moneyline markets (the recorder discovers them by fixed rules, with hand-checked overrides; `docs/decisions/2026-10-11-recorder-game-discovery.md`) and archive the catalog responses used.
 - Subscribe to `book` and `trades` for those markets, retaining their included `lifecycle` data. Confirm the actual subscription acknowledgements: selection values name one channel per subject, so use separate connections if needed to retain both feeds without replacing a subscription. Archive acknowledgements and every frame in the §7.1 format, from as early as practical before first pitch through at least 30 minutes after it.
 - Capture transport Ping/Pong evidence, and send/archive scheduled authoritative snapshot probes for quiet public channels using the §10 cadence and timeout. These are evidence collection only; R0 does not interpret sequences or repair gaps. Archive every REST request envelope and response/failure under its request ID.
 - Log connection events. Reconnect with backoff and resubscribe, but never attempt gap repair: later replay detects gaps from the raw sequence numbers.
@@ -898,7 +898,7 @@ clv-harness/
   tools/
     raw_recorder/               # R0: standalone uv workspace member; writes the §7.1 archive format
       config.toml               # R0 values copied from §10
-      games.toml                # hand-maintained games, Novig markets and Kalshi tickers to record
+      games.toml                # hand-checked games, overriding the recorder's discovered list
       src/raw_recorder/         # archive, REST envelope, Novig signing/stream, pollers, CLI
       tests/                    # §7.1 archive verification fixtures, signing vectors
   src/clv/

@@ -93,7 +93,7 @@ def game_subject(scope: str, g: dict) -> bool:
 
 
 def inspect(root: Path, game_pk: int, games_path: Path) -> None:
-    g = load_game(game_pk, games_path)
+    g = load_game(game_pk, games_path, root)
     lo, hi = capture_window(g)
     print(f"# {g['label']} (gamePk {game_pk})")
     print(f"capture window {ms_iso(lo)} .. {ms_iso(hi)}\n")
