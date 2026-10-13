@@ -108,7 +108,7 @@ def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
         rep.add(FAIL if in_window else WARN, "recorder", "not running: nothing holds the archive lock")
     session = _latest_session(root, now_ms)
     if session is None:
-        rep.add(WARN, "recorder", "no session start found in the last 2 days of the archive")
+        rep.add(WARN, "recorder", "no recorder session start found in the archive")
     else:
         start, events = session
         rep.add(OK, "recorder", f"session started {_age(now_ms, start)}")
@@ -140,13 +140,21 @@ def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
 
 
 def _latest_session(root: Path, now_ms: int) -> tuple[int, list[dict]] | None:
-    frames = frames_between(root, "recorder", now_ms - 2 * 86_400_000, now_ms)
-    starts = [f for f in frames if _event(f).get("type") == "process_start"]
-    if not starts:
+    """The newest recorder session to start by now, and all its events, however long it has
+    run. A session's stream is `session-<id>`, and its first segment opens with process_start."""
+    rec = Path(root) / "recorder"
+    newest = None
+    for path in rec.glob("*/session-*.0001.jsonl*"):
+        if not path.name.endswith((SEALED_SUFFIX, PART_SUFFIX)):
+            continue
+        first = next((f for f in iter_file(path) if _event(f).get("type") == "process_start"), None)
+        if first is not None and first["recv_ts_ms"] <= now_ms and (newest is None or first["recv_ts_ms"] > newest[0]):
+            newest = (first["recv_ts_ms"], path.name.split(".", 1)[0])
+    if newest is None:
         return None
-    last = starts[-1]
-    events = [_event(f) for f in frames if f["conn_id"] == last["conn_id"]]
-    return last["recv_ts_ms"], events
+    start, stream = newest
+    paths = sorted(p for p in rec.glob(f"*/{stream}.*") if p.name.endswith((SEALED_SUFFIX, PART_SUFFIX)))
+    return start, [_event(f) for p in paths for f in iter_file(p) if f["dir"] == "event"]
 
 
 def _novig(rep: Report, cfg: Config, w: Window, frames: list[dict], now_ms: int, in_window: bool, session) -> None:

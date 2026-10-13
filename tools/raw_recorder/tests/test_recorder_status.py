@@ -36,15 +36,17 @@ def cfg_for(root):
 
 
 def capture(root, *, odds_disabled=False, seq_jump=False, unanswered=False, kalshi_last=NOW - 5_000,
-            last_ping=NOW - 10_000, failed_poll=False):
+            last_ping=NOW - 10_000, failed_poll=False, session_start=S - 3 * 3_600_000 - 5_000):
     """A capture of GAME up to NOW: healthy unless a fault is asked for."""
     clock = Clock()
     w = ArchiveWriter(root, session_id="s" * 32, segment_max_s=86_400, fsync_interval_s=5, clock=clock)
     rec = w.stream("recorder", "session-ssssssssssss")
-    clock.t = S - 3 * 3_600_000 - 5_000
+    clock.t = session_start
     rec.event(rec.stream_id, "process_start", recorder_version="test")
     if odds_disabled:
         rec.event(rec.stream_id, "odds_disabled", reason="no API key in $ODDS_API_KEY")
+    clock.t = S - 3 * 3_600_000 - 4_000
+    rec.event(rec.stream_id, "host_status", free_disk_mb=1)
 
     for channel in ("book", "trades"):
         conn = f"c-{channel}"
@@ -125,6 +127,13 @@ def test_a_stopped_recorder_fails_only_inside_a_window(tmp_path):
     before = status.status(cfg_for(tmp_path), [GAME], S - 4 * 3_600_000, None)
     assert before.phase == "before window" and before.worst == "WARN"
     assert {a for _, a, _ in before.checks} == {"recorder", "disk", "window", "games"}
+
+
+def test_a_session_started_days_ago_is_still_found(tmp_path):
+    # A recorder left running for days: its start, and a missing key noted then, still count.
+    rep, got = check(tmp_path, odds_disabled=True, session_start=S - 3 * 86_400_000)
+    assert ("recorder", "session started 259,800.0 s ago") in {(a, m) for _, a, m in rep.checks}
+    assert ("recorder", "FAIL") in got and "no recorder session start" not in status.render(rep, NOW)
 
 
 def test_the_game_can_be_chosen_and_an_unknown_one_fails(tmp_path):
