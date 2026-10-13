@@ -72,4 +72,5 @@ novig_first_day = "2026-08-03"              # Novig's first public trades file
 novig_data_url = "https://data.novig.com"
 novig_data_path = "/reporting/trade-data"
 rest_timeout_s = 180                        # a day's trades.csv is tens of MB
+segment_max_s = 300                         # seal every 5 min: at 10 requests/s of trade pages an hour is ~10 GB unpacked
 min_interval_s = { mlb = 0.2, kalshi = 0.1, novig_data = 0.5, novig_history = 0.3 }   # per host, between requests

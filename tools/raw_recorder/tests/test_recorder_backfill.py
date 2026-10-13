@@ -118,7 +118,7 @@ def backfill_config(tmp_path, base):
         "root": str(tmp_path / "archive-hist"), "seasons": [2026], "game_types": "R,F,D,L,W",
         "lookback_s": 115200, "candles_per_request": 5000, "trades_page_limit": 1000,
         "novig_first_day": "2026-08-03", "novig_data_url": base, "novig_data_path": "/reporting/trade-data",
-        "rest_timeout_s": 10, "min_interval_s": {}})
+        "rest_timeout_s": 10, "segment_max_s": 300, "min_interval_s": {}})
 
 
 def fake_signer(method, path, raw_query, body):
@@ -266,6 +266,7 @@ def test_the_committed_config_writes_to_its_own_root():
     cfg = load_config(DEFAULT_CONFIG)
     assert cfg.backfill_root.name == "archive-hist" and cfg.backfill_root != cfg.archive_root
     assert cfg.backfill["lookback_s"] >= 86400 + 4 * 3600          # the 24 h offset, plus a game
+    assert cfg.backfill["segment_max_s"] <= 600                    # segments small enough to read back
     assert json.dumps(cfg.backfill)                                # plain data, no secrets
     assert date.fromisoformat(cfg.backfill["novig_first_day"]) == date(2026, 8, 3)
     assert asyncio.iscoroutinefunction(backfill.run)

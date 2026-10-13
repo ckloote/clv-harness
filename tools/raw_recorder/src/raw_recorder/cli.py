@@ -135,7 +135,7 @@ async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
         if "novig" in sources and signer is None:
             print(f"no ${cfg.novig['key_id_env']}: Novig history routes are skipped", file=sys.stderr)
         session_id = new_session_id()
-        archive = ArchiveWriter(root, session_id=session_id, segment_max_s=cfg.params.segment_max_s,
+        archive = ArchiveWriter(root, session_id=session_id, segment_max_s=cfg.backfill["segment_max_s"],
                                 fsync_interval_s=cfg.params.fsync_interval_s)
         try:
             async with aiohttp.ClientSession() as http:
