@@ -64,6 +64,7 @@ class Recorder:
     MLB_CHECK_S = 30            # how often ended windows are checked for feeds to fetch
     WAKE_CHECK_S = 5            # the longest a periodic task sleeps before looking at the wall clock
     ODDS_CHECK_S = 15           # how often the odds poller looks for an odds window that opened
+    CATALOG_CHECK_S = 30        # how often newly active Novig markets get their catalog evidence
 
     def __init__(self, cfg: Config, games: list[Game], inhibitor: SleepInhibitor | None = None,
                  games_path: Path | None = None):
@@ -299,9 +300,8 @@ class Recorder:
         async def kalshi_round() -> None:
             tickers = self.schedule.kalshi_tickers(now_ms())
             new = tuple(t for t in tickers if t not in seen_tickers)
-            if new:
-                await kalshi.fetch_markets(k_rest, cfg.kalshi["base_url"], new)
-                seen_tickers.update(new)
+            if new and await kalshi.fetch_markets(k_rest, cfg.kalshi["base_url"], new):
+                seen_tickers.update(new)            # a failed fetch (no network after a wake) is retried
             await kalshi.poll_orderbooks(k_rest, cfg.kalshi["base_url"], tickers)
         specs.append(("kalshi", lambda: self.every("kalshi", p.kalshi_poll_interval_s, kalshi_round)))
         return specs
@@ -361,10 +361,9 @@ class Recorder:
 
         async def novig_catalog_round() -> None:
             new = self.schedule.novig_markets(now_ms()) - seen_markets
-            if new:
-                await novig_public.fetch_markets(n_rest, cfg.novig["host"], frozenset(new))
-                seen_markets.update(new)
-        specs.append(("novig_catalog", lambda: self.every("novig_catalog", 30, novig_catalog_round)))
+            if new:                                 # a market whose fetch failed is retried next round
+                seen_markets.update(await novig_public.fetch_markets(n_rest, cfg.novig["host"], frozenset(new)))
+        specs.append(("novig_catalog", lambda: self.every("novig_catalog", self.CATALOG_CHECK_S, novig_catalog_round)))
 
         if signer is None:
             self.note("novig_stream_disabled", reason="no read key configured "

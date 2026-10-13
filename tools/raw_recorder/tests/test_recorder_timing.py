@@ -89,3 +89,38 @@ async def test_a_poll_with_no_response_is_retried_at_the_next_check(tmp_path, mo
     # Two drops: aiohttp itself retries a dropped keep-alive connection once.
     _, polls = await run_odds(tmp_path, monkeypatch, opens_in_ms=0, seconds=0.8, fail_first=[True, True])
     assert [x.complete["status"] for x in polls] == [None, 200]
+
+
+async def test_a_catalog_fetch_that_failed_is_retried(tmp_path, monkeypatch):
+    # 849820: the host woke, and the first catalog requests failed before DNS was back. They were
+    # counted as fetched and never retried, so the game had no Novig catalog evidence.
+    monkeypatch.setattr(Recorder, "CATALOG_CHECK_S", 0.1)
+    failing = {"/v3/public/catalog/markets/m1": 1, "/markets": 1}
+    app = web.Application()
+
+    async def answer(request):                          # the first catalog request of each venue fails
+        if failing.get(request.path, 0) > 0:
+            failing[request.path] -= 1
+            return web.Response(status=503)
+        return web.json_response({})
+
+    for route in ("/v3/public/catalog/markets/{m}", "/markets", "/markets/{t}/orderbook",
+                  "/v3/public/catalog/markets/{m}/book"):
+        app.router.add_get(route, answer)
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        cfg = config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        cfg.mlb["enabled"] = cfg.odds_api["enabled"] = False
+        now = time.time_ns() // 1_000_000
+        rec = Recorder(cfg, [Game(1, now + 60_000, "", ("m1",), ("K-A", "K-B"))], inhibitor=FakeInhibitor())
+        task = asyncio.create_task(rec.run())
+        await asyncio.sleep(1.0)
+        rec.stop.set()
+        await task
+    finally:
+        await srv.close()
+    xs = list(rest_exchanges(list(iter_archive(cfg.archive_root))).values())
+    novig = [x.complete["status"] for x in xs if x.start["path"] == "/v3/public/catalog/markets/m1"]
+    kalshi = [x.complete["status"] for x in xs if x.start["path"] == "/markets"]
+    assert novig == [503, 200] and kalshi == [503, 200]           # retried once, then left alone
