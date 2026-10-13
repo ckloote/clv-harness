@@ -23,11 +23,16 @@ async def poll_books(rest: RestRecorder, host: str, market_ids: frozenset[str], 
                            purpose="public_book")
 
 
-async def fetch_markets(rest: RestRecorder, host: str, market_ids: frozenset[str]) -> None:
-    """Catalog evidence (outcomes, fee terms, voids, status) for recorded markets."""
+async def fetch_markets(rest: RestRecorder, host: str, market_ids: frozenset[str]) -> set[str]:
+    """Catalog evidence (outcomes, fee terms, voids, status) for recorded markets; returns
+    the markets whose response arrived, so the caller retries the others."""
+    got = set()
     for market_id in sorted(market_ids):
-        await rest.request("GET", host, f"/v3/public/catalog/markets/{market_id}",
-                           subjects=[subject(market_id)], purpose="catalog")
+        res = await rest.request("GET", host, f"/v3/public/catalog/markets/{market_id}",
+                                 subjects=[subject(market_id)], purpose="catalog")
+        if res.ok:
+            got.add(market_id)
+    return got
 
 
 async def _paged(rest: RestRecorder, host: str, path: str, params: dict, subject_: str) -> tuple[list[dict], bool]:

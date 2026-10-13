@@ -65,7 +65,8 @@ def kalshi_book(yes, no):
     return {"orderbook_fp": {"yes_dollars": [list(x) for x in yes], "no_dollars": [list(x) for x in no]}}
 
 
-def write_archive(root: Path, games: Path, crossed_resync: str | None = None, late_snapshot: bool = False) -> None:
+def write_archive(root: Path, games: Path, crossed_resync: str | None = None, late_snapshot: bool = False,
+                  catalog_listing: bool = False) -> None:
     """crossed_resync ("gap" or "mismatch"): after the halt, instead of GOLIVE and in-play
     trading, a probe reply reports OPEN and replaces the book with a crossed one, either
     jumping the sequence (a gap) or at the same sequence (a mismatch).
@@ -81,11 +82,20 @@ def write_archive(root: Path, games: Path, crossed_resync: str | None = None, la
     rest(clock, mlb, "m2", T + 1_200_000, f"/api/v1.1/game/{PK}/feed/live", "game_feed", feed("F"), [f"mlb:game:{PK}"])
     # Novig: catalog, two public polls (the second unchanged), then the stream.
     nv = w.stream("novig", "rest-s1")
-    rest(clock, nv, "n1", T - 3_000_000, f"/v3/public/catalog/markets/{M}", "catalog",
-         {"marketId": M, "description": "CWS", "eventId": "ev1", "marketType": "MONEY", "status": "OPEN",
-          "voids": "FMV", "startsTs": T, "fee": {}, "outcomes": [{"outcomeId": CWS, "name": "CWS", "status": "TBD"},
-                                                                 {"outcomeId": CLE, "name": "CLE", "status": "TBD"}]},
-         [f"novig:market:{M}"])
+    market = {"marketId": M, "description": "CWS", "eventId": "ev1", "marketType": "MONEY", "status": "OPEN",
+              "voids": "FMV", "startsTs": T, "fee": {}, "outcomes": [{"outcomeId": CWS, "name": "CWS", "status": "TBD"},
+                                                                     {"outcomeId": CLE, "name": "CLE", "status": "TBD"}]}
+    if catalog_listing:     # the market's own fetch failed: only the discovery's league listing has it
+        disc = w.stream("novig", "discovery-s1")
+        rest(clock, disc, "d1", T - 3_000_000, "/v3/public/catalog/markets", "catalog",
+             {"items": [market], "next": None}, ["novig:league:MLB"], query="league=MLB&marketType=MONEY&limit=100")
+        clock.t = T - 2_999_000
+        nv.event("n1", "rest_request", request_id="n1", method="GET", origin="https://x",
+                 path=f"/v3/public/catalog/markets/{M}", query="", subjects=[f"novig:market:{M}"],
+                 purpose="catalog", start_ts_ms=clock.t)
+        nv.event("n1", "rest_complete", request_id="n1", status=None, failure="connect_error: DNS", response_headers=[])
+    else:
+        rest(clock, nv, "n1", T - 3_000_000, f"/v3/public/catalog/markets/{M}", "catalog", market, [f"novig:market:{M}"])
     pub = {"marketId": M, "seq": 5, "orders": book(5, [("0.48", 1000)], [("0.51", 500)], 0)["orders"]}
     for i, t in enumerate((T - 2_900_000, T - 2_890_000)):
         rest(clock, nv, f"p{i}", t, f"/v3/public/catalog/markets/{M}/book", "public_book", pub,
@@ -475,3 +485,19 @@ def test_the_recorder_and_harness_agree_on_novig_abbreviations():
     from clv import games, identity
     assert discovery.NOVIG_ABBR == identity.NOVIG_ABBR
     assert DISCOVERED_FILE == games.DISCOVERED
+
+
+def test_the_league_listing_is_catalog_evidence_when_the_market_fetch_failed(tmp_path):
+    # 849820: the market's own catalog request failed as the host woke (DNS); discovery's hourly
+    # listing of every MLB MONEY market carries the same market object, and is cited instead.
+    write_archive(tmp_path, tmp_path / "games.toml", catalog_listing=True)
+    c, rep = ingested((tmp_path, tmp_path / "games.toml"))
+    (cite,) = q(c, "SELECT a.relpath FROM venue_instrument v JOIN raw_artifact a USING (raw_artifact_id) "
+                   "WHERE v.venue = 'novig'")
+    assert "discovery-s1" in cite[0]
+    assert rep.rows["tick"] == ingested(recorded_like(tmp_path / "plain"))[1].rows["tick"]   # nothing else differs
+
+
+def recorded_like(root):
+    write_archive(root, root / "games.toml")
+    return root, root / "games.toml"

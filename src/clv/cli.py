@@ -57,10 +57,11 @@ class NovigSummary:
     off_obs: list = field(default_factory=list)
 
 
-def novig_summary(frames, markets: set[str], game_pk: int) -> NovigSummary:
+def novig_summary(frames, markets: set[str], game_pk: int,
+                  outcomes: dict[str, tuple[str, ...]] | None = None) -> NovigSummary:
     """Replay every frame (a connection can carry several games' markets), but keep only
     outputs for `markets`: another game's GOLIVE is never this game's off observation."""
-    out = NovigSummary(novig.StreamReplay())
+    out = NovigSummary(novig.StreamReplay(outcomes))
     for f in frames:
         out.frames.append(f)
         for o in out.replay.feed(f):
@@ -118,24 +119,22 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
     polls, catalog = [], {}
     segs = archive.overlapping(archive.segments(root, "novig"), lo, hi)
     # A WebSocket segment's stream_id is its connection ID; poller streams are named by role.
-    ws = [s for s in segs if not s.stream_id.startswith(("rest-", "catalog-", "echo-"))]
+    ws = [s for s in segs if not s.stream_id.startswith(ingest.WS_PREFIXES)]
     for f in archive.iter_frames(root, [s for s in segs if s not in ws]):
         if lo <= f.recv_ts_ms <= hi:
             polls.append(f)
-    # Whole connections, not a time slice: a connection's end events can fall just past the window.
-    nv = novig_summary(archive.iter_frames(root, ws), markets, game_pk)
-    books = nv.books
-    off_obs += nv.off_obs
-    public = []
     novig_x = list(archive.rest_exchanges(polls))
     for x in novig_x:
-        if not x.ok:
-            continue
-        if x.request.get("purpose") == "public_book":
-            public.append(novig.public_book(x))
-        elif x.request.get("purpose") == "catalog" and "/catalog/markets/" in x.path and x.path.count("/") == 5:
-            m = novig.catalog_market(x)
-            catalog[m.market] = m
+        for m in novig.catalog_markets(x):
+            if m.market in markets:
+                catalog.setdefault(m.market, m)
+    outcomes = {mk: tuple(o[0] for o in m.outcomes) for mk, m in catalog.items()}
+    # Whole connections, not a time slice: a connection's end events can fall just past the window.
+    nv = novig_summary(archive.iter_frames(root, ws), markets, game_pk, outcomes)
+    books = nv.books
+    off_obs += nv.off_obs
+    public = [novig.public_book(x, outcomes.get(x.path.split("/")[-2], ())) for x in novig_x
+              if x.ok and x.request.get("purpose") == "public_book"]
     names = {oid: name for m in catalog.values() for oid, name, _ in m.outcomes}
     print("\n## Novig")
     for m in catalog.values():

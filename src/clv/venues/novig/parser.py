@@ -26,6 +26,11 @@ replayed across one would keep orders that no longer exist. A lifecycle
 status is judged by the lifecycle channel's own sequence, never the book's: one
 behind it is not emitted, even beside a current book.
 
+A snapshot omits an outcome with no orders (849812, after UNLIVE), so a book's
+outcomes are every outcome it has shown, plus the market's two from the catalog
+when the caller passes them; a missing side has no bids. A market whose two
+outcomes are still unknown yields no book state.
+
 A book snapshot lists at most `SNAPSHOT_MAX_LEVELS` price levels per outcome,
 each with all its orders. An outcome showing that many may have been cut, so its
 lowest shown price becomes a floor: the replayed book shows only levels at or
@@ -169,7 +174,8 @@ class StreamReplay:
     connection is closed by trusted state for the same market and channel on any
     connection, including a replacement after a reconnect.
     """
-    def __init__(self):
+    def __init__(self, outcomes: dict[str, tuple[str, ...]] | None = None):
+        self.outcomes = dict(outcomes or {})                       # market -> its outcomeIds, from the catalog
         self.channels: dict[tuple[str, str, str], _Channel] = {}   # (conn, market, channel)
         self.trade_ids: set[str] = set()
         self.spans: list[Span] = []
@@ -267,9 +273,9 @@ class StreamReplay:
             # A mismatch installs the authoritative snapshot; the ProbeCheck reports the defect.
         out += self._resync(f, market, "book", book["seq"])
         ch.seq, ch.orders, ch.floors, ch.snapshot_ref = book["seq"], orders, floors, f.ref
-        ch.outcomes = outcomes or ch.outcomes
+        ch.outcomes = tuple(dict.fromkeys(ch.outcomes + outcomes))
         self._evidence(ch, f, market, "book", new_span=subscribed)
-        out.append(self._state(f, msg, market, ch))
+        out += self._state(f, msg, market, ch)
         return out
 
     # -- deltas ----------------------------------------------------------------
@@ -294,7 +300,7 @@ class StreamReplay:
             if channel == "book":
                 for d in batch["deltas"]:
                     self._apply(ch, d, f)
-                out.append(self._state(f, msg, market, ch))
+                out += self._state(f, msg, market, ch)
             elif channel == "trades":
                 out += self._trades(f, market, batch["deltas"])
             elif self._lifecycle_seq(f, market, batch.get("seq")):
@@ -316,6 +322,8 @@ class StreamReplay:
             if oid in ch.orders:
                 raise ValueError(f"{f.ref}: add of resting order {oid}")
             ch.orders[oid] = (d["outcomeId"], d["price"], d["qty"])
+            if d["outcomeId"] not in ch.outcomes:
+                ch.outcomes += (d["outcomeId"],)
         elif kind == "update":      # observed on Production; not in the docs (partial fill)
             outcome, price, qty = ch.orders[oid]
             if not 0 < d["remaining"] < qty:
@@ -398,17 +406,20 @@ class StreamReplay:
     def _ch(self, conn: str, market: str, channel: str) -> _Channel:
         return self.channels.setdefault((conn, market, channel), _Channel())
 
-    @staticmethod
-    def _state(f: Frame, msg: dict, market: str, ch: _Channel) -> BinaryBook:
-        per_side: dict[str, list] = {o: [] for o in ch.outcomes}
+    def _state(self, f: Frame, msg: dict, market: str, ch: _Channel) -> list[BinaryBook]:
+        """The book as it now stands, or nothing while its two outcomes are not yet known."""
+        outcomes = tuple(dict.fromkeys(ch.outcomes + self.outcomes.get(market, ())))
+        if len(outcomes) < 2:
+            return []
+        if len(outcomes) > 2:
+            raise ValueError(f"{f.ref}: market {market} has outcomes {sorted(outcomes)}; expected two")
+        per_side: dict[str, list] = {o: [] for o in outcomes}
         for outcome, price, qty in _shown(ch.orders, ch.floors).values():
-            per_side.setdefault(outcome, []).append((price, Decimal(qty)))
-        if len(per_side) != 2:
-            raise ValueError(f"{f.ref}: market {market} has outcomes {sorted(per_side)}; expected two")
+            per_side[outcome].append((price, Decimal(qty)))
         refs = (ch.snapshot_ref,) if ch.snapshot_ref == f.ref else (ch.snapshot_ref, f.ref)
-        return BinaryBook(VENUE, market, {o: aggregate(v) for o, v in per_side.items()},
-                          PAYOUT_USD_PER_CONTRACT, complete=not ch.floors, source="stream", seq=ch.seq,
-                          venue_ts_ms=msg["ts"], recv_ts_ms=f.recv_ts_ms, refs=refs)
+        return [BinaryBook(VENUE, market, {o: aggregate(v) for o, v in per_side.items()},
+                           PAYOUT_USD_PER_CONTRACT, complete=not ch.floors, source="stream", seq=ch.seq,
+                           venue_ts_ms=msg["ts"], recv_ts_ms=f.recv_ts_ms, refs=refs)]
 
 
 def _floors(orders: dict[str, list]) -> dict[str, Decimal]:
@@ -428,17 +439,19 @@ def _shown(orders: dict[str, tuple[str, str, int]], floors: dict[str, Decimal]) 
 
 # -- REST ------------------------------------------------------------------------
 
-def public_book(x: RestExchange) -> BinaryBook:
+def public_book(x: RestExchange, outcomes: tuple[str, ...] = ()) -> BinaryBook:
     """`GET /v3/public/catalog/markets/{id}/book?depth=N`: the unsigned poll.
 
     `depth` limits price levels, not orders: on 849832 every poll showed all
     orders at 5-9 levels per side, identical to the stream snapshot 20 s later.
     Whether the limit is per side or in total is not documented, so the ladder
-    is marked incomplete when either reading could have cut it.
+    is marked incomplete when either reading could have cut it. An outcome with
+    no orders may be left out; `outcomes`, from the catalog, names both.
     """
     body = x.body.json()
     depth = int(parse_qs(x.request.get("query") or "").get("depth", ["0"])[0]) or None
     sides = {o: aggregate([(r["price"], Decimal(r["qty"])) for r in lst]) for o, lst in body["orders"].items()}
+    sides.update((o, ()) for o in outcomes if o not in sides)
     if len(sides) != 2:
         raise ValueError(f"{x.body.ref}: expected two outcomes, got {sorted(sides)}")
     n_levels = [len(lv) for lv in sides.values()]
@@ -463,9 +476,28 @@ class CatalogMarket:
     refs: tuple[str, ...]
 
 
+CATALOG_MARKETS = "/v3/public/catalog/markets"
+
+
 def catalog_market(x: RestExchange) -> CatalogMarket:
     """`GET /v3/public/catalog/markets/{id}`."""
-    m = x.body.json()
+    return _catalog_market(x.body.json(), x)
+
+
+def catalog_markets(x: RestExchange) -> list[CatalogMarket]:
+    """Every market a catalog response describes: one market (`.../markets/{id}`, fetched as a
+    window opens), or a page of the league listing (`.../markets?league=...`, fetched by the
+    recorder's discovery each hour). Both carry the same market object. Anything else: none."""
+    if not x.ok or x.request.get("purpose") != "catalog":
+        return []
+    if x.path == CATALOG_MARKETS:
+        return [_catalog_market(m, x) for m in x.body.json().get("items", [])]
+    if x.path.startswith(CATALOG_MARKETS + "/") and x.path.count("/") == 5:
+        return [catalog_market(x)]
+    return []
+
+
+def _catalog_market(m: dict, x: RestExchange) -> CatalogMarket:
     return CatalogMarket(m["marketId"], m["eventId"], m["description"], m["marketType"], m["status"],
                          m.get("voids"), m.get("startsTs"), m.get("fee") or {},
                          tuple((o["outcomeId"], o["name"], o["status"]) for o in m["outcomes"]),

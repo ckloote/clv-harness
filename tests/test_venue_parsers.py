@@ -271,6 +271,49 @@ def test_golive_is_a_venue_off_observation():
         ("novig_stream", "venue_golive", 1791504503244, 1791504503299)
 
 
+def test_an_outcome_a_snapshot_leaves_out_has_no_bids():
+    # 849812 after UNLIVE: a probe reply listed orders for one outcome only, and left the other out.
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS)))
+    (b,) = books(r.feed(frame(snapshot(11, {A: ORDERS[A]}, nonce=2, subscribed=False))))
+    assert b.bids[A] == (Level("0.485", Decimal(1000)), Level("0.48", Decimal(500))) and b.bids[B] == ()
+    assert b.best_ask(A) is None
+
+
+def test_a_market_first_seen_one_sided_needs_its_outcomes_from_the_catalog():
+    one_sided = snapshot(10, {A: ORDERS[A]})
+    assert books(novig.StreamReplay().feed(frame(one_sided))) == []         # its other outcome is unknown yet
+    (b,) = books(novig.StreamReplay({M: (A, B)}).feed(frame(one_sided)))
+    assert set(b.bids) == {A, B} and b.bids[B] == ()
+    # Without the catalog, the first order on the other outcome makes the book whole.
+    r = novig.StreamReplay()
+    r.feed(frame(one_sided))
+    (b,) = books(r.feed(frame(delta(11, {"kind": "add", "orderId": "o9", "outcomeId": B, "price": "0.5", "qty": 2}))))
+    assert b.bids[B] == (Level("0.5", Decimal(2)),)
+
+
+def test_a_public_book_without_one_outcome_takes_both_from_the_catalog():
+    x = exchange(f"/v3/public/catalog/markets/{M}/book", {"marketId": M, "seq": 7, "orders": {A: ORDERS[A]}},
+                 query="depth=20", purpose="public_book")
+    with pytest.raises(ValueError, match="expected two outcomes"):
+        novig.public_book(x)
+    assert novig.public_book(x, (A, B)).bids[B] == ()
+
+
+def test_catalog_markets_reads_one_market_or_a_league_listing():
+    m = {"marketId": M, "description": "CWS", "eventId": "ev", "marketType": "MONEY", "status": "OPEN",
+         "voids": "FMV", "startsTs": 1, "fee": {}, "outcomes": [{"outcomeId": A, "name": "CWS", "status": "TBD"},
+                                                             {"outcomeId": B, "name": "CLE", "status": "TBD"}]}
+    one = exchange(f"/v3/public/catalog/markets/{M}", m, purpose="catalog")
+    listing = exchange("/v3/public/catalog/markets", {"items": [m, dict(m, marketId="other")], "next": None},
+                       query="league=MLB&marketType=MONEY&limit=100", purpose="catalog")
+    events = exchange("/v3/public/catalog/events", {"items": [{"eventId": "ev"}]}, purpose="catalog")
+    assert [c.market for c in novig.catalog_markets(one)] == [M]
+    assert [c.market for c in novig.catalog_markets(listing)] == [M, "other"]
+    assert novig.catalog_markets(listing)[0].outcomes == novig.catalog_markets(one)[0].outcomes
+    assert novig.catalog_markets(events) == []
+
+
 def public_poll(levels_a, levels_b, depth=20):
     orders = {A: [{"orderId": f"a{i}{j}", "price": str(0.40 - i * 0.005)[:5], "qty": 1}
                   for i in range(levels_a) for j in range(3)],

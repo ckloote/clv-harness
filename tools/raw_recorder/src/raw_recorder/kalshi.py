@@ -21,11 +21,13 @@ async def poll_orderbooks(rest: RestRecorder, base: str, tickers: tuple[str, ...
                            subjects=[subject(ticker)], purpose="orderbook")
 
 
-async def fetch_markets(rest: RestRecorder, base: str, tickers: tuple[str, ...]) -> None:
-    """Catalog evidence for the tickers being polled (rules, status, times)."""
-    if tickers:
-        await rest.request("GET", base, "/markets", params={"tickers": ",".join(tickers)},
-                           subjects=[subject(t) for t in tickers], purpose="catalog")
+async def fetch_markets(rest: RestRecorder, base: str, tickers: tuple[str, ...]) -> bool:
+    """Catalog evidence for the tickers being polled (rules, status, times); whether it arrived."""
+    if not tickers:
+        return True
+    res = await rest.request("GET", base, "/markets", params={"tickers": ",".join(tickers)},
+                             subjects=[subject(t) for t in tickers], purpose="catalog")
+    return res.ok
 
 
 async def fetch_series(rest: RestRecorder, base: str, series_ticker: str) -> tuple[list[dict], bool]:
