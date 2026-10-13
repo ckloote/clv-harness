@@ -6,6 +6,7 @@ import json
 import os
 import signal
 import sys
+import time
 import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -61,6 +62,8 @@ class Recorder:
 
     GAME_FILES_CHECK_S = 5      # how often the game lists are checked for changes
     MLB_CHECK_S = 30            # how often ended windows are checked for feeds to fetch
+    WAKE_CHECK_S = 5            # the longest a periodic task sleeps before looking at the wall clock
+    ODDS_CHECK_S = 15           # how often the odds poller looks for an odds window that opened
 
     def __init__(self, cfg: Config, games: list[Game], inhibitor: SleepInhibitor | None = None,
                  games_path: Path | None = None):
@@ -104,8 +107,10 @@ class Recorder:
         print(f"[{name}] {type_}: {type(exc).__name__}: {self.scrub(str(exc))}", file=sys.stderr)
 
     async def every(self, name: str, interval_s: float, fn: Callable[[], Awaitable[None]]) -> None:
-        loop = asyncio.get_running_loop()
-        next_t = loop.time()
+        """Run fn every interval_s by the wall clock. The event loop's clock stops while the host
+        sleeps, so a sleep is cut into WAKE_CHECK_S pieces and the wall clock read after each:
+        a task overdue after a suspend runs within seconds of the wake, not its interval later."""
+        next_t = time.time()
         while True:
             try:
                 await fn()
@@ -114,10 +119,10 @@ class Recorder:
             except Exception as exc:  # keep capturing; make the failure visible
                 self.note_exception("task_error", name, exc)
             next_t += interval_s
-            delay = next_t - loop.time()
-            if delay < 0:
-                next_t, delay = loop.time(), 0
-            await asyncio.sleep(delay)
+            if next_t < time.time():
+                next_t = time.time()                # behind (a slow call, or a suspend): now, then on schedule
+            while (left := next_t - time.time()) > 0:
+                await asyncio.sleep(min(left, self.WAKE_CHECK_S))
 
     @staticmethod
     def _games_summary(games: list[Game]) -> list[dict]:
@@ -313,11 +318,19 @@ class Recorder:
 
         async def odds_loop() -> None:
             await odds.check_quota()
+            last_poll: list[int | None] = [None]
 
             async def odds_round() -> None:
-                if self.schedule.odds_active(now_ms()):
-                    await odds.poll()
-            await self.every("odds_api", p.odds_poll_interval_s, odds_round)
+                # Poll as an odds window opens, then every odds_poll_interval_s while any is open.
+                # A request that got no response at all (the network not back after a wake) is
+                # retried at the next check; one the API answered counts, whatever its status.
+                t = now_ms()
+                if self.schedule.odds_active(t) and (
+                        last_poll[0] is None or t - last_poll[0] >= p.odds_poll_interval_s * 1000):
+                    res = await odds.poll()
+                    if res is not None and res.status is not None:
+                        last_poll[0] = t
+            await self.every("odds_api", self.ODDS_CHECK_S, odds_round)
         specs.append(("odds_api", odds_loop))
         return specs
 
