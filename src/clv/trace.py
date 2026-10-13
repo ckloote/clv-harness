@@ -23,6 +23,7 @@ import gzip
 import hashlib
 import json
 import sqlite3
+from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
@@ -49,11 +50,19 @@ def _iso(ms: int | None) -> str | None:
 
 
 class _Frames:
-    """Reads cited lines from sealed segments, checking each segment's hash first."""
+    """Reads cited lines from sealed segments, checking each segment's hash first. The B1
+    backfill's sources live in their own archive root (`hist_root`)."""
 
-    def __init__(self, conn: sqlite3.Connection, root: Path):
-        self.conn, self.root = conn, Path(root)
+    def __init__(self, conn: sqlite3.Connection, root: Path, hist_root: Path | None = None):
+        self.conn, self.root, self.hist_root = conn, Path(root), Path(hist_root) if hist_root else None
         self.lines: dict[int, tuple[str, list[bytes]]] = {}
+
+    def _root(self, relpath: str) -> Path:
+        if relpath.split("/", 1)[0] in HIST_SOURCES:
+            if self.hist_root is None:
+                raise TraceError(f"{relpath}: a backfill segment; pass the backfill archive root")
+            return self.hist_root
+        return self.root
 
     def frame(self, artifact_id: int | None, line: int | None) -> dict | None:
         if artifact_id is None:
@@ -61,12 +70,66 @@ class _Frames:
         if artifact_id not in self.lines:
             relpath, sha = self.conn.execute("SELECT relpath, sha256 FROM raw_artifact WHERE raw_artifact_id = ?",
                                              (artifact_id,)).fetchone()
-            data = (self.root / relpath).read_bytes()
+            data = (self._root(relpath) / relpath).read_bytes()
             if hashlib.sha256(data).hexdigest() != sha:
                 raise TraceError(f"{relpath}: bytes do not match the sha256 recorded at ingest")
             self.lines[artifact_id] = (relpath, gzip.decompress(data).split(b"\n"))
         relpath, lines = self.lines[artifact_id]
         return {"ref": f"{relpath}#{line}", "sha256": hashlib.sha256(lines[line]).hexdigest()}
+
+    def item(self, artifact_id: int, line: int, item: int) -> str:
+        """The cited item within a frame, as text: a CSV row as written, or a list element."""
+        self.frame(artifact_id, line)
+        rec = json.loads(self.lines[artifact_id][1][line])
+        text = rec["frame"]
+        if text.lstrip().startswith("{"):
+            body = json.loads(text)
+            if "candlesticks" in body:
+                return json.dumps(body["candlesticks"][item], sort_keys=True)
+            if "trades" in body and isinstance(body["trades"], list):
+                return json.dumps(body["trades"][item], sort_keys=True)
+            from clv.backfill.novig_public import stream_trades
+            return json.dumps(stream_trades(_Line(text))[item][2], sort_keys=True)
+        return text.splitlines()[item + 1]          # a CSV data row: line 0 is the header
+
+
+@dataclass(frozen=True)
+class _Line:
+    frame: str
+
+
+HIST_SOURCES = ("mlb_hist", "kalshi_hist", "novig_hist")
+
+
+def trace_execution(conn: sqlite3.Connection, execution_id: int, root: Path, hist_root: Path | None) -> dict:
+    """One economic execution and every record of it (DESIGN.md §7.4), each cited to its frame
+    and item, plus the taker rows of the dual-side groups its MAKER rows belong to."""
+    frames = _Frames(conn, root, hist_root)
+    x = conn.execute("""SELECT x.execution_key, x.method, v.venue, v.native_id, x.side, x.price_native, x.price_num,
+                               x.price_den, x.qty_native, x.payout_cents
+                        FROM trade_execution x JOIN venue_instrument v USING (venue_instrument_id)
+                        WHERE x.execution_id = ?""", (execution_id,)).fetchone()
+    if x is None:
+        raise TraceError(f"no trade_execution {execution_id}")
+
+    def record(r) -> dict:
+        return {"source": r[0], "role": r[1], "native_trade_id": r[2], "dual_side_group": r[3], "side": r[4],
+                "price_native": r[5], "qty_native": r[6], "venue_ts": _iso(r[7]), "observed": _iso(r[8]),
+                "reconcile": r[9], "method": r[10], "frame": frames.frame(r[11], r[12]), "item": r[13],
+                "record": frames.item(r[11], r[12], r[13])}
+
+    cols = ("source, role, native_trade_id, dual_side_group, side, price_native, qty_native, venue_ts_ms,"
+            " observed_ts_ms, reconcile, method, raw_artifact_id, raw_line, raw_item")
+    sightings = [record(r) for r in conn.execute(
+        f"SELECT {cols} FROM trade_source_observation WHERE execution_id = ? ORDER BY trade_obs_id", (execution_id,))]
+    groups = sorted({s["dual_side_group"] for s in sightings if s["dual_side_group"]})
+    takers = [record(r) for g in groups for r in conn.execute(
+        f"SELECT {cols} FROM trade_source_observation WHERE dual_side_group = ? AND role = 'taker'"
+        " ORDER BY trade_obs_id", (g,))]
+    return {"execution": {"key": x[0], "method": x[1], "instrument": f"{x[2]}:{x[3]}", "side": x[4],
+                          "price_native": x[5], "price": _q(Fraction(x[6], x[7])), "qty_native": x[8],
+                          "payout_cents": x[9]},
+            "sightings": sightings, "dual_side_takers": takers}
 
 
 def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True) -> dict:
