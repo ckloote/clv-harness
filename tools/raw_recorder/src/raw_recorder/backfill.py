@@ -6,8 +6,8 @@ sealed, hashed segments like everything the recorder captures, and `clv`
 cites them the same way. It has its own archive lock, so it runs beside the
 live recorder service.
 
-    mlb_hist     StatsAPI schedule (the configured seasons, month by month) and
-                 playByPlay for every Final game: the first pitch (§5.2)
+    mlb_hist     StatsAPI teams and schedule (the configured seasons, month by month)
+                 and playByPlay for every Final game: the first pitch (§5.2)
     kalshi_hist  /historical/cutoff, the KXMLBGAME markets (the live events'
                  nested markets and the historical tier's listing), and per settled
                  market its 1-minute candles and its trades over
@@ -53,7 +53,7 @@ SOURCES = {"mlb": "mlb_hist", "kalshi": "kalshi_hist", "novig": "novig_hist"}
 
 # Bodies an import or a later step reads back are kept from the archive index; for the large
 # ones (candles, CSVs, play-by-play) only what a later step needs is kept.
-_KEEP = {"schedule", "cutoff", "events", "markets", "index", "history_market", "history_event"}
+_KEEP = {"schedule", "teams", "cutoff", "events", "markets", "index", "history_market", "history_event"}
 _SETTLED = {"settled", "finalized"}
 _RETRY_STATUSES = {429}
 
@@ -197,6 +197,9 @@ async def mlb(f: Fetcher, cfg: dict, base: str, ranges: Ranges, today: date) -> 
     """Schedule rows by gamePk (the Final row of a postponed game wins), and their play-by-play."""
     games: dict[int, dict] = {}
     for season in cfg["seasons"]:
+        # The schedule names teams without abbreviations; the season's team list has them.
+        await f.get("mlb_hist", "mlb", base, "/api/v1/teams", purpose="teams",
+                    params={"sportId": "1", "season": str(season)}, subjects=["mlb:teams"])
         for lo, hi in _months(season):
             if lo > today:
                 continue

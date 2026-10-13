@@ -32,6 +32,7 @@ class Vendors:
         self.app = web.Application()
         r = self.app.router
         r.add_get("/api/v1/schedule", self.schedule)
+        r.add_get("/api/v1/teams", self.json({"teams": []}))
         r.add_get("/api/v1/game/{pk}/playByPlay", self.json({"allPlays": []}))
         r.add_get("/historical/cutoff", self.json(CUTOFF))
         r.add_get("/events", self.events)
@@ -145,7 +146,7 @@ async def test_a_rerun_fetches_only_what_is_missing_or_can_change(tmp_path, monk
     finally:
         await srv.close()
     # First run: 10 schedule months (Feb to Nov); play-by-play for the two Final games only.
-    assert first["/api/v1/schedule"] == 10
+    assert first["/api/v1/schedule"] == 10 and first["/api/v1/teams"] == 1
     assert first["/api/v1/game/1001/playByPlay"] == first["/api/v1/game/1003/playByPlay"] == 1
     assert first["/api/v1/game/1002/playByPlay"] == 0
     # Kalshi: both listings are read to their last page; the open market is skipped.
