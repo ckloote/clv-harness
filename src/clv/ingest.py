@@ -46,7 +46,8 @@ from clv.venues.novig import parser as novig
 from clv.venues.protocol import BinaryBook, Level
 
 PARSER_VERSION = "v0.1"
-WS_PREFIXES = ("rest-", "catalog-", "echo-")       # Novig poller streams; any other stream_id is a WebSocket
+# The recorder's Novig REST streams (raw_recorder.runtime and cli); any other stream_id is a WebSocket.
+WS_PREFIXES = ("rest-", "catalog-", "echo-", "discovery-")
 
 
 class IngestError(Exception):
@@ -355,10 +356,11 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                                           if lo <= f.recv_ts_ms <= hi))
     catalog: dict[str, tuple] = {}
     for x in novig_x:
-        if x.ok and x.request.get("purpose") == "catalog" and x.path.count("/") == 5:
-            m = novig.catalog_market(x)
+        for m in novig.catalog_markets(x):          # the market's own response, or a league listing
             if m.market in g["novig_markets"] and m.market not in catalog:
                 catalog[m.market] = (x, m)
+    # A book that leaves out an outcome with no orders still has both: the catalog names them.
+    catalog_outcomes = {mk: tuple(o[0] for o in m.outcomes) for mk, (_, m) in catalog.items()}
     novig_books: dict[str, _Books] = {}
     novig_status: dict[str, str] = {}
     for market in g["novig_markets"]:
@@ -398,15 +400,15 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
     for x in novig_x:
         if not x.ok:
             continue
-        if x.request.get("purpose") == "catalog" and x.path.count("/") == 5:
-            m = novig.catalog_market(x)
-            if m.market in novig_books and m.status != novig_status[m.market]:
-                novig_status[m.market] = m.status
-                novig_books[m.market].status_change("poll", m.status, x.body.ref, m.recv_ts_ms, None, report)
+        if x.request.get("purpose") == "catalog":
+            for m in novig.catalog_markets(x):
+                if m.market in novig_books and m.status != novig_status[m.market]:
+                    novig_status[m.market] = m.status
+                    novig_books[m.market].status_change("poll", m.status, x.body.ref, m.recv_ts_ms, None, report)
             continue
         if x.request.get("purpose") != "public_book":
             continue
-        book = novig.public_book(x)
+        book = novig.public_book(x, catalog_outcomes.get(x.path.split("/")[-2], ()))   # .../markets/{id}/book
         if book.market not in novig_books:
             continue
         first_of_session = last_session.get(book.market) != x.request["session_id"]
@@ -416,7 +418,7 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
 
     # -- Novig: stream replay -------------------------------------------------------------------
     stream_frames = list(archive.iter_frames(root, ws))
-    replay = novig.StreamReplay()
+    replay = novig.StreamReplay(catalog_outcomes)
     resynced: set[str] = set()
     for f in stream_frames:
         # A frame is handled as a whole: a snapshot carries its lifecycle status, sequence check
