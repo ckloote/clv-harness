@@ -56,9 +56,10 @@ class OddsPoller:
                                       params={"apiKey": self.api_key}, purpose="quota_check")
         self._note_quota(res)
 
-    async def poll(self) -> None:
+    async def poll(self) -> RestResult | None:
+        """One odds request, or None when polling is stopped (no key, or the credit floor)."""
         if self.stopped:
-            return
+            return None
         s = self.section
         res = await self.rest.request(
             "GET", s["base_url"], f"/v4/sports/{s['sport']}/odds",
@@ -67,3 +68,4 @@ class OddsPoller:
             subjects=[f"odds_api:sport:{s['sport']}"], purpose="odds",
         )
         self._note_quota(res)
+        return res
