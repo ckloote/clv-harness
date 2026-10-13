@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from . import RECORDER_VERSION, discovery, mlb
+from . import RECORDER_VERSION, backfill, discovery, mlb
 from .archive import (ArchiveWriter, build_manifest, find_parts, iter_archive,
                       iter_file, now_ms, read_journal, recover_orphans, verify)
 from .config import Config, load_all_games, load_config, load_games, shadowed
@@ -115,6 +116,50 @@ async def _catalog(cfg: Config) -> int:
 
 def cmd_catalog(args) -> int:
     return asyncio.run(_catalog(load_config(args.config)))
+
+
+async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
+    root = cfg.backfill_root
+    lock = ArchiveLock(root)
+    if not lock.acquire():
+        raise RecorderBusy(f"a backfill (pid {lock.holder_pid()}) is already writing to {root}")
+    try:
+        free_mb = shutil.disk_usage(root).free // 2**20
+        if free_mb < cfg.params.min_free_disk_mb:
+            print(f"backfill: {free_mb} MB free under {root}, below r0.min_free_disk_mb", file=sys.stderr)
+            return 2
+        for e in recover_orphans(root, session_id=None):
+            print(f"sealed orphan {e.file} from an interrupted run")
+        done = backfill.load_done(root)
+        signer = load_signer(cfg) if "novig" in sources else None
+        if "novig" in sources and signer is None:
+            print(f"no ${cfg.novig['key_id_env']}: Novig history routes are skipped", file=sys.stderr)
+        session_id = new_session_id()
+        archive = ArchiveWriter(root, session_id=session_id, segment_max_s=cfg.backfill["segment_max_s"],
+                                fsync_interval_s=cfg.params.fsync_interval_s)
+        try:
+            async with aiohttp.ClientSession() as http:
+                rests = {s: RestRecorder(http, archive.stream(s, f"backfill-{session_id[:12]}"),
+                                         timeout_s=cfg.backfill["rest_timeout_s"]) for s in backfill.SOURCES.values()}
+                stats, seen = await backfill.run(rests, done, cfg, sources, ranges, signer)
+        finally:
+            archive.close()
+    finally:
+        lock.release()
+    for source in sources:
+        name = backfill.SOURCES[source]
+        print(f"{source}: fetched {stats.fetched[name]}, already archived {stats.skipped[name]}, "
+              f"failed {sum(1 for x in stats.failed if x[0] == name)}; {dict(seen.get(source, {}))}")
+    for source, path, query, why in stats.failed[:20]:
+        print(f"  failed {source} {path}{'?' + query if query else ''}: {why}")
+    if len(stats.failed) > 20:
+        print(f"  ... and {len(stats.failed) - 20} more; rerun to retry them")
+    return 1 if stats.failed else 0
+
+
+def cmd_backfill(args) -> int:
+    cfg = load_config(args.config)
+    return asyncio.run(_backfill(cfg, args.sources or list(backfill.SOURCES), backfill.parse_ranges(args.dates)))
 
 
 def cmd_games(args) -> int:
@@ -361,6 +406,11 @@ def main(argv: list[str] | None = None) -> int:
                            "exit 0 OK, 1 WARN, 2 FAIL")
     p.add_argument("--game-pk", type=int, help="the game to check (default: the current or next capture window)")
     p.set_defaults(fn=cmd_status)
+    p = add("backfill", help="B1: archive the historical reference inputs into the backfill root; resumable")
+    p.add_argument("sources", nargs="*", choices=list(backfill.SOURCES), help="default: all three")
+    p.add_argument("--dates", action="append", metavar="FROM[:TO]",
+                   help="only games and files on these dates, YYYY-MM-DD (repeatable; default: everything)")
+    p.set_defaults(fn=cmd_backfill)
     p = add("report", help="volume per source/day, Odds credit spend, Novig probe counts")
     p.add_argument("--day")
     p.set_defaults(fn=cmd_report)

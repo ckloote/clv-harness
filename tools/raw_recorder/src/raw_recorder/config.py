@@ -69,6 +69,12 @@ class Config:
     mlb: dict
     games_path: Path = DEFAULT_GAMES
     discovery: dict = field(default_factory=lambda: {"enabled": False})
+    backfill: dict = field(default_factory=dict)
+
+    @property
+    def backfill_root(self) -> Path:
+        root = Path(self.backfill["root"])
+        return root if root.is_absolute() else (self.path.parent / root).resolve()
 
     @property
     def discovered_path(self) -> Path:
@@ -127,7 +133,7 @@ def load_config(path: Path | None = None) -> Config:
     return Config(path=path, sha256=hashlib.sha256(raw).hexdigest(), archive_root=root,
                   params=params, novig=doc["novig"], kalshi=doc["kalshi"],
                   odds_api=doc["odds_api"], mlb=doc["mlb"], games_path=games,
-                  discovery=doc.get("discovery", {"enabled": False}))
+                  discovery=doc.get("discovery", {"enabled": False}), backfill=doc.get("backfill", {}))
 
 
 def load_games(path: Path | None = None, source: str = "manual") -> list[Game]:
