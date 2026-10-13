@@ -14,6 +14,7 @@
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 5,
+     "historical_candle": 0,
      "instrument_mapping_observation": 10,
      "liveness_evidence": 15,
      "off_observation": 7,
@@ -22,6 +23,8 @@
      "signal": 2,
      "tick": 7,
      "tick_level": 39,
+     "trade_execution": 0,
+     "trade_source_observation": 0,
      "venue_instrument": 5
     },
     "manifest_sha256": "14887a06027efc5609eb8efbb43f35d4bdab606cfd6ee1de69a8006f2f8baca5"
@@ -1631,6 +1634,7 @@
      "entry_quote_observation": 3,
      "event": 1,
      "event_alias": 5,
+     "historical_candle": 0,
      "instrument_mapping_observation": 14,
      "liveness_evidence": 15,
      "off_observation": 7,
@@ -1639,6 +1643,8 @@
      "signal": 2,
      "tick": 7,
      "tick_level": 39,
+     "trade_execution": 0,
+     "trade_source_observation": 0,
      "venue_instrument": 5
     },
     "manifest_sha256": "14887a06027efc5609eb8efbb43f35d4bdab606cfd6ee1de69a8006f2f8baca5"

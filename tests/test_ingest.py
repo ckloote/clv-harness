@@ -13,7 +13,14 @@ import pytest
 from raw_recorder.archive import ArchiveWriter
 
 from clv import db
-from clv.ingest import IngestError, ingest_game
+from clv.identity import (
+    IdentityConflict,
+    ensure_event,
+    ensure_instrument,
+    ensure_mapping,
+    ensure_outcome,
+)
+from clv.ingest import IngestError, Writer, ingest_game
 from clv.timeutil import iso_ms
 
 T = 1_791_504_000_000            # scheduled start 2026-10-09T00:00:00Z
@@ -425,6 +432,86 @@ def test_ingesting_twice_is_refused(recorded):
     c, _ = ingested(recorded)
     with pytest.raises(IngestError, match="already ingested"):
         ingest_game(c, root, PK, games, now_ms=NOW)
+
+
+# -- Identity shared with the historical import (clv.backfill) --------------------------------------
+
+def imported_first(c, kalshi_cents=100):
+    """The rows a historical import makes for this game before it is recorded live: the event,
+    its outcomes, the Novig market with its outcomes in the other order, and unverified links."""
+    w = Writer(c, NOW - 1)
+    art = w.insert("raw_artifact", dict(
+        source="novig_hist", relpath="novig_hist/2026-10-14/h.0001.jsonl.gz", sha256="b" * 64, bytes=1,
+        frame_count=1, recorder_version="0.1.0", redaction_policy="r0-v1", unclean_close=0, parser_version="v0.1",
+        ingested_ts_ms=NOW - 1))
+    cite = dict(raw_artifact_id=art, raw_line=0)
+    event = ensure_event(w, PK)
+    cle = ensure_outcome(w, event, PK, 114, "CLE", "Cleveland Guardians")
+    cws = ensure_outcome(w, event, PK, 145, "CWS", "Chicago White Sox")
+    novig, _ = ensure_instrument(w, dict(
+        venue="novig", native_id=M, native_event_id="ev1", operator=None, kind="exchange_book", side0_id=CLE,
+        side0_label="CLE", side1_id=CWS, side1_label="CWS", payout_currency="USD", payout_cents_per_contract=1,
+        quantity_increment="1", first_seen_ts_ms=T - 86_400_000, **cite))
+    kalshi, _ = ensure_instrument(w, dict(
+        venue="kalshi", native_id="KX-CLE", native_event_id="KX", operator=None, kind="exchange_book",
+        side0_id="yes", side0_label="YES", side1_id="no", side1_label="NO", payout_currency="USD",
+        payout_cents_per_contract=kalshi_cents, quantity_increment="0.01", first_seen_ts_ms=T - 86_400_000, **cite))
+    for iid, side, outcome, polarity in ((novig, 0, cle, "direct"), (novig, 1, cws, "direct"),
+                                         (kalshi, 0, cle, "direct"), (kalshi, 1, cle, "complement")):
+        ensure_mapping(w, dict(venue_instrument_id=iid, side=side, outcome_id=outcome, polarity=polarity,
+                               mapping_status="fuzzy_candidate", settlement_equivalence="pending", method="backfill",
+                               evidence="rule", rules_native=None, effective_from_ms=None, observed_ts_ms=NOW - 1,
+                               **cite))
+    return novig
+
+
+def test_a_live_ingest_shares_the_identity_a_historical_import_made(recorded):
+    root, games = recorded
+    c = db.connect(":memory:")
+    db.migrate(c)
+    novig = imported_first(c)
+    ingest_game(c, root, PK, games, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM event") == [(1,)]
+    assert q(c, "SELECT count(*) FROM outcome") == [(2,)]
+    assert q(c, "SELECT side0_id, side1_id FROM venue_instrument WHERE venue_instrument_id = ?", novig) == [(CLE, CWS)]
+    # The stored side order holds: side 0 is CLE, so the snapshot's CLE bid (0.51) is bid0.
+    assert q(c, "SELECT bid0_e4, bid1_e4 FROM tick WHERE source = 'stream' ORDER BY observed_ts_ms LIMIT 1") == \
+        [(5100, 4800)]
+    # The hand-checked games.toml link supersedes each unverified one; nothing else is added.
+    heads = q(c, """SELECT v.native_id, m.side, o.team_abbreviation, m.polarity, m.mapping_status, p.mapping_status
+                    FROM instrument_mapping_observation m JOIN venue_instrument v USING (venue_instrument_id)
+                    JOIN outcome o USING (outcome_id)
+                    JOIN instrument_mapping_observation p ON p.mapping_obs_id = m.supersedes_id
+                    WHERE v.venue = ? OR v.native_id = ? ORDER BY 1, 2""", "novig", "KX-CLE")
+    assert heads == [("KX-CLE", 0, "CLE", "direct", "manual_verified", "fuzzy_candidate"),
+                     ("KX-CLE", 1, "CLE", "complement", "manual_verified", "fuzzy_candidate"),
+                     (M, 0, "CLE", "direct", "manual_verified", "fuzzy_candidate"),
+                     (M, 1, "CWS", "direct", "manual_verified", "fuzzy_candidate")]
+    with pytest.raises(IngestError, match="already ingested"):
+        ingest_game(c, root, PK, games, now_ms=NOW)
+
+
+def test_an_instrument_that_differs_from_the_stored_one_is_refused(recorded):
+    root, games = recorded
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c, kalshi_cents=1)
+    with pytest.raises(IngestError, match="KX-CLE: payout_cents_per_contract differ"):
+        ingest_game(c, root, PK, games, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM tick") == [(0,)]         # nothing of the game was written
+
+
+def test_a_link_that_names_another_outcome_is_a_conflict_not_a_choice():
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    w = Writer(c, NOW - 1)
+    kalshi = q(c, "SELECT venue_instrument_id FROM venue_instrument WHERE native_id = 'KX-CLE'")[0][0]
+    cws = q(c, "SELECT outcome_id FROM outcome WHERE team_abbreviation = 'CWS'")[0][0]
+    with pytest.raises(IdentityConflict, match="Settle it with a correction"):
+        ensure_mapping(w, dict(venue_instrument_id=kalshi, side=0, outcome_id=cws, polarity="direct",
+                               mapping_status="manual_verified", settlement_equivalence="pending", method="m",
+                               evidence="e", rules_native=None, effective_from_ms=None, observed_ts_ms=NOW))
 
 
 # -- The recorded golden-game candidate (local only) ---------------------------------------------------

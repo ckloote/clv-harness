@@ -156,6 +156,80 @@ def correct_mapping(conn: sqlite3.Connection, venue: str, native_id: str, side: 
          method, evidence, now_ms, head.mapping_obs_id, head.mapping_obs_id)).lastrowid
 
 
+# -- shared identity: the historical import and the live ingest create the same rows -----------------------
+
+class IdentityConflict(Exception):
+    """Two sources disagree about an identity row that must be one row (DESIGN.md §4.1, §8.1)."""
+
+
+# Status strength for appending a newer link: a stronger status supersedes, a weaker one adds nothing.
+# A rejection is a decision and is never overridden automatically.
+_STATUS_RANK = {"fuzzy_candidate": 1, "manual_verified": 2, "exact": 2}
+
+
+def ensure_event(w, game_pk: int) -> int:
+    """The event for a gamePk, created if new. `w` inserts rows (clv.ingest.Writer)."""
+    row = w.conn.execute("SELECT event_id FROM event WHERE league = 'MLB' AND league_game_id = ?",
+                         (str(game_pk),)).fetchone()
+    if row:
+        return row[0]
+    return w.insert("event", dict(league="MLB", league_game_id=str(game_pk), created_ts_ms=w.now))
+
+
+def ensure_outcome(w, event_id: int, game_pk: int, team_id: int, abbreviation: str, name: str) -> int:
+    row = w.conn.execute("SELECT outcome_id FROM outcome WHERE event_id = ? AND team_id = ?",
+                         (event_id, team_id)).fetchone()
+    if row:
+        return row[0]
+    return w.insert("outcome", dict(event_id=event_id, kind="team_wins", team_id=team_id,
+                                    team_abbreviation=abbreviation, description=f"{name} win MLB game {game_pk}"))
+
+
+# What makes two instrument rows the same instrument. Labels are display text and may differ.
+_INSTRUMENT_IDENTITY = ("native_event_id", "operator", "kind", "payout_currency", "payout_cents_per_contract",
+                        "quantity_increment")
+
+
+def ensure_instrument(w, row: dict) -> tuple[int, tuple[str, str]]:
+    """(venue_instrument_id, (side0_id, side1_id)) for a native instrument, created from `row` if new.
+
+    An instrument stored earlier keeps its side order, which every tick, sighting and mapping
+    of it uses, so callers index sides by what this returns, never by their own response's
+    order: Novig's history and public routes need not list outcomes in the same order."""
+    have = w.conn.execute(
+        f"SELECT venue_instrument_id, side0_id, side1_id, {', '.join(_INSTRUMENT_IDENTITY)} FROM venue_instrument"
+        " WHERE venue = ? AND native_id = ?", (row["venue"], row["native_id"])).fetchone()
+    if have is None:
+        return w.insert("venue_instrument", row), (row["side0_id"], row["side1_id"])
+    differs = [k for i, k in enumerate(_INSTRUMENT_IDENTITY) if have[3 + i] != row.get(k)]
+    if {have[1], have[2]} != {row["side0_id"], row["side1_id"]}:
+        differs.append("sides")
+    if differs:
+        raise IdentityConflict(f"{row['venue']} instrument {row['native_id']}: {', '.join(differs)} differ from the"
+                               " stored instrument")
+    return have[0], (have[1], have[2])
+
+
+def ensure_mapping(w, row: dict) -> int | None:
+    """Append a side's mapping observation unless it adds nothing.
+
+    No mapping yet: insert it. The same outcome and polarity under a stronger status (a hand-
+    checked games.toml link over an unverified historical candidate): insert it superseding
+    the head. Otherwise the head already says as much, and nothing is written. A different
+    outcome or polarity is a conflict for a correction to settle, never an automatic choice."""
+    head = current_mappings(w.conn, "instrument_mapping_observation").get(
+        (row["venue_instrument_id"], row["side"]))
+    if head is None:
+        return w.insert("instrument_mapping_observation", dict(row, supersedes_id=None))
+    if (head.outcome_id, head.polarity) != (row["outcome_id"], row["polarity"]):
+        raise IdentityConflict(f"instrument {row['venue_instrument_id']} side {row['side']}: mapped to outcome"
+                               f" {head.outcome_id} ({head.polarity}); this source says {row['outcome_id']}"
+                               f" ({row['polarity']}). Settle it with a correction")
+    if _STATUS_RANK.get(row["mapping_status"], 0) > _STATUS_RANK.get(head.status, 3):
+        return w.insert("instrument_mapping_observation", dict(row, supersedes_id=head.mapping_obs_id))
+    return None
+
+
 def apply_corrections(conn: sqlite3.Connection, path: Path, now_ms: int) -> list[int]:
     """Append every mapping correction in a TOML file, in one transaction.
 
