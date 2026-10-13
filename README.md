@@ -287,6 +287,26 @@ archive/<source>/<YYYY-MM-DD UTC>/manifest.jsonl                   append-only j
 
 Each line is `{"recv_ts_ms", "conn_id", "dir": "in"|"out"|"event", "frame"}`. `frame` is always a string holding exactly the received text. REST records use `conn_id = request_id`, so every response stays tied to its request. Sealed files never change, so `rsync -a archive/ <backup>/` is a complete incremental backup.
 
+## The historical reference import (B1)
+
+`raw-recorder backfill` archives B1's inputs (DESIGN.md §13 Track B) into `archive-hist/`, in the same format.
+- **Sources:**
+  - `mlb_hist`: the StatsAPI schedule and play-by-play.
+  - `kalshi_hist`: `KXMLBGAME` candles and trades over the 32 h before each market closed.
+  - `novig_hist`: Novig's daily trade files and `/v3/history` for their MLB markets, signed with the read key.
+- **Runs beside the recorder.** It has its own archive lock.
+- **Resumable.** A rerun sends only what failed or was never fetched, plus the listings that can still change. Rerun after the host sleeps.
+
+```bash
+uv run raw-recorder backfill --dates 2026-08-01:2026-08-31
+```
+
+```bash
+uv run raw-recorder backfill
+```
+
+The first command is a pilot over one month. The second fetches everything, which takes hours. `archive-hist/` holds vendor data for your own research only: it is git-ignored, and nothing from it is committed.
+
 ## Working rules
 
 - **No threshold outside [DESIGN.md §10](DESIGN.md).** Recorder values are copied from it into `config.toml`. V0 creates `config/params.toml` from it.

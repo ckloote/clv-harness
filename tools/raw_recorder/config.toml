@@ -58,3 +58,18 @@ enabled = true
 interval_s = 3600                           # one round at startup, then hourly
 days_ahead = 1                              # today and tomorrow (US Eastern)
 game_types = ["F", "D", "L", "W"]           # StatsAPI gameType: the postseason rounds; add "R" for the regular season
+
+# B1 historical reference import (raw-recorder backfill; raw_recorder.backfill). Operational
+# values, not DESIGN.md §10 parameters. Its own archive root and lock: it runs beside `run`.
+[backfill]
+root = "../../archive-hist"                 # relative to this file: <repo>/archive-hist, never committed
+seasons = [2025, 2026]                      # StatsAPI schedule; Kalshi KXMLBGAME begins 2025-04-16
+game_types = "R,F,D,L,W"                    # regular season and every postseason round
+lookback_s = 115200                         # 32 h before close_time: the 24 h offset (controls.martingale_offsets), the game, a margin
+candles_per_request = 5000                  # 1-minute candles per Kalshi request
+trades_page_limit = 1000                    # Kalshi trades per page
+novig_first_day = "2026-08-03"              # Novig's first public trades file
+novig_data_url = "https://data.novig.com"
+novig_data_path = "/reporting/trade-data"
+rest_timeout_s = 180                        # a day's trades.csv is tens of MB
+min_interval_s = { mlb = 0.2, kalshi = 0.1, novig_data = 0.5, novig_history = 0.3 }   # per host, between requests

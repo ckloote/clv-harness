@@ -8,6 +8,8 @@ __pycache__/
 # Secrets must never be committed.
 *.pem
 .env
+# B1 historical reference archive (raw-recorder backfill): vendor data, never committed.
+/archive-hist/
 # Novig Paper (play-money) test archive: never evidence, never committed.
 archive-paper/
 # B0 feasibility inputs and caches (tools/b0): large, re-fetchable, never committed.
