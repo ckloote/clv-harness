@@ -227,7 +227,7 @@ uv run raw-recorder games
 uv run raw-recorder run
 ```
 
-`run` stays up, captures every game whose window is open, and idles in between. While a window is open it holds a systemd sleep inhibitor, so keep the host on through those windows. If the host goes down anyway, the gap is recorded rather than hidden. Stop it with Ctrl-C or SIGTERM: it writes a `process_stop` event and seals everything. A killed process is recovered on the next start, which seals the orphaned segments and records `previous_session_unclean`.
+`run` stays up, captures every game whose window is open, and idles in between. While a window is open it holds a systemd sleep inhibitor, so keep the host on through those windows. If the host goes down or suspends anyway (closing a laptop lid suspends it regardless), the gap is recorded rather than hidden, and on waking every poller and discovery resume within seconds. The Odds API is polled as each odds window opens, then every `r0.odds_poll_interval_s`. Stop it with Ctrl-C or SIGTERM: it writes a `process_stop` event and seals everything. A killed process is recovered on the next start, which seals the orphaned segments and records `previous_session_unclean`.
 
 To run it as a service:
 
