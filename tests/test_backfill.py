@@ -390,3 +390,30 @@ def test_one_trade_traces_to_every_record_in_both_archives(archives, tmp_path):
     assert taker["record"].endswith(",50,156.25,TAKER") and taker["reconcile"] == "balanced"
     with pytest.raises(trace.TraceError, match="backfill archive root"):
         trace.trace_execution(c, eid, live, None)
+
+
+def test_the_coverage_table_rebuilds_identically_and_holds_no_prices(archives, tmp_path):
+    from clv.backfill import coverage
+    c, _, _ = loaded(archives, tmp_path)
+    identity.apply_corrections(c, tmp_path / "b1" / "links.proposed.toml", NOW + 1)
+    _, rows, extra = coverage.table(c, NOW + 2)
+    by = {r["game_pk"]: r for r in rows}
+    g = by[901]
+    # 901: verified on both venues; the start is the first pitch, the cutoff 60 s before it.
+    assert (g["off"], g["kalshi_link"], g["novig_link"]) == ("trusted", "manual_verified", "manual_verified")
+    assert g["cutoff"] == "2026-08-04T23:11:00.000Z"
+    # The candle ending at 22:00 is the last wholly before the cutoff: 71 min old, past the
+    # 30 min max quote age, so there is no candle close; the one straddling the pitch is excluded.
+    assert g["kalshi_candle_age_s"] is None and g["kalshi_reason"] == "no_candle_before_cutoff"
+    assert g["kalshi_candle_age_s_at_3600"] == 720                # 22:12, an hour before the start, is 12 min after 22:00
+    # Novig: no MAKER fill in the 10 min before the cutoff.
+    assert (g["novig_executions_in_window"], g["novig_reason"]) == (0, "vwap_insufficient")
+    assert by[904]["off"] == "no_trusted_off" and by[904]["kalshi_reason"] == "no_trusted_off"
+    assert by[902]["kalshi_reason"] == "mapping_unverified"    # an edge case: linked, not approved
+    assert by[906]["kalshi_reason"] == "no_link"                # the doubleheader: no candidate chosen
+    assert extra == {"duplicate_candle_conflicts": 0}
+    # Counts, ages and flags only.
+    assert not [k for k in coverage.COLUMNS if "price" in k or "vwap" in k or "bid" in k or "ask" in k]
+    _, again, _ = coverage.table(c, NOW + 3)
+    assert again == rows
+    assert [s for s, _, _ in coverage.waterfall(rows, "kalshi")][-1] == "no_candle_before_cutoff"

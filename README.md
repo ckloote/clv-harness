@@ -307,6 +307,36 @@ uv run raw-recorder backfill
 
 The first command is a pilot over one month. The second fetches everything, which takes hours. `archive-hist/` holds vendor data for your own research only: it is git-ignored, and nothing from it is committed.
 
+Then load it. Each step can be rerun, and adds only what is new.
+
+```bash
+uv run clv backfill import
+```
+
+```bash
+uv run clv backfill link
+```
+
+```bash
+uv run clv correct --spec data/b1/links.approved.toml
+```
+
+```bash
+uv run clv backfill import
+```
+
+```bash
+uv run clv backfill coverage
+```
+
+1. The first `import` loads the games, their first pitches and every market.
+2. `link` ties markets to games by rule (`clv.backfill.links`). It writes `data/b1/links.review.md`, with a spot-check sample and every edge case, and `data/b1/links.proposed.toml`.
+3. Review the file, keep the corrections you approve as `links.approved.toml`, and apply them with `clv correct`.
+4. The second `import` loads candles and trades for the linked markets, up to each game's first pitch.
+5. `coverage` writes the per-game table and its waterfall to `data/b1/`.
+
+`clv trace --execution N` shows one trade and every record of it. The method is in `docs/decisions/2026-10-14-b1-reference-import.md`.
+
 ## Working rules
 
 - **No threshold outside [DESIGN.md §10](DESIGN.md).** Recorder values are copied from it into `config.toml`. V0 creates `config/params.toml` from it.

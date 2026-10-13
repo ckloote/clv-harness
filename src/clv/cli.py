@@ -10,6 +10,7 @@
     clv trace --execution N          one trade execution and every record of it, as JSON
     clv backfill import              B1: load archive-hist/ (games, instruments, then linked markets' data)
     clv backfill link                B1: tie historical markets to games; write links for review (data/b1/)
+    clv backfill coverage            B1: the per-game coverage table and waterfall (data/b1/)
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -27,6 +28,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from clv import archive, backfill, db, entries, gaps, identity, ingest, mlb, trace
+from clv.backfill import coverage
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
 from clv.off import sources
@@ -253,11 +255,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--archive", type=Path, default=REPO / "archive")
     p.add_argument("--no-levels", action="store_true", help="omit each book's stored levels")
     p = sub.add_parser("backfill", help="B1: the historical reference import from archive-hist/")
-    p.add_argument("step", choices=["import", "link"])
+    p.add_argument("step", choices=["import", "link", "coverage"])
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--hist-archive", type=Path, default=REPO / "archive-hist")
     p.add_argument("--archive", type=Path, default=REPO / "archive", help="the R0 archive, for Novig stream trades")
-    p.add_argument("--out", type=Path, default=REPO / "data" / "b1", help="where `link` writes its review files")
+    p.add_argument("--out", type=Path, default=REPO / "data" / "b1", help="where `link` and `coverage` write")
     args = ap.parse_args(argv)
     now = int(time.time() * 1000)
     if args.cmd == "inspect":
@@ -302,6 +304,9 @@ def main(argv: list[str] | None = None) -> None:
             for name, rep in (("identity", backfill.import_identity(conn, args.hist_archive, now)),
                               ("data", backfill.import_data(conn, args.hist_archive, args.archive, now))):
                 print(f"{name}: " + ", ".join(f"{k} {v}" for k, v in sorted(rep.items())))
+        elif args.step == "coverage":
+            for path in coverage.write(conn, args.out, now):
+                print(f"wrote {path}")
         else:
             _, rep = backfill.link(conn, args.hist_archive, args.out, now)
             print(", ".join(f"{k} {v}" for k, v in sorted(rep.items())))
