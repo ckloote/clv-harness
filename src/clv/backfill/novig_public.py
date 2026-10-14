@@ -34,14 +34,18 @@ CENTS_PER_CONTRACT = int(PAYOUT_USD_PER_CONTRACT * 100)
 
 
 def markets(root: Path) -> tuple[dict[str, tuple], dict[str, history.HistoryEvent]]:
-    """MLB moneyline markets with their events: market -> (exchange, CatalogMarket)."""
+    """MLB moneyline markets with their events: market -> (exchange, CatalogMarket). Each is its
+    latest response: the backfill fetches a market's history again until it settles, and
+    segment order is not time order (an interrupted run's segments are sealed by the next)."""
     found, events = {}, {}
     for x in archive.stream_exchanges(root, archive.segments(root, SOURCE)):
         purpose = x.request.get("purpose")
         if purpose == "history_market" and (m := history.history_market(x)) and m.market_type == "MONEY":
-            found[m.market] = (x, m)
+            if m.market not in found or found[m.market][1].recv_ts_ms <= m.recv_ts_ms:
+                found[m.market] = (x, m)
         elif purpose == "history_event" and (e := history.history_event(x)):
-            events[e.event] = e
+            if e.event not in events or events[e.event].recv_ts_ms <= e.recv_ts_ms:
+                events[e.event] = e
     found = {k: v for k, v in found.items() if (e := events.get(v[1].event)) and e.league == "MLB"}
     return found, events
 

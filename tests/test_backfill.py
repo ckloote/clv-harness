@@ -264,6 +264,29 @@ def test_the_rules_propose_clean_links_and_list_every_edge_case(archives, tmp_pa
     assert "KXMLBGAME-26AUG041610LADSDG1" in review_text and "candidate: gamePk 906" in review_text
 
 
+def test_a_novig_market_links_from_its_latest_history_not_the_last_one_read(archives, tmp_path):
+    # An earlier copy, from before the market settled and with the event's first estimate of
+    # its start, journaled after the settled one (an interrupted run's segments are sealed by
+    # the next run): the latest response decides (PR #16 review).
+    hist, _ = archives
+    clock = Clock()
+    clock.t = iso_ms("2026-10-14T00:00:00Z")
+    w = ArchiveWriter(hist, session_id="h9", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
+    n = w.stream("novig_hist", "backfill-h9")
+    rest(clock, n, "m-old", f"/v3/history/markets/{N1}", "history_market", {
+        "marketId": N1, "eventId": "e1", "description": "x", "marketType": "MONEY", "status": "OPEN",
+        "outcomes": [{"outcomeId": NYY_O, "name": "NYY", "status": "OPEN"},
+                     {"outcomeId": BOS_O, "name": "BOS", "status": "OPEN"}]}, [f"novig:market:{N1}"])
+    rest(clock, n, "v-old", "/v3/history/events/e1", "history_event", {
+        "eventId": "e1", "description": "New York Yankees @ Boston Red Sox", "league": "MLB", "status": "OPEN",
+        "startsTs": iso_ms("2026-08-05T17:10:00Z")}, ["novig:event:e1"])
+    w.close()
+    found, events = novig_public.markets(hist)
+    assert found[N1][1].status == "SETTLED" and events["e1"].status == "FINAL"
+    _, links, _ = loaded(archives, tmp_path)
+    assert links[("novig", N1)].status == "clean" and links[("novig", N1)].game.game_pk == 901
+
+
 def test_approving_the_proposals_verifies_exactly_the_clean_links(archives, tmp_path):
     c, _, _ = loaded(archives, tmp_path)
     approved = tmp_path / "b1" / "links.proposed.toml"
