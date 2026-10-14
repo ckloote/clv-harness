@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from . import RECORDER_VERSION, discovery, mlb
+from . import RECORDER_VERSION, backfill, discovery, mlb
 from .archive import (ArchiveWriter, build_manifest, find_parts, iter_archive,
                       iter_file, now_ms, read_journal, recover_orphans, verify)
 from .config import Config, load_all_games, load_config, load_games, shadowed
@@ -115,6 +116,103 @@ async def _catalog(cfg: Config) -> int:
 
 def cmd_catalog(args) -> int:
     return asyncio.run(_catalog(load_config(args.config)))
+
+
+TICK_S = 1.0
+
+
+class SealFailed(RuntimeError):
+    """A segment could not be sealed: its completed requests are not in the sealed archive."""
+
+    def __init__(self, errors: list[BaseException]):
+        super().__init__("; ".join(str(e) for e in errors))
+        self.errors = errors
+
+
+async def _tick(archive: ArchiveWriter) -> None:
+    """The archive's housekeeping, as the recorder runs it: fsync on cadence and seal a
+    segment when it is due, even while its source is idle or finished. A failed seal stops
+    the run: what it held is missing from the sealed archive, and when the disk is full,
+    everything after it would fail too."""
+    while True:
+        archive.tick()
+        if archive.seal_errors:
+            raise SealFailed(list(archive.seal_errors))
+        await asyncio.sleep(TICK_S)
+
+
+def _close(archive: ArchiveWriter) -> list[BaseException]:
+    """Close the archive; every seal that failed, during the run or at close, once each."""
+    errors = list(archive.seal_errors)
+    try:
+        archive.close()
+    except Exception as exc:            # drain() re-raises a seal pending at close
+        errors.append(exc)
+    for exc in archive.seal_errors + errors:
+        if not any(exc is e for e in errors):
+            errors.append(exc)
+    return errors
+
+
+async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
+    root = cfg.backfill_root
+    lock = ArchiveLock(root)
+    if not lock.acquire():
+        raise RecorderBusy(f"a backfill (pid {lock.holder_pid()}) is already writing to {root}")
+    try:
+        free_mb = shutil.disk_usage(root).free // 2**20
+        if free_mb < cfg.params.min_free_disk_mb:
+            print(f"backfill: {free_mb} MB free under {root}, below r0.min_free_disk_mb", file=sys.stderr)
+            return 2
+        for e in recover_orphans(root, session_id=None):
+            print(f"sealed orphan {e.file} from an interrupted run")
+        done = backfill.load_done(root)
+        signer = load_signer(cfg) if "novig" in sources else None
+        if "novig" in sources and signer is None:
+            print(f"no ${cfg.novig['key_id_env']}: Novig history routes are skipped", file=sys.stderr)
+        session_id = new_session_id()
+        archive = ArchiveWriter(root, session_id=session_id, segment_max_s=cfg.backfill["segment_max_s"],
+                                fsync_interval_s=cfg.params.fsync_interval_s, clock=backfill.clock)
+        housekeeping = asyncio.create_task(_tick(archive))
+        fetch = None
+        try:
+            async with aiohttp.ClientSession() as http:
+                rests = {s: RestRecorder(http, archive.stream(s, f"backfill-{session_id[:12]}"),
+                                         timeout_s=cfg.backfill["rest_timeout_s"]) for s in backfill.SOURCES.values()}
+                fetch = asyncio.create_task(backfill.run(rests, done, cfg, sources, ranges, signer))
+                await asyncio.wait({fetch, housekeeping}, return_when=asyncio.FIRST_COMPLETED)
+                if housekeeping.done():         # it ends only when a seal failed
+                    housekeeping.exception()    # reported below, from archive.seal_errors
+                    fetch.cancel()
+                    await asyncio.gather(fetch, return_exceptions=True)
+        finally:
+            housekeeping.cancel()
+            if fetch is not None and not fetch.done():
+                fetch.cancel()
+            seal_errors = _close(archive)
+    finally:
+        lock.release()
+    if seal_errors:
+        for exc in seal_errors:
+            print(f"sealing failed: {exc!r}", file=sys.stderr)
+        print("the unsealed segments stay as .jsonl.part; free space or fix the cause, then rerun: the next"
+              " run seals them (recover_orphans) and resumes", file=sys.stderr)
+        return 2
+    stats, seen = fetch.result()
+    for source in sources:
+        name = backfill.SOURCES[source]
+        print(f"{source}: fetched {stats.fetched[name]}, already archived {stats.skipped[name]}, "
+              f"failed {sum(1 for x in stats.failed if x[0] == name)}; {dict(seen.get(source, {}))}")
+    for source, path, query, why in stats.failed[:20]:
+        print(f"  failed {source} {path}{'?' + query if query else ''}: {why}")
+    if len(stats.failed) > 20:
+        print(f"  ... and {len(stats.failed) - 20} more; rerun to retry them")
+    return 1 if stats.failed else 0
+
+
+def cmd_backfill(args) -> int:
+    cfg = load_config(args.config)
+    return asyncio.run(_backfill(cfg, args.sources or list(backfill.SOURCES), backfill.parse_ranges(args.dates)))
 
 
 def cmd_games(args) -> int:
@@ -361,6 +459,11 @@ def main(argv: list[str] | None = None) -> int:
                            "exit 0 OK, 1 WARN, 2 FAIL")
     p.add_argument("--game-pk", type=int, help="the game to check (default: the current or next capture window)")
     p.set_defaults(fn=cmd_status)
+    p = add("backfill", help="B1: archive the historical reference inputs into the backfill root; resumable")
+    p.add_argument("sources", nargs="*", choices=list(backfill.SOURCES), help="default: all three")
+    p.add_argument("--dates", action="append", metavar="FROM[:TO]",
+                   help="only games and files on these dates, YYYY-MM-DD (repeatable; default: everything)")
+    p.set_defaults(fn=cmd_backfill)
     p = add("report", help="volume per source/day, Odds credit spend, Novig probe counts")
     p.add_argument("--day")
     p.set_defaults(fn=cmd_report)
