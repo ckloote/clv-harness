@@ -37,15 +37,21 @@ COLUMNS = ("game_pk", "official_date", "status", "double_header", "off", "start"
            "novig_link", "novig_executions_in_window", "novig_window_payout_usd", "novig_reason")
 
 
-def _link(conn, heads, event_id: int, venue: str, home: int | None) -> tuple[str, int | None]:
+def _by_event(conn, heads) -> dict[int, list]:
+    """Each event's mapped instrument sides: event -> [(instrument, side, head, venue)]."""
+    event_of = dict(conn.execute("SELECT outcome_id, event_id FROM f_outcome").fetchall())
+    venue_of = dict(conn.execute("SELECT venue_instrument_id, venue FROM f_venue_instrument").fetchall())
+    out: dict[int, list] = {}
+    for (iid, side), h in heads.items():
+        out.setdefault(event_of[h.outcome_id], []).append((iid, side, h, venue_of[iid]))
+    return out
+
+
+def _link(mapped: list, venue: str, home: int | None) -> tuple[str, int | None]:
     """The venue's link status for this game and, for Kalshi, the home team's market."""
     best, home_iid = None, None
     rank = {"rejected": 0, "fuzzy_candidate": 1, "manual_verified": 2, "exact": 2}
-    for (iid, side), h in heads.items():
-        o = conn.execute("SELECT event_id FROM f_outcome WHERE outcome_id = ?", (h.outcome_id,)).fetchone()
-        if o is None or o[0] != event_id:
-            continue
-        v = conn.execute("SELECT venue FROM f_venue_instrument WHERE venue_instrument_id = ?", (iid,)).fetchone()[0]
+    for iid, side, h, v in mapped:
         if v != venue:
             continue
         if best is None or rank[h.status] > rank[best[0]]:
@@ -67,7 +73,7 @@ def _candle_age(conn, iid: int, at_ms: int, max_age_ms: int) -> int | None:
 def table(conn, now_ms: int) -> tuple[int, list[dict], dict]:
     snapshot = lineage.take(conn, now_ms)
     lineage.use(conn, snapshot)
-    heads = current_mappings(conn)
+    by_event = _by_event(conn, current_mappings(conn))
     cohort = set(param("mapping.primary_cohort"))
     buffer_ms, window_ms = param("close.buffer_s") * 1000, param("close.hist_vwap_window_s") * 1000
     max_age_ms = param("close.max_quote_age_s") * 1000
@@ -91,7 +97,7 @@ def table(conn, now_ms: int) -> tuple[int, list[dict], dict]:
         cutoff = off.earliest_ms - buffer_ms if off.trusted else None
         r["cutoff"] = ms_iso(cutoff) if cutoff else None
         # Kalshi: candles at the cutoff and at each offset; trades in the window.
-        r["kalshi_link"], kiid = _link(conn, heads, event_id, "kalshi", home[0] if home else None)
+        r["kalshi_link"], kiid = _link(by_event.get(event_id, []), "kalshi", home[0] if home else None)
         r["kalshi_candle_age_s"] = _candle_age(conn, kiid, cutoff, max_age_ms) if kiid and cutoff else None
         for o in offsets:
             r[f"kalshi_candle_age_s_at_{o}"] = (_candle_age(conn, kiid, off.earliest_ms - o * 1000, max_age_ms)
@@ -103,7 +109,7 @@ def table(conn, now_ms: int) -> tuple[int, list[dict], dict]:
         r["kalshi_reason"] = _reason(off, r["kalshi_link"], cohort, kiid,
                                      None if r["kalshi_candle_age_s"] is None else "ok", "no_candle_before_cutoff")
         # Novig: unique executions and payout in the window.
-        r["novig_link"], niid = _link(conn, heads, event_id, "novig", None)
+        r["novig_link"], niid = _link(by_event.get(event_id, []), "novig", None)
         n = usd = None
         if niid and cutoff:
             times = execution_times(conn, niid, "f_")

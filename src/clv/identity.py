@@ -96,12 +96,14 @@ def current_mappings(conn: sqlite3.Connection, table: str = "f_instrument_mappin
     Read from the fact snapshot's view by default (clv.lineage.use). Two heads for one side
     (corrections that branched) resolve to the newer one, ineligible as `mapping_conflict`.
     """
-    rows = conn.execute(f"""
-        SELECT m.mapping_obs_id, m.venue_instrument_id, m.side, m.outcome_id, m.polarity, m.mapping_status,
-               m.settlement_equivalence, m.effective_from_ms
-        FROM {table} m
-        WHERE NOT EXISTS (SELECT 1 FROM {table} s WHERE s.supersedes_id = m.mapping_obs_id)
-        ORDER BY m.mapping_obs_id""").fetchall()
+    # One scan: supersedes_id has no index, so a NOT EXISTS per row is quadratic (B1 has tens of
+    # thousands of mappings).
+    every = conn.execute(f"""
+        SELECT mapping_obs_id, venue_instrument_id, side, outcome_id, polarity, mapping_status,
+               settlement_equivalence, effective_from_ms, supersedes_id
+        FROM {table} ORDER BY mapping_obs_id""").fetchall()
+    superseded = {r[8] for r in every if r[8] is not None}
+    rows = [r[:8] for r in every if r[0] not in superseded]
     heads: dict[tuple[int, int], Mapping] = {}
     for oid, iid, side, outcome, polarity, status, equivalence, effective_from in rows:
         if effective_from is not None:
