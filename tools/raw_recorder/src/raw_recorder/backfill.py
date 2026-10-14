@@ -21,8 +21,10 @@ that completed with a 2xx is not sent again, and anything that failed (a
 timeout, a 5xx, DNS at wake) is retried. Rerunning after an interruption
 finishes the job. Listings that can still change (the cutoff, the Kalshi
 listings, Novig's index) are fetched every run, and a schedule month until a
-copy fetched after the month's games ended is archived. Two runs that fetched
-the same request resolve to the later response.
+copy fetched after the month's games ended is archived, and a Novig market's
+and event's history until the market is settled and the event final (a day's
+markets.csv lists markets still open). Two runs that fetched the same request
+resolve to the later response.
 The cutoff moves forward over time. A market fetched on the live tier before
 it moved is not fetched again on the historical one, unless the cutoff now
 falls inside its trades window: those trades are fetched again, split at the
@@ -42,7 +44,7 @@ import io
 import json
 import time
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -137,6 +139,7 @@ class Fetcher:
         self.rests, self.done, self.min_interval = rests, done, min_interval_s
         self.retries, self.retry_wait_s = retries, retry_wait_s
         self.last: dict[str, float] = {}
+        self.this_run: set[tuple[str, str, str]] = set()        # fetched by this run: current as is
         self.locks: dict[str, asyncio.Lock] = {}
         self.stats = Stats()
 
@@ -150,15 +153,19 @@ class Fetcher:
 
     async def get(self, source: str, host: str, base: str, path: str, *, params: dict | None = None,
                   purpose: str, subjects: Iterable[str] = (), signer: Signer | None = None, fresh: bool = False,
-                  same_as: Iterable[str] = (), final_after_ms: int | None = None):
+                  same_as: Iterable[str] = (), final_after_ms: int | None = None,
+                  final: Callable[[object], bool] | None = None):
         """The request's summary (the body, for the kept purposes), or None if it failed.
         `same_as`: other paths that return the same data, already fetched counts as done.
-        `final_after_ms`: a copy fetched before then may have changed since, and is fetched again."""
+        `final_after_ms`: a copy fetched before then may have changed since, and is fetched again.
+        `final`: whether a copy's content can no longer change; one that can is fetched again."""
         query = build_query(params)
         key = _key(source, base.rstrip("/") + path + (f"?{query}" if query else ""))
         if not fresh:
             for k in [key] + [_key(source, base.rstrip("/") + p + (f"?{query}" if query else "")) for p in same_as]:
-                if k in self.done and (final_after_ms is None or self.done[k][1] >= final_after_ms):
+                if k in self.this_run or k in self.done and (
+                        (final_after_ms is None or self.done[k][1] >= final_after_ms)
+                        and (final is None or final(self.done[k][0]))):
                     self.stats.skipped[source] += 1
                     return self.done[k][0]
         res = None
@@ -171,6 +178,7 @@ class Fetcher:
             await asyncio.sleep(self.retry_wait_s * (attempt + 1))
         if res.ok and res.body is not None:
             self.done[key] = (summarize(purpose, res.body.decode("utf-8", "surrogateescape")), clock())
+            self.this_run.add(key)
             self.stats.fetched[source] += 1
             return self.done[key][0]
         self.stats.failed.append((source, path, query, res.status or res.failure))
@@ -323,6 +331,24 @@ async def kalshi(f: Fetcher, cfg: dict, base: str, series: str, ranges: Ranges, 
 
 # -- Novig -------------------------------------------------------------------------------------------------
 
+def _status(body) -> dict:
+    try:
+        out = json.loads(body)
+    except (TypeError, ValueError):
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
+def market_final(body) -> bool:
+    """A market's history is final once it is settled: its grades and settledTs are set."""
+    m = _status(body)
+    return m.get("status") == "SETTLED" and m.get("settledTs") is not None
+
+
+def event_final(body) -> bool:
+    return _status(body).get("status") in ("FINAL", "CANCELED")
+
+
 async def novig(f: Fetcher, cfg: dict, data_url: str, host: str, signer: Signer | None, ranges: Ranges,
                 today: date) -> Counter:
     seen = Counter()
@@ -348,13 +374,22 @@ async def novig(f: Fetcher, cfg: dict, data_url: str, host: str, signer: Signer 
     if signer is None:
         seen["history_skipped_no_key"] = len(markets)
         return seen
+    open_events = set()
     for mid in sorted(markets):
         body = await f.get("novig_hist", "novig_history", host, f"/v3/history/markets/{mid}",
-                           purpose="history_market", subjects=[f"novig:market:{mid}"], signer=signer)
+                           purpose="history_market", subjects=[f"novig:market:{mid}"], signer=signer,
+                           final=market_final)
+        if body is not None and not market_final(body):
+            seen["history_markets_not_final"] += 1          # fetched again next run
         event = json.loads(body).get("eventId") if body else None
         if event:
-            await f.get("novig_hist", "novig_history", host, f"/v3/history/events/{event}",
-                        purpose="history_event", subjects=[f"novig:event:{event}"], signer=signer)
+            got = await f.get("novig_hist", "novig_history", host, f"/v3/history/events/{event}",
+                              purpose="history_event", subjects=[f"novig:event:{event}"], signer=signer,
+                              final=event_final)
+            if got is not None and not event_final(got):
+                open_events.add(event)
+    if open_events:
+        seen["history_events_not_final"] = len(open_events)
     return seen
 
 

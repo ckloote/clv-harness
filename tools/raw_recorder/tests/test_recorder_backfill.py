@@ -57,7 +57,8 @@ class Vendors:
             "date,marketId,reportTicker,openInterest,dailyVolume,open,high,low,close,status\n"
             "2026-08-04,m2,MLB-WINNER,0,1,50,50,50,50,finalized\n"))
         r.add_get("/v3/history/markets/{m}", self.history_market)
-        r.add_get("/v3/history/events/{e}", self.json({"eventId": "e"}))
+        r.add_get("/v3/history/events/{e}", self.history_event)
+        self.settled = True                         # Novig markets settled, events final
 
     def count(self, request):
         self.hits[request.path] += 1
@@ -123,7 +124,13 @@ class Vendors:
     async def history_market(self, request):
         self.count(request)
         self.signed.append(request.headers.get("Novig-Signature", ""))
-        return web.json_response({"marketId": request.match_info["m"], "eventId": "e"})
+        status = {"status": "SETTLED", "settledTs": "2026-08-05T03:00:00Z"} if self.settled else \
+            {"status": "OPEN", "settledTs": None}
+        return web.json_response({"marketId": request.match_info["m"], "eventId": "e", **status})
+
+    async def history_event(self, request):
+        self.count(request)
+        return web.json_response({"eventId": "e", "status": "FINAL" if self.settled else "IN_PROGRESS"})
 
 
 def backfill_config(tmp_path, base):
@@ -431,3 +438,29 @@ async def test_a_seal_that_fails_at_close_fails_the_backfill(tmp_path, monkeypat
     captured = capsys.readouterr()
     assert "sealing failed" in captured.err and "rerun" in captured.err
     assert "fetched" not in captured.out                # no per-source summary to mislead
+
+
+async def test_novig_history_is_fetched_again_until_it_is_final(tmp_path, monkeypatch, capsys):
+    # A day's markets.csv lists markets still open (PR #16 review): their history is fetched
+    # again each run until the market is settled and its event final, then never again.
+    v = Vendors()
+    v.settled = False
+    srv = TestServer(v.app)
+    await srv.start_server()
+    runs = []
+    try:
+        cfg = backfill_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        for hour, settled in enumerate((False, True, True)):
+            v.settled = settled
+            v.hits.clear()
+            assert await run_cli(cfg, monkeypatch, sources=("novig",), now_s=NOW_S + hour * 3600) == 0
+            runs.append(Counter(v.hits))
+    finally:
+        await srv.close()
+    for path in ("/v3/history/markets/m1", "/v3/history/markets/m2", "/v3/history/events/e"):
+        assert [r[path] for r in runs] == [1, 1, 0], path
+    first = capsys.readouterr().out.split("\n")[0]
+    assert "'history_markets_not_final': 2, 'history_events_not_final': 1" in first
+    done = backfill.load_done(cfg.backfill_root)
+    bodies = [json.loads(b) for k, (b, _) in done.items() if "/v3/history/" in k[1]]
+    assert bodies and all(backfill.market_final(json.dumps(b)) or b.get("status") == "FINAL" for b in bodies)
