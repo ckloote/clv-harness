@@ -132,14 +132,15 @@ def trace_execution(conn: sqlite3.Connection, execution_id: int, root: Path, his
             "sightings": sightings, "dual_side_takers": takers}
 
 
-def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True) -> dict:
+def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True,
+          hist_root: Path | None = None) -> dict:
     run = conn.execute("SELECT fact_snapshot_id, scorer_version, fee_model_version, analysis_spec FROM scoring_run"
                        " WHERE scoring_run_id = ?", (run_id,)).fetchone()
     if run is None:
         raise TraceError(f"no scoring_run {run_id}")
     snap, scorer, fee_model, spec = run
     lineage.use(conn, snap)
-    frames = _Frames(conn, root)
+    frames = _Frames(conn, root, hist_root)       # a run's off observations may come from the backfill
     marks, manifest_sha = conn.execute("SELECT high_water_json, manifest_sha256 FROM fact_snapshot"
                                        " WHERE fact_snapshot_id = ?", (snap,)).fetchone()
     books: dict[str, dict] = {}

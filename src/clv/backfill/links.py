@@ -14,7 +14,9 @@
   names.
 - **Start:** its `startsTs` is within NOVIG_START_MS of the StatsAPI start, and it is the
   only such game.
-- **Outcomes:** the outcomes are the teams' Novig codes, and the winner's is graded `WIN`.
+- **Outcomes:** the outcomes are the teams' Novig codes, the market is `SETTLED`, and the
+  StatsAPI winner of the Final game is the outcome graded `WIN`. A game or market without a
+  result (not yet played or settled, or cancelled) is never clean.
 
 **Edge cases** are never proposed. They are listed for review with their candidates:
 - doubleheaders, postponed or rescheduled games, and a game on another day than the ticker;
@@ -163,7 +165,13 @@ def novig_links(found: dict[str, tuple], events: dict, games: dict[int, Schedule
             link.reasons.append(f"outcomes {sorted(names)} are not {sorted(codes)}")
             continue
         graded = {codes[n] for n, o in names.items() if o[2] == "WIN"}
-        if graded != ({g.winner} if g.winner else set()):
+        settled = m.status == "SETTLED" and e.status == "FINAL"
+        result = settled and g.final and g.winner is not None and graded == {g.winner}
+        if not settled:
+            link.reasons.append(f"market {m.status}, event {e.status}: no settled result")
+        elif not g.final or g.winner is None:
+            link.reasons.append(f"StatsAPI game {g.status}, no winner")
+        elif not result:
             link.reasons.append(f"graded WIN {sorted(graded)}, StatsAPI's winner {g.winner}")
         if g.double_header != "N":
             link.reasons.append("a doubleheader")
@@ -175,7 +183,7 @@ def novig_links(found: dict[str, tuple], events: dict, games: dict[int, Schedule
                          f"{_describe(g)}.")
         if not link.reasons:
             link.status = "clean"
-        if graded == ({g.winner} if g.winner else set()):
+        if result:
             for side, (oid, name, _) in enumerate(m.outcomes):
                 link.sides.append((market, None, codes[name], "direct", x, None, oid))
     return out

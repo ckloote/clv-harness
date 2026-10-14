@@ -1,6 +1,7 @@
 """B1 import (clv.backfill) on a synthetic backfill archive written by the recorder's writer, in
 the vendors' real shapes. It covers B0's edge cases (docs/feasibility.md §4), Novig's
 dual-side rows, and the reconciliation of a streamed trade with its MAKER row."""
+import dataclasses
 import json
 import sqlite3
 from collections import Counter
@@ -11,7 +12,7 @@ import pytest
 from raw_recorder.archive import ArchiveWriter
 
 from clv import backfill, db, identity
-from clv.backfill import links, novig_public
+from clv.backfill import links, mlb_pbp, novig_public
 from clv.close.vwap import trade_vwap
 from clv.ingest import Writer
 from clv.timeutil import iso_ms
@@ -440,3 +441,85 @@ def test_the_coverage_table_rebuilds_identically_and_holds_no_prices(archives, t
     _, again, _ = coverage.table(c, NOW + 3)
     assert again == rows
     assert [s for s, _, _ in coverage.waterfall(rows, "kalshi")][-1] == "no_candle_before_cutoff"
+
+
+def test_a_market_linked_after_its_file_was_imported_still_gets_its_rows(tmp_path):
+    # A file is imported market by market (PR #18 review): a market linked after an earlier
+    # import of the same day's file still gets its rows, and none is imported twice.
+    hist = tmp_path / "hist"
+    write_hist(hist, CSV + "2026-08-04T19:00:00.000Z,o-sd,0005-n5,Baseball Moneyline,MLB,MONEY,STRAIGHT,1,30,50,MAKER\n")
+    c = db.connect(":memory:")
+    db.migrate(c)
+    backfill.import_identity(c, hist, NOW)
+    w = Writer(c, NOW)
+
+    def bound(mid):
+        iid, s0, s1 = q(c, "SELECT venue_instrument_id, side0_id, side1_id FROM venue_instrument WHERE native_id = ?",
+                        mid)[0]
+        return iid, (s0, s1), iso_ms("2026-08-05T00:00:00Z")
+
+    rep = Counter()
+    novig_public.import_daily(w, hist, {N1: bound(N1)}, rep)
+    first = counts(c)
+    novig_public.import_daily(w, hist, {N1: bound(N1), "0005-n5": bound("0005-n5")}, rep)
+    assert q(c, """SELECT count(*) FROM trade_execution x JOIN venue_instrument v USING (venue_instrument_id)
+                   WHERE v.native_id = '0005-n5'""") == [(1,)]
+    assert counts(c)["trade_execution"] == first["trade_execution"] + 1
+    assert rep["novig_file_markets_already_imported"] == 1
+
+
+def test_a_novig_market_without_a_result_is_never_clean(archives):
+    # Two empty sets agree (PR #18 review): an unplayed game with an open market, or a cancelled
+    # one with no WIN grade, must stay out of the clean proposals.
+    hist, _ = archives
+    found, events = novig_public.markets(hist)
+    games, _ = mlb_pbp.schedule(hist)
+    x, m = found[N1]
+    unplayed = {**games, 901: dataclasses.replace(games[901], status="Scheduled", winner=None)}
+    open_m = dataclasses.replace(m, status="OPEN", outcomes=tuple((o, n, "OPEN") for o, n, _ in m.outcomes))
+    open_e = {**events, m.event: dataclasses.replace(events[m.event], status="OPEN")}
+    (link,) = links.novig_links({N1: (x, open_m)}, open_e, unplayed)
+    assert link.status == "edge" and not link.sides and "no settled result" in link.reasons[0]
+    fmv = dataclasses.replace(m, outcomes=tuple((o, n, "0.5") for o, n, _ in m.outcomes))
+    cancelled = {**events, m.event: dataclasses.replace(events[m.event], status="CANCELED")}
+    (link,) = links.novig_links({N1: (x, fmv)}, cancelled, unplayed)
+    assert link.status == "edge" and not link.sides
+    (link,) = links.novig_links({N1: (x, fmv)}, events, unplayed)          # settled, but StatsAPI has no winner
+    assert link.status == "edge" and not link.sides and "no winner" in link.reasons[0]
+
+
+def test_coverage_counts_the_home_market_by_its_own_link(archives, tmp_path):
+    # Only the away team's Kalshi market is approved: the home market, whose candles the table
+    # counts, is still unverified (PR #18 review).
+    from clv.backfill import coverage
+    c, _, _ = loaded(archives, tmp_path)
+    blocks = (tmp_path / "b1" / "links.proposed.toml").read_text().split("[[correction]]")
+    away = [b for b in blocks[1:] if 'native_id = "KXMLBGAME-26AUG041910NYYBOS-NYY"' in b]
+    assert len(away) == 2
+    (tmp_path / "away.toml").write_text("".join("[[correction]]" + b for b in away))
+    identity.apply_corrections(c, tmp_path / "away.toml", NOW + 1)
+    _, rows, _ = coverage.table(c, NOW + 2)
+    g = {r["game_pk"]: r for r in rows}[901]
+    assert (g["kalshi_link"], g["kalshi_reason"]) == ("fuzzy_candidate", "mapping_unverified")
+
+
+def test_a_candle_without_a_bid_and_ask_close_is_no_quote(archives, tmp_path):
+    # A candle with only a trade price, 11 min before 901's cutoff, gives no bid/ask close
+    # (PR #18 review): the table still finds none within the max quote age.
+    from clv.backfill import coverage
+    hist, _ = archives
+    clock = Clock()
+    clock.t = iso_ms("2026-10-14T01:00:00Z")
+    w = ArchiveWriter(hist, session_id="h2", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
+    k = w.stream("kalshi_hist", "backfill-h2")
+    rest(clock, k, "k9", f"/trade-api/v2/historical/markets/{BOS_T}/candlesticks", "candles", {"ticker": BOS_T,
+         "candlesticks": [candle("2026-08-04T23:00:00Z", None, None, "0.6200")]}, [f"kalshi:market:{BOS_T}"],
+         query="start_ts=3&end_ts=4&period_interval=1")
+    w.close()
+    c, _, _ = loaded(archives, tmp_path)
+    identity.apply_corrections(c, tmp_path / "b1" / "links.proposed.toml", NOW + 1)
+    assert q(c, "SELECT count(*) FROM historical_candle WHERE bid_close_e4 IS NULL AND price_close_e4 IS NOT NULL"
+             ) == [(1,)]
+    _, rows, _ = coverage.table(c, NOW + 2)
+    g = {r["game_pk"]: r for r in rows}[901]
+    assert (g["kalshi_candle_age_s"], g["kalshi_reason"]) == (None, "no_candle_before_cutoff")

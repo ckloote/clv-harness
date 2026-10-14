@@ -67,7 +67,10 @@ def import_instruments(w, root: Path, report: Counter) -> tuple[dict[str, tuple]
 # -- the daily files -----------------------------------------------------------------------------------
 
 def import_daily(w, root: Path, bounds: dict[str, tuple], report: Counter) -> None:
-    """`bounds`: market -> (instrument id, (side0 outcome, side1 outcome), first pitch ms)."""
+    """`bounds`: market -> (instrument id, (side0 outcome, side1 outcome), first pitch ms).
+
+    A file is imported market by market: a market linked after an earlier import (or given
+    its first pitch since) still gets its rows, and one already imported is not imported again."""
     w.know(archive.segments(root, SOURCE))
     for x in archive.stream_exchanges(root, archive.segments(root, SOURCE)):
         if not x.ok or x.request.get("purpose") != "trades_csv":
@@ -78,11 +81,12 @@ def import_daily(w, root: Path, bounds: dict[str, tuple], report: Counter) -> No
         w.conn.execute("BEGIN")
         try:
             aid, line = w.cite(x.body.ref)
-            if w.conn.execute("SELECT 1 FROM trade_source_observation WHERE raw_artifact_id = ? AND raw_line = ?"
-                              " LIMIT 1", (aid, line)).fetchone():
-                report["novig_files_already_imported"] += 1
-            else:
-                _daily(w, x, rows, bounds, report)
+            done = {r[0] for r in w.conn.execute("SELECT DISTINCT venue_instrument_id FROM trade_source_observation"
+                                                 " WHERE raw_artifact_id = ? AND raw_line = ?", (aid, line))}
+            new = [r for r in rows if bounds[r.market][0] not in done]
+            report["novig_file_markets_already_imported"] += len({r.market for r in rows}) - len({r.market for r in new})
+            if new:
+                _daily(w, x, new, bounds, report)
             w.conn.execute("COMMIT")
         except BaseException:
             w.conn.execute("ROLLBACK")

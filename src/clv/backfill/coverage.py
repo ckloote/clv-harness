@@ -47,26 +47,35 @@ def _by_event(conn, heads) -> dict[int, list]:
     return out
 
 
+_RANK = {"rejected": 0, "fuzzy_candidate": 1, "manual_verified": 2, "exact": 2}
+
+
 def _link(mapped: list, venue: str, home: int | None) -> tuple[str, int | None]:
-    """The venue's link status for this game and, for Kalshi, the home team's market."""
-    best, home_iid = None, None
-    rank = {"rejected": 0, "fuzzy_candidate": 1, "manual_verified": 2, "exact": 2}
+    """The instrument whose data the table counts, and its link status: the weakest of its
+    sides' mappings. For Kalshi, the home team's market (side 0 maps directly to the home team);
+    for Novig, the game's market. Of several, the best linked."""
+    status: dict[int, str] = {}
+    usable: set[int] = set()
     for iid, side, h, v in mapped:
         if v != venue:
             continue
-        if best is None or rank[h.status] > rank[best[0]]:
-            best = (h.status, iid)
-        if venue == "kalshi" and side == 0 and h.polarity == "direct" and h.outcome_id == home:
-            home_iid = iid
-        if venue == "novig":
-            home_iid = iid
-    return (best[0] if best else "none"), home_iid
+        if iid not in status or _RANK[h.status] < _RANK[status[iid]]:
+            status[iid] = h.status
+        if venue == "novig" or (side == 0 and h.polarity == "direct" and h.outcome_id == home):
+            usable.add(iid)
+    if not usable:
+        return "none", None
+    iid = max(sorted(usable), key=lambda i: _RANK[status[i]])
+    return status[iid], iid
 
 
 def _candle_age(conn, iid: int, at_ms: int, max_age_ms: int) -> int | None:
-    """Seconds from the end of the last candle wholly before `at_ms` (DESIGN.md §5.6), or None."""
+    """Seconds from the end of the last candle wholly before `at_ms` with a bid and an ask close
+    (DESIGN.md §5.6), or None. A candle with only a trade price cannot give a quote close."""
     row = conn.execute("SELECT max(interval_end_ms) FROM f_historical_candle WHERE venue_instrument_id = ?"
-                       " AND interval_end_ms <= ? AND interval_end_ms > ?", (iid, at_ms, at_ms - max_age_ms)).fetchone()
+                       " AND interval_end_ms <= ? AND interval_end_ms > ?"
+                       " AND bid_close_e4 IS NOT NULL AND ask_close_e4 IS NOT NULL",
+                       (iid, at_ms, at_ms - max_age_ms)).fetchone()
     return None if row[0] is None else (at_ms - row[0]) // 1000
 
 

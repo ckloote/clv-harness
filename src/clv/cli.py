@@ -317,7 +317,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.execution is not None:
             doc = trace.trace_execution(db.connect(args.db), args.execution, args.archive, args.hist_archive)
         else:
-            doc = trace.trace(db.connect(args.db), args.run, args.archive, not args.no_levels)
+            doc = trace.trace(db.connect(args.db), args.run, args.archive, not args.no_levels, args.hist_archive)
         sys.stdout.write(trace.dumps(doc))
 
 

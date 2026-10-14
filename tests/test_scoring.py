@@ -437,3 +437,31 @@ def test_a_snapshot_from_before_a_fact_table_existed_still_replays(conn):
     (s,) = [x for x in doc["scores"] if x["definition"] == "close_live_mid_depth_500" and x["venue"] == "novig"]
     assert s["check2"]["unavailable_reason"] == "no_opposite_quote" and s["entry"]["opposite_quote"] is None
     assert Fraction(s["clv_ev"]["exact"]) == Fraction(-791, 11800)                       # everything else as before
+
+
+def test_a_run_with_a_backfill_first_pitch_traces_with_the_backfill_root(conn, tmp_path):
+    # After `clv backfill import`, a run's off resolution can cite a play-by-play frame in
+    # archive-hist/; `clv trace --run` reads it from there (PR #18 review).
+    from raw_recorder.archive import ArchiveWriter
+
+    from clv import archive, trace
+    hist = tmp_path / "archive-hist"
+    w = ArchiveWriter(hist, session_id="h1", segment_max_s=86_400, fsync_interval_s=5, clock=lambda: NOW)
+    s = w.stream("mlb_hist", "backfill-h1")
+    s.event("p", "rest_request", request_id="p", method="GET", origin="https://x",
+            path=f"/api/v1/game/{golden.SYN_PK}/playByPlay", query="", subjects=[f"mlb:game:{golden.SYN_PK}"],
+            purpose="play_by_play", start_ts_ms=NOW)
+    s.write("in", "p", json.dumps({"allPlays": []}), recv_ts_ms=NOW)
+    s.event("p", "rest_complete", request_id="p", status=200, failure=None, response_headers=[])
+    w.close()
+    iw = ingest.Writer(conn, NOW)
+    iw.know(archive.segments(hist, "mlb_hist"))
+    (x,) = list(archive.stream_exchanges(hist, archive.segments(hist, "mlb_hist")))
+    obs = dict(conn.execute("SELECT * FROM off_observation WHERE source = 'mlb_statsapi'"
+                            " AND kind IN ('first_pitch', 'status_in_progress') LIMIT 1").fetchone())
+    obs.pop("off_observation_id")
+    iw.insert("off_observation", dict(obs, **iw.cited(x.body.ref)))
+    r = run(conn)
+    with pytest.raises(trace.TraceError, match="pass the backfill archive root"):
+        trace.trace(conn, r.scoring_run_id, ARCHIVE)
+    assert '"mlb_hist/' in trace.dumps(trace.trace(conn, r.scoring_run_id, ARCHIVE, hist_root=hist))

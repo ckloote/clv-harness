@@ -23,7 +23,7 @@ Docs and PRs carry aggregate counts only, never per-game prices, and test fixtur
 
 **Links: the rule proposes, a person approves.** `clv backfill link` applies tested rules (`clv.backfill.links`).
 - **Kalshi** (`kalshi settlement rule v1`): the one Final game between the ticker's teams, within 3 days of its date, that started within 8 h before `close_time` and whose winner is the market that resolved `yes`.
-- **Novig** (`novig event rule v1`): the one game whose teams are the history event's, starting within 6 h of `startsTs`, with a matching `WIN` grade.
+- **Novig** (`novig event rule v1`): the one game whose teams are the history event's, starting within 6 h of `startsTs`, with a settled market whose `WIN` grade is the Final game's winner. A game or market without a result (unplayed, unsettled or cancelled) is never clean.
 - **What gets written:**
   - Matches are stored as `fuzzy_candidate` mappings.
   - The clean ones are written as `clv correct` corrections to approve (`links.proposed.toml`).
@@ -60,7 +60,7 @@ Docs and PRs carry aggregate counts only, never per-game prices, and test fixtur
   - Novig: 36 daily files and 491 MLB moneyline markets.
 - **Links, across every listed market:**
   - Kalshi: 4,475 events clean, 197 for review, 16 excluded. The review cases are mostly doubleheaders (100). The exclusions are cancelled games and All-Star events.
-  - Novig: 473 markets clean, 18 for review.
+  - Novig: 472 markets clean, 19 for review. The cancelled game is one of the review cases (recounted after the PR #18 review; it was proposed clean before).
   - Some April 2025 Kalshi markets have a `close_time` almost a year after their game. The rule finds no game for them and lists them for review.
 - **Data, for the pilot's linked games, before their first pitch:**
   - **Kalshi:** 998 markets, 1.06M candles and 1.93M executions. Another 8.3M trades and 170k candles were after the first pitch and not loaded. No two tiers' candles disagreed.
