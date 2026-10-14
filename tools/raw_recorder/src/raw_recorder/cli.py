@@ -118,6 +118,17 @@ def cmd_catalog(args) -> int:
     return asyncio.run(_catalog(load_config(args.config)))
 
 
+TICK_S = 1.0
+
+
+async def _tick(archive: ArchiveWriter) -> None:
+    """The archive's housekeeping, as the recorder runs it: fsync on cadence and seal a
+    segment when it is due, even while its source is idle or finished."""
+    while True:
+        archive.tick()
+        await asyncio.sleep(TICK_S)
+
+
 async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
     root = cfg.backfill_root
     lock = ArchiveLock(root)
@@ -136,13 +147,15 @@ async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
             print(f"no ${cfg.novig['key_id_env']}: Novig history routes are skipped", file=sys.stderr)
         session_id = new_session_id()
         archive = ArchiveWriter(root, session_id=session_id, segment_max_s=cfg.backfill["segment_max_s"],
-                                fsync_interval_s=cfg.params.fsync_interval_s)
+                                fsync_interval_s=cfg.params.fsync_interval_s, clock=backfill.clock)
+        housekeeping = asyncio.create_task(_tick(archive))
         try:
             async with aiohttp.ClientSession() as http:
                 rests = {s: RestRecorder(http, archive.stream(s, f"backfill-{session_id[:12]}"),
                                          timeout_s=cfg.backfill["rest_timeout_s"]) for s in backfill.SOURCES.values()}
                 stats, seen = await backfill.run(rests, done, cfg, sources, ranges, signer)
         finally:
+            housekeeping.cancel()
             archive.close()
     finally:
         lock.release()

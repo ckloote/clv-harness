@@ -3,6 +3,7 @@ the Kalshi tier follows the cutoff, and the Novig history routes are signed."""
 import asyncio
 import dataclasses
 import json
+import os
 from collections import Counter
 from datetime import date
 
@@ -33,7 +34,9 @@ class Vendors:
         r = self.app.router
         r.add_get("/api/v1/schedule", self.schedule)
         r.add_get("/api/v1/teams", self.json({"teams": []}))
-        r.add_get("/api/v1/game/{pk}/playByPlay", self.json({"allPlays": []}))
+        r.add_get("/api/v1/game/{pk}/playByPlay", self.play_by_play)
+        self.unplayed: set[int] = set()             # games the schedule still lists as Scheduled
+        self.delay_s = 0.0
         r.add_get("/historical/cutoff", self.json(CUTOFF))
         r.add_get("/events", self.events)
         r.add_get("/historical/markets", self.historical_markets)
@@ -76,7 +79,15 @@ class Vendors:
             games = [{"gamePk": 1001, "officialDate": "2026-08-04", "status": {"detailedState": "Final"}},
                      {"gamePk": 1002, "officialDate": "2026-08-04", "status": {"detailedState": "Postponed"}},
                      {"gamePk": 1003, "officialDate": "2026-08-20", "status": {"detailedState": "Final"}}]
+            for g in games:
+                if g["gamePk"] in self.unplayed:
+                    g["status"] = {"detailedState": "Scheduled"}
         return web.json_response({"dates": [{"games": games}] if games else []})
+
+    async def play_by_play(self, request):
+        self.count(request)
+        await asyncio.sleep(self.delay_s)
+        return web.json_response({"allPlays": []})
 
     async def events(self, request):
         self.count(request)
@@ -126,9 +137,9 @@ def fake_signer(method, path, raw_query, body):
     return {"Novig-Key-Id": "read-key", "Novig-Timestamp": "1", "Novig-Signature": "sig"}
 
 
-async def run_cli(cfg, monkeypatch, sources=("mlb", "kalshi", "novig"), ranges=()):
+async def run_cli(cfg, monkeypatch, sources=("mlb", "kalshi", "novig"), ranges=(), now_s=NOW_S):
     monkeypatch.setattr(cli, "load_signer", lambda c: fake_signer)
-    monkeypatch.setattr(backfill.time, "time", lambda: NOW_S)
+    monkeypatch.setattr(backfill.time, "time", lambda: now_s)
     return await cli._backfill(cfg, list(sources), backfill.parse_ranges(ranges))
 
 
@@ -289,3 +300,75 @@ async def test_a_market_the_cutoff_moved_is_not_fetched_again(tmp_path, monkeypa
         await srv.close()
     assert v.hits["/historical/markets/KX-B-BBB/candlesticks"] == 0
     assert not [k for k in v.hits if isinstance(k, tuple) and k[1] == "KX-B-BBB"]
+
+
+def iso_s(text):
+    return backfill._iso_s(text)
+
+
+async def test_a_month_fetched_before_its_games_ended_is_fetched_again(tmp_path, monkeypatch):
+    # August cached mid-month, game 1003 still to play; a resume in November must refresh it
+    # (PR #16 review). Once a copy from after the month's end is archived, it is final.
+    v = Vendors()
+    v.unplayed.add(1003)
+    srv = TestServer(v.app)
+    await srv.start_server()
+    try:
+        cfg = backfill_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        assert await run_cli(cfg, monkeypatch, sources=("mlb",), now_s=iso_s("2026-08-14T12:00:00Z")) == 0
+        assert v.hits["/api/v1/game/1003/playByPlay"] == 0
+        v.unplayed.clear()
+        v.hits.clear()
+        assert await run_cli(cfg, monkeypatch, sources=("mlb",), now_s=iso_s("2026-11-03T12:00:00Z")) == 0
+        assert v.hits["/api/v1/game/1003/playByPlay"] == 1
+        assert v.hits["/api/v1/schedule"] == 4              # August, whose copy was early; Sep to Nov, new
+        v.hits.clear()
+        assert await run_cli(cfg, monkeypatch, sources=("mlb",), now_s=iso_s("2026-12-01T00:00:00Z")) == 0
+    finally:
+        await srv.close()
+    # October's copy from November 3 is final; November's from then is not, nor is a copy made today.
+    assert v.hits["/api/v1/schedule"] == 1
+
+
+async def test_the_latest_of_two_responses_is_the_one_resumed_from(tmp_path, monkeypatch):
+    # Two runs on one UTC day both fetch November's schedule, still open. Segment names sort by
+    # their random session IDs, here against time; the later response must still win (PR #16
+    # review), or a finished month could resume from a copy taken before its games were played.
+    v = Vendors()
+    srv = TestServer(v.app)
+    await srv.start_server()
+    sessions = iter(["f" * 32, "0" * 32])
+    monkeypatch.setattr(cli, "new_session_id", lambda: next(sessions))
+    try:
+        cfg = backfill_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        for hour in ("01", "02"):
+            assert await run_cli(cfg, monkeypatch, sources=("mlb",), now_s=iso_s(f"2026-11-20T{hour}:00:00Z")) == 0
+    finally:
+        await srv.close()
+    names = sorted(p.name for p in (cfg.backfill_root / "mlb_hist").rglob("*.jsonl.gz"))
+    assert names[0].startswith("backfill-000") and names[-1].startswith("backfill-fff")
+    done = backfill.load_done(cfg.backfill_root)
+    (_, at), = [x for k, x in done.items() if "startDate=2026-11-01" in k[2]]
+    assert at == iso_s("2026-11-20T02:00:00Z") * 1000
+
+
+async def test_the_archive_is_fsynced_on_cadence_while_the_backfill_runs(tmp_path, monkeypatch):
+    # The recorder's housekeeping runs beside the fetch (PR #16 review): frames reach the disk
+    # every fsync_interval_s, not only when the run ends.
+    v = Vendors()
+    v.fail_once.clear()
+    v.delay_s = 0.1
+    srv = TestServer(v.app)
+    await srv.start_server()
+    fsyncs, closing = [], []
+    real_fsync, real_close = os.fsync, cli.ArchiveWriter.close
+    monkeypatch.setattr("raw_recorder.archive.os.fsync", lambda fd: (fsyncs.append(bool(closing)), real_fsync(fd)))
+    monkeypatch.setattr(cli.ArchiveWriter, "close", lambda self: (closing.append(1), real_close(self)))
+    monkeypatch.setattr(cli, "TICK_S", 0.01)
+    try:
+        cfg = backfill_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        cfg = dataclasses.replace(cfg, params=dataclasses.replace(cfg.params, fsync_interval_s=0.02))
+        assert await run_cli(cfg, monkeypatch, sources=("mlb",)) == 0
+    finally:
+        await srv.close()
+    assert False in fsyncs                          # during the run, not only at its close
