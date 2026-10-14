@@ -136,7 +136,7 @@ def correct_mapping(conn: sqlite3.Connection, venue: str, native_id: str, side: 
                        (venue, native_id)).fetchone()
     if row is None:
         raise KeyError(f"no {venue} instrument {native_id!r}")
-    head = current_mappings(conn, "instrument_mapping_observation").get((row[0], side))
+    head = side_head(conn, row[0], side)
     if head is None:
         raise KeyError(f"{venue} {native_id!r} side {side} has no mapping to correct")
     outcome = head.outcome_id
@@ -210,6 +210,23 @@ def ensure_instrument(w, row: dict) -> tuple[int, tuple[str, str]]:
     return have[0], (have[1], have[2])
 
 
+def side_head(conn: sqlite3.Connection, instrument_id: int, side: int) -> Mapping | None:
+    """One side's current mapping, as current_mappings resolves it, without reading every head."""
+    # A correction supersedes an observation of the same side (trigger mapping_supersedes_same_side),
+    # so this side's own rows, read through index mapping_instrument, decide its head.
+    side_rows = conn.execute("""
+        SELECT mapping_obs_id, outcome_id, polarity, mapping_status, settlement_equivalence, supersedes_id
+        FROM instrument_mapping_observation WHERE venue_instrument_id = ? AND side = ? ORDER BY mapping_obs_id""",
+        (instrument_id, side)).fetchall()
+    superseded = {r[5] for r in side_rows}
+    rows = [r[:5] for r in side_rows if r[0] not in superseded]
+    if not rows:
+        return None
+    oid, outcome, polarity, status, equivalence = rows[-1]
+    return Mapping(instrument_id, side, oid, outcome, polarity, status, equivalence,
+                   "mapping_conflict" if len(rows) > 1 else ineligible_reason(status, equivalence))
+
+
 def ensure_mapping(w, row: dict) -> int | None:
     """Append a side's mapping observation unless it adds nothing.
 
@@ -217,8 +234,7 @@ def ensure_mapping(w, row: dict) -> int | None:
     checked games.toml link over an unverified historical candidate): insert it superseding
     the head. Otherwise the head already says as much, and nothing is written. A different
     outcome or polarity is a conflict for a correction to settle, never an automatic choice."""
-    head = current_mappings(w.conn, "instrument_mapping_observation").get(
-        (row["venue_instrument_id"], row["side"]))
+    head = side_head(w.conn, row["venue_instrument_id"], row["side"])
     if head is None:
         return w.insert("instrument_mapping_observation", dict(row, supersedes_id=None))
     if (head.outcome_id, head.polarity) != (row["outcome_id"], row["polarity"]):

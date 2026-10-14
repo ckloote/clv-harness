@@ -65,6 +65,8 @@ def import_data(w, root: Path, bounds: dict[str, tuple[int, int, int]], report: 
         purpose = x.request.get("purpose")
         if not x.ok or purpose not in ("candles", "trades"):
             continue
+        if not any(s.removeprefix("kalshi:market:") in bounds for s in x.subjects):
+            continue                        # not a linked market: skip without parsing the page
         rows = kalshi.candles(x) if purpose == "candles" else kalshi.tape(x)
         rows = [r for r in rows if r.ticker in bounds]
         if not rows:
