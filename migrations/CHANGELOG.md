@@ -52,3 +52,19 @@ V0 must exercise check 2's per-entry comparison (DESIGN.md §13, V0; §9.2). Tha
 | **`clv_score` adds `q_entry_num/den`, `agreement_outlier` and `agreement_reason`**. A trigger requires an outlier flag exactly when both `q_e` and `p_e` (`p_ref_entry`) exist, and otherwise a reason (`no_opposite_quote`, `no_reference_at_entry`) | §8.2 lists CLV, null EV and residual | The per-entry comparison is per entry, reference venue and benchmark, as `p_e` is. Rows scored before 0003 have none of these columns set |
 
 The slope regression needs `controls.min_clusters` events. Outlier dispositions need `control_outlier_review`, which DESIGN.md §8.5 schedules for G1 or B3. Both arrive then.
+
+## 0004_b1 (B1, 2026-10-14)
+
+The B1 row of DESIGN.md §8.5: the historical reference import needs the execution ledger (§7.4) and candles (§5.6). `trade_execution` and `trade_source_observation` arrive here rather than with A1, because B1 comes first.
+
+| Change | Against | Why |
+|---|---|---|
+| **`raw_item`** on the three new tables: the 0-based item within the cited frame | 0001 cites a frame by `raw_line` alone | One frame holds many facts. A day's Novig `trades.csv` is one REST body, and a Kalshi candlesticks or trades response holds a page. A frame plus an item points to one CSV row or one list element exactly |
+| **`trade_execution` stores no time** | §8.1 lists executions with their trades | Each sighting carries the time its source gives. The stream stamps a Novig trade 14 ms to 68 s before the daily file does, and the stream may be seen after the file was imported. Keeping times on sightings lets the close prefer the stream's time without ever editing an execution (`clv.close.vwap.execution_times`) |
+| **A Novig TAKER row names its dual-side group, not an execution** (`execution_id` NULL, `dual_side_group`, `reconcile` `balanced` or `ambiguous`) | §7.4: a sighting per record | One taker can fill against several makers. The MAKER row is the execution's own sighting, one per fill, and it equals a stream trade. The taker row is checked against its group's makers, and an unbalanced group is marked, never forced (§7.4: "mark ambiguous matches") |
+| **`historical_candle` keeps bid, ask and trade-price OHLC per side, and duplicates are kept** | §8.1: native interval and meaning | Kalshi's live and historical tiers overlap at the cutoff, so one interval can arrive twice. Each response is its own observation; the close resolves duplicates, and the coverage table counts conflicts. A crossed close (bid above ask) is refused |
+
+**Shared identity, no schema change.** Live ingest and the historical import now create the same `event`, `outcome` and `venue_instrument` rows through `clv.identity.ensure_*`.
+- An instrument stored earlier keeps its side order, and a source that disagrees on its identity is refused.
+- A mapping is appended only when it is new or strengthens the head's status, and a mapping to another outcome is a conflict for a correction.
+- `clv ingest` now refuses a game only when its recording was already ingested (a StatsAPI `feed/live` alias from the live archive), not when the game merely exists.

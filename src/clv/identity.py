@@ -96,12 +96,14 @@ def current_mappings(conn: sqlite3.Connection, table: str = "f_instrument_mappin
     Read from the fact snapshot's view by default (clv.lineage.use). Two heads for one side
     (corrections that branched) resolve to the newer one, ineligible as `mapping_conflict`.
     """
-    rows = conn.execute(f"""
-        SELECT m.mapping_obs_id, m.venue_instrument_id, m.side, m.outcome_id, m.polarity, m.mapping_status,
-               m.settlement_equivalence, m.effective_from_ms
-        FROM {table} m
-        WHERE NOT EXISTS (SELECT 1 FROM {table} s WHERE s.supersedes_id = m.mapping_obs_id)
-        ORDER BY m.mapping_obs_id""").fetchall()
+    # One scan: supersedes_id has no index, so a NOT EXISTS per row is quadratic (B1 has tens of
+    # thousands of mappings).
+    every = conn.execute(f"""
+        SELECT mapping_obs_id, venue_instrument_id, side, outcome_id, polarity, mapping_status,
+               settlement_equivalence, effective_from_ms, supersedes_id
+        FROM {table} ORDER BY mapping_obs_id""").fetchall()
+    superseded = {r[8] for r in every if r[8] is not None}
+    rows = [r[:8] for r in every if r[0] not in superseded]
     heads: dict[tuple[int, int], Mapping] = {}
     for oid, iid, side, outcome, polarity, status, equivalence, effective_from in rows:
         if effective_from is not None:
@@ -136,7 +138,7 @@ def correct_mapping(conn: sqlite3.Connection, venue: str, native_id: str, side: 
                        (venue, native_id)).fetchone()
     if row is None:
         raise KeyError(f"no {venue} instrument {native_id!r}")
-    head = current_mappings(conn, "instrument_mapping_observation").get((row[0], side))
+    head = side_head(conn, row[0], side)
     if head is None:
         raise KeyError(f"{venue} {native_id!r} side {side} has no mapping to correct")
     outcome = head.outcome_id
@@ -154,6 +156,115 @@ def correct_mapping(conn: sqlite3.Connection, venue: str, native_id: str, side: 
         " NULL, NULL FROM instrument_mapping_observation WHERE mapping_obs_id = ?",
         (outcome, polarity or head.polarity, status or head.status, settlement_equivalence or head.equivalence,
          method, evidence, now_ms, head.mapping_obs_id, head.mapping_obs_id)).lastrowid
+
+
+# -- shared identity: the historical import and the live ingest create the same rows -----------------------
+
+class IdentityConflict(Exception):
+    """Two sources disagree about an identity row that must be one row (DESIGN.md §4.1, §8.1)."""
+
+
+# Status strength for appending a newer link: a stronger status supersedes, a weaker one adds nothing.
+# A rejection is a decision and is never overridden automatically.
+_STATUS_RANK = {"fuzzy_candidate": 1, "manual_verified": 2, "exact": 2}
+
+
+def ensure_event(w, game_pk: int) -> int:
+    """The event for a gamePk, created if new. `w` inserts rows (clv.ingest.Writer)."""
+    row = w.conn.execute("SELECT event_id FROM event WHERE league = 'MLB' AND league_game_id = ?",
+                         (str(game_pk),)).fetchone()
+    if row:
+        return row[0]
+    return w.insert("event", dict(league="MLB", league_game_id=str(game_pk), created_ts_ms=w.now))
+
+
+def ensure_outcome(w, event_id: int, game_pk: int, team_id: int, abbreviation: str, name: str) -> int:
+    row = w.conn.execute("SELECT outcome_id FROM outcome WHERE event_id = ? AND team_id = ?",
+                         (event_id, team_id)).fetchone()
+    if row:
+        return row[0]
+    return w.insert("outcome", dict(event_id=event_id, kind="team_wins", team_id=team_id,
+                                    team_abbreviation=abbreviation, description=f"{name} win MLB game {game_pk}"))
+
+
+# What makes two instrument rows the same instrument. Labels are display text and may differ.
+_INSTRUMENT_IDENTITY = ("native_event_id", "operator", "kind", "payout_currency", "payout_cents_per_contract",
+                        "quantity_increment")
+
+
+def ensure_instrument(w, row: dict) -> tuple[int, tuple[str, str]]:
+    """(venue_instrument_id, (side0_id, side1_id)) for a native instrument, created from `row` if new.
+
+    An instrument stored earlier keeps its side order, which every tick, sighting and mapping
+    of it uses, so callers index sides by what this returns, never by their own response's
+    order: Novig's history and public routes need not list outcomes in the same order."""
+    have = w.conn.execute(
+        f"SELECT venue_instrument_id, side0_id, side1_id, {', '.join(_INSTRUMENT_IDENTITY)} FROM venue_instrument"
+        " WHERE venue = ? AND native_id = ?", (row["venue"], row["native_id"])).fetchone()
+    if have is None:
+        return w.insert("venue_instrument", row), (row["side0_id"], row["side1_id"])
+    differs = [k for i, k in enumerate(_INSTRUMENT_IDENTITY) if have[3 + i] != row.get(k)]
+    if {have[1], have[2]} != {row["side0_id"], row["side1_id"]}:
+        differs.append("sides")
+    if differs:
+        raise IdentityConflict(f"{row['venue']} instrument {row['native_id']}: {', '.join(differs)} differ from the"
+                               " stored instrument")
+    return have[0], (have[1], have[2])
+
+
+def side_head(conn: sqlite3.Connection, instrument_id: int, side: int) -> Mapping | None:
+    """One side's current mapping, as current_mappings resolves it, without reading every head."""
+    # A correction supersedes an observation of the same side (trigger mapping_supersedes_same_side),
+    # so this side's own rows, read through index mapping_instrument, decide its head.
+    side_rows = conn.execute("""
+        SELECT mapping_obs_id, outcome_id, polarity, mapping_status, settlement_equivalence, supersedes_id
+        FROM instrument_mapping_observation WHERE venue_instrument_id = ? AND side = ? ORDER BY mapping_obs_id""",
+        (instrument_id, side)).fetchall()
+    superseded = {r[5] for r in side_rows}
+    rows = [r[:5] for r in side_rows if r[0] not in superseded]
+    if not rows:
+        return None
+    oid, outcome, polarity, status, equivalence = rows[-1]
+    return Mapping(instrument_id, side, oid, outcome, polarity, status, equivalence,
+                   "mapping_conflict" if len(rows) > 1 else ineligible_reason(status, equivalence))
+
+
+def ensure_mapping(w, row: dict) -> int | None:
+    """Append a side's mapping observation unless it adds nothing.
+
+    No mapping yet: insert it. The same outcome and polarity under a stronger status (a hand-
+    checked games.toml link over an unverified historical candidate): insert it superseding
+    the head. Otherwise the head already says as much, and nothing is written. A different
+    outcome or polarity is a conflict for a correction to settle, never an automatic choice.
+
+    A stronger status changes only the status: a settlement verdict already checked on the head
+    carries over, with the rules it was checked against, unless this source brings different
+    rules text, which needs checking again."""
+    head = side_head(w.conn, row["venue_instrument_id"], row["side"])
+    if head is None:
+        return w.insert("instrument_mapping_observation", dict(row, supersedes_id=None))
+    if (head.outcome_id, head.polarity) != (row["outcome_id"], row["polarity"]):
+        raise IdentityConflict(f"instrument {row['venue_instrument_id']} side {row['side']}: mapped to outcome"
+                               f" {head.outcome_id} ({head.polarity}); this source says {row['outcome_id']}"
+                               f" ({row['polarity']}). Settle it with a correction")
+    if _STATUS_RANK.get(row["mapping_status"], 0) <= _STATUS_RANK.get(head.status, 3):
+        return None
+    new = dict(row, supersedes_id=head.mapping_obs_id)
+    if head.equivalence != "pending":
+        if row["settlement_equivalence"] not in ("pending", head.equivalence):
+            raise IdentityConflict(f"instrument {row['venue_instrument_id']} side {row['side']}: settlement checked"
+                                   f" {head.equivalence}; this source says {row['settlement_equivalence']}."
+                                   " Settle it with a correction")
+        rules = w.conn.execute("SELECT rules_native FROM instrument_mapping_observation WHERE mapping_obs_id = ?",
+                               (head.mapping_obs_id,)).fetchone()[0]
+        if row.get("rules_native") in (None, rules):
+            new.update(settlement_equivalence=head.equivalence, rules_native=rules,
+                       evidence=f"{row['evidence']}; settlement {head.equivalence} carried from mapping"
+                                f" observation {head.mapping_obs_id}")
+        else:
+            new.update(evidence=f"{row['evidence']}; settlement {head.equivalence} on mapping observation"
+                                f" {head.mapping_obs_id} was checked against other rules text: check again")
+    return w.insert("instrument_mapping_observation", new)
 
 
 def apply_corrections(conn: sqlite3.Connection, path: Path, now_ms: int) -> list[int]:

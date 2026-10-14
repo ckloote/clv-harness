@@ -1,17 +1,19 @@
-"""The V0 migrations and their DESIGN.md §8.4 tests (the ones that apply at stage V0).
+"""The migrations and their DESIGN.md §8.4 tests, from the stage that introduces each table.
 
-Trade deduplication (stream + CSV) arrives with trade_execution in A1/B1; the
-polarity round trip is in test_polarity.py.
+The polarity round trip is in test_polarity.py.
 """
 import sqlite3
+from fractions import Fraction
 
 import pytest
 
 from clv import db
+from clv.close.vwap import TradeVwap, trade_vwap
 
 FACTS = ["raw_artifact", "event", "event_alias", "outcome", "venue_instrument", "instrument_mapping_observation",
          "tick", "tick_level", "book_snapshot", "book_snapshot_level", "liveness_evidence", "collection_gap",
-         "off_observation", "signal", "entry", "entry_quote_observation", "entry_opposite_quote"]
+         "off_observation", "signal", "entry", "entry_quote_observation", "entry_opposite_quote", "trade_execution",
+         "trade_source_observation", "historical_candle"]
 DERIVED = ["fact_snapshot", "mapping_resolution", "off_resolution", "close_def", "close_price", "scoring_run",
            "clv_score"]
 H = "a" * 64
@@ -87,6 +89,10 @@ def seed(c) -> dict:
     if has_table(c, "entry_opposite_quote"):                                         # from 0003
         ids["opposite"] = ins(c, "entry_opposite_quote", entry_id=ids["entry"], side=0, price_native="100",
                               d_num=2, d_den=1, venue_ts_ms=T - 529_000, observed_ts_ms=T - 528_000, **cite)
+    if has_table(c, "trade_execution"):                                              # from 0004
+        ids["exec"] = execution(c, ids)
+        ids["maker"] = sighting(c, ids, ids["exec"])
+        ids["candle"] = candle(c, ids)
     ids["fs"] = ins(c, "fact_snapshot", created_ts_ms=T, high_water_json="{}", manifest_json="[]", manifest_sha256=H)
     ins(c, "mapping_resolution", fact_snapshot_id=ids["fs"], resolver_version="v0", venue_instrument_id=ids["novig"],
         side=1, mapping_obs_id=ids["map_novig"], primary_eligible=0, ineligible_reason="equivalence_pending",
@@ -117,6 +123,33 @@ def instrument(c, art, venue, native_id):
     return ins(c, "venue_instrument", venue=venue, native_id=native_id, native_event_id="ev", kind="exchange_book",
                side0_id="a", side0_label="A", side1_id="b", side1_label="B", payout_currency="USD",
                payout_cents_per_contract=1, first_seen_ts_ms=T, raw_artifact_id=art, raw_line=0)
+
+
+def execution(c, ids, **over):
+    """A Novig maker fill: 156.25 USD of payout on side 1 at 0.68 (cost 106.25)."""
+    row = dict(venue_instrument_id=ids["novig"], execution_key="novig:maker:o1:1:106.25:156.25:0", side=1,
+               price_native="0.68", price_num=17, price_den=25, qty_native="15625", payout_cents=15625,
+               method="m", created_ts_ms=T, raw_artifact_id=ids["art"], raw_line=1, raw_item=0)
+    row.update(over)
+    return ins(c, "trade_execution", **row)
+
+
+def sighting(c, ids, execution_id, **over):
+    row = dict(venue_instrument_id=ids["novig"], execution_id=execution_id, source="novig_csv", role="maker",
+               dual_side_group="mkt@2026-10-08T23:58:00.000Z", side=1, price_native="0.68", qty_native="156.25",
+               venue_ts_ms=T - 120_000, observed_ts_ms=T + 3_600_000, reconcile="key", method="m",
+               native_json="{}", raw_artifact_id=ids["art"], raw_line=1, raw_item=0)
+    row.update(over)
+    return ins(c, "trade_source_observation", **row)
+
+
+def candle(c, ids, **over):
+    row = dict(venue_instrument_id=ids["kalshi"], source="kalshi_hist", tier="historical", resolution_s=60,
+               interval_start_ms=T - 120_000, interval_end_ms=T - 60_000, side=0, bid_close_e4=5100,
+               ask_close_e4=5200, native_json="{}", observed_ts_ms=T, raw_artifact_id=ids["art"], raw_line=2,
+               raw_item=0)
+    row.update(over)
+    return ins(c, "historical_candle", **row)
 
 
 def mapping(c, instrument_id, side, outcome_id, polarity="direct", status="manual_verified", supersedes=None):
@@ -383,7 +416,7 @@ def test_0002_keeps_every_valid_0001_row_exactly_and_marks_it_legacy():
     score(c, ids, "kalshi", p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800)
     score(c, ids, "novig", **fresh_close(c, ids), clv_ev_num=-791, clv_ev_den=11800)
     old = {t: [tuple(r) for r in c.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in ("close_price", "clv_score")}
-    assert db.migrate(c) == [2, 3]
+    assert db.migrate(c) == [2, 3, 4]
     for t, rows in old.items():
         width = len(rows[0])
         assert [tuple(r)[:width] for r in c.execute(f"SELECT {', '.join(cols(c, t)[:width])} FROM {t} ORDER BY 1")] \
@@ -489,3 +522,88 @@ def test_quote_received_after_the_decision_is_not_known_at_it(conn):
     ins(conn, "entry_quote_observation", entry_id=ids["entry"], concept="execution_assumption", price_native="-120",
         d_entry_num=11, d_entry_den=6, observed_ts_ms=T - 485_000, latency_s=15, feasibility="unverified_historical",
         raw_artifact_id=ids["art"], raw_line=1)
+
+
+# -- B1: executions, sightings and candles (0004) -------------------------------------------------------
+
+def test_0004_adds_the_b1_tables_to_a_populated_database():
+    c = db.connect(":memory:")
+    db.migrate(c, upto=3)
+    ids = seed(c)
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-3] + DERIVED}
+    assert db.migrate(c) == [4]
+    assert {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before} == before
+    assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    sighting(c, ids, execution(c, ids))               # and the new tables take rows
+    candle(c, ids)
+
+
+def test_the_same_trade_via_stream_and_csv_twice_changes_neither_count_nor_vwap(conn):
+    # DESIGN.md §8.4: one economic execution, its CSV maker row and its stream trade, imported twice.
+    ids = seed(conn)
+    stream_art = ins(conn, "raw_artifact", source="novig", relpath="novig/2026-10-08/s.0001.jsonl.gz", sha256=H,
+                     bytes=10, frame_count=3, recorder_version="0.1.0", redaction_policy="r0-v1", unclean_close=0,
+                     parser_version="v0.1", ingested_ts_ms=T)
+    stream = dict(source="novig_stream", role="stream", native_trade_id="t1", dual_side_group=None,
+                  venue_ts_ms=T - 125_000, observed_ts_ms=T - 125_000, reconcile="rule_matched",
+                  qty_native="15625", raw_artifact_id=stream_art, raw_line=7, raw_item=0)
+    sighting(conn, ids, ids["exec"], **stream)
+    once = (conn.execute("SELECT count(*) FROM trade_execution").fetchone()[0],
+            trade_vwap(conn, ids["novig"], 1, T - 600_000, T))
+    for again in (lambda: execution(conn, ids),                     # the same key
+                  lambda: sighting(conn, ids, ids["exec"]),         # the same CSV row
+                  lambda: sighting(conn, ids, ids["exec"], **stream)):  # the same stream frame item
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+            again()
+    assert (conn.execute("SELECT count(*) FROM trade_execution").fetchone()[0],
+            trade_vwap(conn, ids["novig"], 1, T - 600_000, T)) == once
+    assert once[1] == TradeVwap(Fraction(17, 25), 1, 15625)
+    # The stream's time, 5 s before the file's, decides the window.
+    assert trade_vwap(conn, ids["novig"], 0, T - 125_000, T - 120_000) == TradeVwap(Fraction(8, 25), 1, 15625)
+
+
+@pytest.mark.parametrize("over", [
+    dict(execution_id=None),                          # a maker row must name its execution
+    dict(role="taker", reconcile="balanced"),         # a taker row names a group, not an execution
+    dict(reconcile="balanced"),                       # balanced and ambiguous are taker outcomes
+    dict(dual_side_group=None),                       # a CSV row always has its dual-side group
+    dict(source="novig_stream", role="stream"),       # a stream record has none
+    dict(native_json="not json"),
+])
+def test_invalid_sightings_are_rejected(conn, over):
+    ids = seed(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        row = dict(dict(execution_id=ids["exec"], raw_item=1), **over)
+        sighting(conn, ids, row.pop("execution_id"), **row)
+
+
+def test_a_taker_row_names_its_group_only(conn):
+    ids = seed(conn)
+    sighting(conn, ids, None, role="taker", side=0, price_native="0.32", reconcile="balanced", raw_item=1)
+    with pytest.raises(sqlite3.IntegrityError, match="another instrument"):
+        sighting(conn, ids, ids["exec"], venue_instrument_id=ids["kalshi"], raw_item=2)
+
+
+@pytest.mark.parametrize("over", [
+    dict(price_num=0),
+    dict(price_num=25),                               # a price of 1
+    dict(payout_cents=0),
+])
+def test_invalid_executions_are_rejected(conn, over):
+    ids = seed(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        execution(conn, ids, **dict(dict(execution_key="other", raw_item=3), **over))
+
+
+@pytest.mark.parametrize("over", [
+    dict(interval_start_ms=T - 60_000),               # DESIGN.md §8.3: start < end
+    dict(interval_start_ms=T - 180_000),              # not its resolution
+    dict(bid_close_e4=5300),                          # bid above ask
+    dict(ask_close_e4=10_001),
+    dict(bid_low_e4=5000, bid_high_e4=4900),
+    dict(tier="other"),
+])
+def test_invalid_candles_are_rejected(conn, over):
+    ids = seed(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        candle(conn, ids, **dict(dict(raw_item=1), **over))

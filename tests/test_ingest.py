@@ -13,7 +13,16 @@ import pytest
 from raw_recorder.archive import ArchiveWriter
 
 from clv import db
-from clv.ingest import IngestError, ingest_game
+from clv.identity import (
+    IdentityConflict,
+    correct_mapping,
+    ensure_event,
+    ensure_instrument,
+    ensure_mapping,
+    ensure_outcome,
+    side_head,
+)
+from clv.ingest import IngestError, Writer, ingest_game
 from clv.timeutil import iso_ms
 
 T = 1_791_504_000_000            # scheduled start 2026-10-09T00:00:00Z
@@ -425,6 +434,152 @@ def test_ingesting_twice_is_refused(recorded):
     c, _ = ingested(recorded)
     with pytest.raises(IngestError, match="already ingested"):
         ingest_game(c, root, PK, games, now_ms=NOW)
+
+
+# -- Identity shared with the historical import (clv.backfill) --------------------------------------
+
+def imported_first(c, kalshi_cents=100):
+    """The rows a historical import makes for this game before it is recorded live: the event,
+    its outcomes, the Novig market with its outcomes in the other order, and unverified links."""
+    w = Writer(c, NOW - 1)
+    art = w.insert("raw_artifact", dict(
+        source="novig_hist", relpath="novig_hist/2026-10-14/h.0001.jsonl.gz", sha256="b" * 64, bytes=1,
+        frame_count=1, recorder_version="0.1.0", redaction_policy="r0-v1", unclean_close=0, parser_version="v0.1",
+        ingested_ts_ms=NOW - 1))
+    cite = dict(raw_artifact_id=art, raw_line=0)
+    event = ensure_event(w, PK)
+    cle = ensure_outcome(w, event, PK, 114, "CLE", "Cleveland Guardians")
+    cws = ensure_outcome(w, event, PK, 145, "CWS", "Chicago White Sox")
+    novig, _ = ensure_instrument(w, dict(
+        venue="novig", native_id=M, native_event_id="ev1", operator=None, kind="exchange_book", side0_id=CLE,
+        side0_label="CLE", side1_id=CWS, side1_label="CWS", payout_currency="USD", payout_cents_per_contract=1,
+        quantity_increment="1", first_seen_ts_ms=T - 86_400_000, **cite))
+    kalshi, _ = ensure_instrument(w, dict(
+        venue="kalshi", native_id="KX-CLE", native_event_id="KX", operator=None, kind="exchange_book",
+        side0_id="yes", side0_label="YES", side1_id="no", side1_label="NO", payout_currency="USD",
+        payout_cents_per_contract=kalshi_cents, quantity_increment="0.01", first_seen_ts_ms=T - 86_400_000, **cite))
+    for iid, side, outcome, polarity in ((novig, 0, cle, "direct"), (novig, 1, cws, "direct"),
+                                         (kalshi, 0, cle, "direct"), (kalshi, 1, cle, "complement")):
+        ensure_mapping(w, dict(venue_instrument_id=iid, side=side, outcome_id=outcome, polarity=polarity,
+                               mapping_status="fuzzy_candidate", settlement_equivalence="pending", method="backfill",
+                               evidence="rule", rules_native=None, effective_from_ms=None, observed_ts_ms=NOW - 1,
+                               **cite))
+    return novig
+
+
+def test_a_live_ingest_shares_the_identity_a_historical_import_made(recorded):
+    root, games = recorded
+    c = db.connect(":memory:")
+    db.migrate(c)
+    novig = imported_first(c)
+    ingest_game(c, root, PK, games, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM event") == [(1,)]
+    assert q(c, "SELECT count(*) FROM outcome") == [(2,)]
+    assert q(c, "SELECT side0_id, side1_id FROM venue_instrument WHERE venue_instrument_id = ?", novig) == [(CLE, CWS)]
+    # The stored side order holds: side 0 is CLE, so the snapshot's CLE bid (0.51) is bid0.
+    assert q(c, "SELECT bid0_e4, bid1_e4 FROM tick WHERE source = 'stream' ORDER BY observed_ts_ms LIMIT 1") == \
+        [(5100, 4800)]
+    # The hand-checked games.toml link supersedes each unverified one; nothing else is added.
+    heads = q(c, """SELECT v.native_id, m.side, o.team_abbreviation, m.polarity, m.mapping_status, p.mapping_status
+                    FROM instrument_mapping_observation m JOIN venue_instrument v USING (venue_instrument_id)
+                    JOIN outcome o USING (outcome_id)
+                    JOIN instrument_mapping_observation p ON p.mapping_obs_id = m.supersedes_id
+                    WHERE v.venue = ? OR v.native_id = ? ORDER BY 1, 2""", "novig", "KX-CLE")
+    assert heads == [("KX-CLE", 0, "CLE", "direct", "manual_verified", "fuzzy_candidate"),
+                     ("KX-CLE", 1, "CLE", "complement", "manual_verified", "fuzzy_candidate"),
+                     (M, 0, "CLE", "direct", "manual_verified", "fuzzy_candidate"),
+                     (M, 1, "CWS", "direct", "manual_verified", "fuzzy_candidate")]
+    with pytest.raises(IngestError, match="already ingested"):
+        ingest_game(c, root, PK, games, now_ms=NOW)
+
+
+def test_an_instrument_that_differs_from_the_stored_one_is_refused(recorded):
+    root, games = recorded
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c, kalshi_cents=1)
+    with pytest.raises(IngestError, match="KX-CLE: payout_cents_per_contract differ"):
+        ingest_game(c, root, PK, games, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM tick") == [(0,)]         # nothing of the game was written
+
+
+def test_a_link_that_names_another_outcome_is_a_conflict_not_a_choice():
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    w = Writer(c, NOW - 1)
+    kalshi = q(c, "SELECT venue_instrument_id FROM venue_instrument WHERE native_id = 'KX-CLE'")[0][0]
+    cws = q(c, "SELECT outcome_id FROM outcome WHERE team_abbreviation = 'CWS'")[0][0]
+    with pytest.raises(IdentityConflict, match="Settle it with a correction"):
+        ensure_mapping(w, dict(venue_instrument_id=kalshi, side=0, outcome_id=cws, polarity="direct",
+                               mapping_status="manual_verified", settlement_equivalence="pending", method="m",
+                               evidence="e", rules_native=None, effective_from_ms=None, observed_ts_ms=NOW))
+
+
+def test_a_status_upgrade_keeps_the_settlement_verdict_already_checked(recorded):
+    # The historical link's settlement rules were checked before the live ingest verified its
+    # identity: the stronger status supersedes it, and the verdict carries over (PR #15 review).
+    root, games = recorded
+    c = db.connect(":memory:")
+    db.migrate(c)
+    novig = imported_first(c)
+    for side in (0, 1):
+        correct_mapping(c, "novig", M, side, evidence="rules read", method="manual", now_ms=NOW - 1,
+                        settlement_equivalence="identical")
+    ingest_game(c, root, PK, games, now_ms=NOW)
+    for side in (0, 1):
+        head = side_head(c, novig, side)
+        assert (head.status, head.equivalence, head.ineligible_reason) == ("manual_verified", "identical", None)
+        (evidence,) = q(c, "SELECT evidence FROM instrument_mapping_observation WHERE mapping_obs_id = ?",
+                        head.mapping_obs_id)
+        assert "settlement identical carried from mapping observation" in evidence[0]
+
+
+def upgrade(c, rules, equivalence="pending"):
+    w = Writer(c, NOW)
+    kalshi = q(c, "SELECT venue_instrument_id FROM venue_instrument WHERE native_id = 'KX-CLE'")[0][0]
+    cle = q(c, "SELECT outcome_id FROM outcome WHERE team_abbreviation = 'CLE'")[0][0]
+    ensure_mapping(w, dict(venue_instrument_id=kalshi, side=0, outcome_id=cle, polarity="direct",
+                           mapping_status="manual_verified", settlement_equivalence=equivalence, method="m",
+                           evidence="e", rules_native=rules, effective_from_ms=None, observed_ts_ms=NOW))
+    return side_head(c, kalshi, 0)
+
+
+def test_a_verdict_checked_against_other_rules_text_is_checked_again():
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    correct_mapping(c, "kalshi", "KX-CLE", 0, evidence="rules read", method="manual", now_ms=NOW - 1,
+                    settlement_equivalence="identical")
+    head = upgrade(c, "rules text the check never saw")
+    assert (head.status, head.equivalence) == ("manual_verified", "pending")
+
+
+def test_two_checked_verdicts_that_disagree_are_a_conflict():
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    correct_mapping(c, "kalshi", "KX-CLE", 0, evidence="rules read", method="manual", now_ms=NOW - 1,
+                    settlement_equivalence="identical")
+    with pytest.raises(IdentityConflict, match="settlement checked identical"):
+        upgrade(c, None, "not_equivalent")
+
+
+def test_one_mapping_lookup_reads_only_its_own_side():
+    # ensure_mapping resolves one side's head through index mapping_instrument, never by reading
+    # every head (PR #15 review): no query it runs scans the mapping table.
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    ran = []
+    c.set_trace_callback(ran.append)
+    upgrade(c, None)
+    c.set_trace_callback(None)
+    reads = [s for s in ran if s.lstrip().upper().startswith("SELECT") and "instrument_mapping_observation" in s]
+    assert reads
+    for sql in reads:
+        plan = [r[-1] for r in q(c, f"EXPLAIN QUERY PLAN {sql}")]
+        assert not any(p.startswith("SCAN") and "mapping" in p for p in plan), (sql, plan)
 
 
 # -- The recorded golden-game candidate (local only) ---------------------------------------------------
