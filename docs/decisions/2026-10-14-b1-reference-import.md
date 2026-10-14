@@ -53,8 +53,28 @@ Docs and PRs carry aggregate counts only, never per-game prices, and test fixtur
 
 ## Results
 
-To be filled in from the pilot (August 2026 and B0's sample days) and the full run:
-- markets listed;
-- links: clean, edge and excluded per venue;
-- approved;
-- the coverage waterfall's final counts per close family.
+**Pilot, 2026-10-13** (August 2026 plus B0's September and October days; aggregate counts only). It was loaded into a scratch database with every proposed link applied, as an approval would.
+
+- **Fetch:** 652 MB archived, no failed requests.
+  - Kalshi: 1,076 markets in range, out of 9,376 listed (about 4,690 games).
+  - Novig: 36 daily files and 491 MLB moneyline markets.
+- **Links, across every listed market:**
+  - Kalshi: 4,475 events clean, 197 for review, 16 excluded. The review cases are mostly doubleheaders (100). The exclusions are cancelled games and All-Star events.
+  - Novig: 473 markets clean, 18 for review.
+  - Some April 2025 Kalshi markets have a `close_time` almost a year after their game. The rule finds no game for them and lists them for review.
+- **Data, for the pilot's linked games, before their first pitch:**
+  - **Kalshi:** 998 markets, 1.06M candles and 1.93M executions. Another 8.3M trades and 170k candles were after the first pitch and not loaded. No two tiers' candles disagreed.
+  - **Novig executions:** 384,530 MAKER executions.
+  - **Novig TAKER rows:** 308,034 balanced and 6,603 ambiguous (2%).
+  - **Stream:** all 916 pregame stream trades of the recorded games matched a MAKER row.
+- **Timing:** the data import took 11 minutes, the link step 25 s and the coverage table 8 s.
+- **Coverage, 504 games with a trusted off:**
+  - **Kalshi:** a candle wholly before the cutoff for 440 of the 440 games with a verified link. All 440 also have one at the 6 h, 1 h and 15 min offsets, and 427 at 24 h.
+  - **Novig:** 401 of 413 verified games are VWAP-eligible.
+- **Off disagreement:** 41 games (8%) are untrusted as `off_disagreement`. In those, StatsAPI's "In Progress" status precedes the first pitch by more than `off.max_source_disagreement_s` (120 s). This is for B2 to review against the A2 agreement report.
+- **Against B0's 24 games:**
+  - Novig fills and Kalshi trades in the window match B0 within a few counts per game.
+  - They differ where B1's cutoff sits at the earliest start claim, not the first pitch.
+  - B0's hand-mapped edge cases come out as cases for review.
+
+**Full run:** to be filled in once it has been fetched, reviewed and approved.
