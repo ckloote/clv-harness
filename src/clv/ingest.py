@@ -37,7 +37,14 @@ from pathlib import Path
 from clv import archive, gaps, mlb
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
-from clv.identity import novig_abbr
+from clv.identity import (
+    IdentityConflict,
+    ensure_event,
+    ensure_instrument,
+    ensure_mapping,
+    ensure_outcome,
+    novig_abbr,
+)
 from clv.off import sources
 from clv.scoring import odds_api
 from clv.timeutil import iso_ms
@@ -274,16 +281,24 @@ def _poll_reasons(poll_gaps: list[gaps.Gap]):
 
 def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: Path = GAMES,
                 now_ms: int | None = None) -> IngestReport:
-    """Ingest one game in a single transaction. Refuses a game already in the database."""
+    """Ingest one game in a single transaction. Refuses a game whose recording is already ingested.
+
+    The game's identity rows may already exist, from the historical import (clv.backfill):
+    they are shared, not duplicated (clv.identity.ensure_*)."""
     now = int(time.time() * 1000) if now_ms is None else now_ms
     g = load_game(game_pk, games_path, root)
     lo, hi = capture_window(g)
-    if conn.execute("SELECT 1 FROM event WHERE league = 'MLB' AND league_game_id = ?", (str(game_pk),)).fetchone():
+    if conn.execute("""SELECT 1 FROM event e JOIN event_alias a USING (event_id) JOIN raw_artifact r USING (raw_artifact_id)
+                       WHERE e.league = 'MLB' AND e.league_game_id = ? AND r.source = 'mlb_statsapi'""",
+                    (str(game_pk),)).fetchone():
         raise IngestError(f"gamePk {game_pk} is already ingested; ingest into a clean database")
     w = Writer(conn, now)
     conn.execute("BEGIN")
     try:
-        report = _ingest(w, Path(root), g, lo, hi)
+        try:
+            report = _ingest(w, Path(root), g, lo, hi)
+        except IdentityConflict as exc:
+            raise IngestError(str(exc)) from exc
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
@@ -307,15 +322,13 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
     if not feeds:
         raise IngestError(f"no StatsAPI feed for gamePk {game_pk} in the archive")
     first_x, first = feeds[0]
-    event_id = w.insert("event", dict(league="MLB", league_game_id=str(game_pk), created_ts_ms=w.now))
+    event_id = ensure_event(w, game_pk)
     report = IngestReport(game_pk, event_id)
     outcome_by_team: dict[int, int] = {}
     abbr_to_outcome: dict[str, int] = {}
     name_to_outcome: dict[str, int] = {}
     for team in (first.away, first.home):
-        oid = w.insert("outcome", dict(event_id=event_id, kind="team_wins", team_id=team.id,
-                                       team_abbreviation=team.abbreviation,
-                                       description=f"{team.name} win MLB game {game_pk}"))
+        oid = ensure_outcome(w, event_id, game_pk, team.id, team.abbreviation, team.name)
         outcome_by_team[team.id] = oid
         abbr_to_outcome[team.abbreviation] = oid
         name_to_outcome[team.name] = oid
@@ -368,7 +381,7 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
             raise IngestError(f"no Novig catalog response for market {market} in the capture window")
         x, m = catalog[market]
         (s0, n0, _), (s1, n1, _) = m.outcomes
-        iid = w.insert("venue_instrument", dict(
+        iid, (s0, s1) = ensure_instrument(w, dict(
             venue="novig", native_id=market, native_event_id=m.event, operator=None, kind="exchange_book",
             side0_id=s0, side0_label=n0, side1_id=s1, side1_label=n1, payout_currency="USD",
             payout_cents_per_contract=int(novig.PAYOUT_USD_PER_CONTRACT * 100), quantity_increment="1",
@@ -380,15 +393,16 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
             status=link_status, method=link_method, evidence=link_evidence, observed_ts_ms=m.recv_ts_ms,
             **w.cited(x.body.ref)))
         by_abbr = {novig_abbr(a): oid for a, oid in abbr_to_outcome.items()}
-        for side, (_, name, _) in enumerate(m.outcomes):
+        name_of = {oid: name for oid, name, _ in m.outcomes}
+        for side, outcome in enumerate((s0, s1)):
+            name = name_of[outcome]
             if name not in by_abbr:
                 raise IngestError(f"Novig outcome {name!r} names neither team of gamePk {game_pk}")
-            w.insert("instrument_mapping_observation", dict(
+            ensure_mapping(w, dict(
                 venue_instrument_id=iid, side=side, outcome_id=by_abbr[name], polarity="direct",
                 mapping_status=link_status, settlement_equivalence="pending",
                 method="outcome name = team abbreviation", evidence=f"Novig outcome {name!r}; market {link_evidence}",
-                rules_native=None, effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None,
-                **w.cited(x.body.ref)))
+                rules_native=None, effective_from_ms=None, observed_ts_ms=w.now, **w.cited(x.body.ref)))
         novig_books[market] = _Books(w, iid, f"novig:market:{market}", (s0, s1),
                                      int(novig.PAYOUT_USD_PER_CONTRACT * 100))
         novig_status[market] = m.status
@@ -449,11 +463,13 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
         cents = m.notional_value_dollars * 100
         if cents != cents.to_integral_value():
             raise IngestError(f"{ticker}: notional {m.notional_value_dollars} is not a whole number of cents")
-        iid = w.insert("venue_instrument", dict(
+        iid, sides = ensure_instrument(w, dict(
             venue="kalshi", native_id=ticker, native_event_id=m.event_ticker, operator=None, kind="exchange_book",
             side0_id="yes", side0_label=f"YES: {m.title}", side1_id="no", side1_label=f"NO: {m.title}",
             payout_currency="USD", payout_cents_per_contract=int(cents), quantity_increment="0.01",
             first_seen_ts_ms=m.recv_ts_ms, **w.cited(x.body.ref)))
+        if sides != kalshi.SIDES:
+            raise IngestError(f"Kalshi {ticker} is stored with sides {sides}, not {kalshi.SIDES}")
         if not w.conn.execute("SELECT 1 FROM event_alias WHERE event_id = ? AND provider = 'kalshi' AND provider_event_id = ?",
                               (event_id, m.event_ticker)).fetchone():
             w.insert("event_alias", dict(
@@ -467,12 +483,12 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
             raise IngestError(f"Kalshi ticker {ticker} names neither team of gamePk {game_pk}")
         rules = "\n\n".join(r for r in (m.rules_primary, m.rules_secondary) if r) or None
         for side, polarity in ((0, "direct"), (1, "complement")):
-            w.insert("instrument_mapping_observation", dict(
+            ensure_mapping(w, dict(
                 venue_instrument_id=iid, side=side, outcome_id=abbr_to_outcome[team], polarity=polarity,
                 mapping_status=link_status, settlement_equivalence="pending",
                 method="ticker team suffix = team abbreviation; YES direct, NO its complement",
                 evidence=f"Kalshi {ticker} ({m.title!r}); ticker {link_evidence}", rules_native=rules,
-                effective_from_ms=None, observed_ts_ms=w.now, supersedes_id=None, **w.cited(x.body.ref)))
+                effective_from_ms=None, observed_ts_ms=w.now, **w.cited(x.body.ref)))
         kbooks[ticker] = _Books(w, iid, f"kalshi:market:{ticker}", kalshi.SIDES, int(cents))
         kstatus[ticker] = m.status
     kalshi_gaps = gaps.poll_gaps("kalshi", kx, {"orderbook"})

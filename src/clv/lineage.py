@@ -16,7 +16,7 @@ import sqlite3
 FACT_TABLES = ("raw_artifact", "event", "event_alias", "outcome", "venue_instrument",
                "instrument_mapping_observation", "tick", "tick_level", "book_snapshot", "book_snapshot_level",
                "liveness_evidence", "collection_gap", "off_observation", "signal", "entry", "entry_quote_observation",
-               "entry_opposite_quote")
+               "entry_opposite_quote", "trade_execution", "trade_source_observation", "historical_candle")
 
 
 def canonical_json(obj) -> str:
