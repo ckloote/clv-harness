@@ -20,7 +20,9 @@ live recorder service.
 that completed with a 2xx is not sent again, and anything that failed (a
 timeout, a 5xx, DNS at wake) is retried. Rerunning after an interruption
 finishes the job. Listings that can still change (the cutoff, the Kalshi
-listings, Novig's index, the current schedule month) are fetched every run.
+listings, Novig's index) are fetched every run, and a schedule month until a
+copy fetched after the month's games ended is archived. Two runs that fetched
+the same request resolve to the later response.
 The cutoff moves forward over time. A market fetched on the live tier before
 it moved is not fetched again on the historical one, unless the cutoff now
 falls inside its trades window: those trades are fetched again, split at the
@@ -81,16 +83,24 @@ def summarize(purpose: str, body: str):
     return True
 
 
+def clock() -> int:
+    """Milliseconds now: the backfill archive's frame stamps and the freshness of what it
+    holds are read on this one clock."""
+    return int(time.time() * 1000)
+
+
 def _key(source: str, url: str) -> tuple[str, str, str]:
     """A request's identity as its rest_request event records it (origin, path, redacted query)."""
     parts = redact.url_parts(url)
     return source, parts["origin"] + parts["path"], parts["query"]
 
 
-def load_done(root: Path) -> dict[tuple[str, str, str], object]:
+def load_done(root: Path) -> dict[tuple[str, str, str], tuple[object, int]]:
     """What earlier runs fetched: every request in the sealed archive that completed with a
-    2xx, keyed by source, URL and query, with its summary. Reads one segment at a time."""
-    done: dict[tuple[str, str, str], object] = {}
+    2xx, keyed by source, URL and query, with its summary and when it completed. A request
+    fetched more than once keeps its latest response: segment names carry random session
+    IDs, so their order says nothing about time. Reads one segment at a time."""
+    done: dict[tuple[str, str, str], tuple[object, int]] = {}
     for source in SOURCES.values():
         pending: dict[str, dict] = {}
         for path in sorted(Path(root).glob(f"{source}/*/*{SEALED_SUFFIX}")):
@@ -103,9 +113,10 @@ def load_done(root: Path) -> dict[tuple[str, str, str], object]:
                         x = pending.pop(f["conn_id"])
                         status = meta.get("status")
                         if status is not None and 200 <= status < 300 and "body" in x:
-                            s = x["start"]
-                            done[(source, s["origin"] + s["path"], s["query"])] = summarize(s.get("purpose", ""),
-                                                                                            x["body"])
+                            s, at = x["start"], f["recv_ts_ms"]
+                            key = (source, s["origin"] + s["path"], s["query"])
+                            if key not in done or done[key][1] <= at:
+                                done[key] = (summarize(s.get("purpose", ""), x["body"]), at)
                 elif f["dir"] == "in" and f["conn_id"] in pending:
                     pending[f["conn_id"]]["body"] = f["frame"]
     return done
@@ -139,16 +150,17 @@ class Fetcher:
 
     async def get(self, source: str, host: str, base: str, path: str, *, params: dict | None = None,
                   purpose: str, subjects: Iterable[str] = (), signer: Signer | None = None, fresh: bool = False,
-                  same_as: Iterable[str] = ()):
+                  same_as: Iterable[str] = (), final_after_ms: int | None = None):
         """The request's summary (the body, for the kept purposes), or None if it failed.
-        `same_as`: other paths that return the same data, already fetched counts as done."""
+        `same_as`: other paths that return the same data, already fetched counts as done.
+        `final_after_ms`: a copy fetched before then may have changed since, and is fetched again."""
         query = build_query(params)
         key = _key(source, base.rstrip("/") + path + (f"?{query}" if query else ""))
         if not fresh:
             for k in [key] + [_key(source, base.rstrip("/") + p + (f"?{query}" if query else "")) for p in same_as]:
-                if k in self.done:
+                if k in self.done and (final_after_ms is None or self.done[k][1] >= final_after_ms):
                     self.stats.skipped[source] += 1
-                    return self.done[k]
+                    return self.done[k][0]
         res = None
         for attempt in range(self.retries):
             await self._pace(host)
@@ -158,9 +170,9 @@ class Fetcher:
                 break
             await asyncio.sleep(self.retry_wait_s * (attempt + 1))
         if res.ok and res.body is not None:
-            self.done[key] = summarize(purpose, res.body.decode("utf-8", "surrogateescape"))
+            self.done[key] = (summarize(purpose, res.body.decode("utf-8", "surrogateescape")), clock())
             self.stats.fetched[source] += 1
-            return self.done[key]
+            return self.done[key][0]
         self.stats.failed.append((source, path, query, res.status or res.failure))
         return None
 
@@ -203,10 +215,13 @@ async def mlb(f: Fetcher, cfg: dict, base: str, ranges: Ranges, today: date) -> 
         for lo, hi in _months(season):
             if lo > today:
                 continue
+            # A month's games end by two days after it (a late game, a suspended one resumed):
+            # only a copy fetched after that is final, however long ago the month was.
+            final = datetime.combine(hi + timedelta(days=3), datetime.min.time(), timezone.utc)
             body = await f.get("mlb_hist", "mlb", base, "/api/v1/schedule", purpose="schedule",
                                params={"sportId": "1", "startDate": lo.isoformat(), "endDate": hi.isoformat(),
                                        "gameType": cfg["game_types"]},
-                               subjects=["mlb:schedule"], fresh=hi >= today - timedelta(days=2))
+                               subjects=["mlb:schedule"], final_after_ms=int(final.timestamp() * 1000))
             for day in json.loads(body).get("dates", []) if body else ():
                 for g in day.get("games", []):
                     if g["gamePk"] not in games or g["status"].get("detailedState") == "Final":
