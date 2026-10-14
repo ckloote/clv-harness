@@ -15,10 +15,12 @@ from raw_recorder.archive import ArchiveWriter
 from clv import db
 from clv.identity import (
     IdentityConflict,
+    correct_mapping,
     ensure_event,
     ensure_instrument,
     ensure_mapping,
     ensure_outcome,
+    side_head,
 )
 from clv.ingest import IngestError, Writer, ingest_game
 from clv.timeutil import iso_ms
@@ -512,6 +514,72 @@ def test_a_link_that_names_another_outcome_is_a_conflict_not_a_choice():
         ensure_mapping(w, dict(venue_instrument_id=kalshi, side=0, outcome_id=cws, polarity="direct",
                                mapping_status="manual_verified", settlement_equivalence="pending", method="m",
                                evidence="e", rules_native=None, effective_from_ms=None, observed_ts_ms=NOW))
+
+
+def test_a_status_upgrade_keeps_the_settlement_verdict_already_checked(recorded):
+    # The historical link's settlement rules were checked before the live ingest verified its
+    # identity: the stronger status supersedes it, and the verdict carries over (PR #15 review).
+    root, games = recorded
+    c = db.connect(":memory:")
+    db.migrate(c)
+    novig = imported_first(c)
+    for side in (0, 1):
+        correct_mapping(c, "novig", M, side, evidence="rules read", method="manual", now_ms=NOW - 1,
+                        settlement_equivalence="identical")
+    ingest_game(c, root, PK, games, now_ms=NOW)
+    for side in (0, 1):
+        head = side_head(c, novig, side)
+        assert (head.status, head.equivalence, head.ineligible_reason) == ("manual_verified", "identical", None)
+        (evidence,) = q(c, "SELECT evidence FROM instrument_mapping_observation WHERE mapping_obs_id = ?",
+                        head.mapping_obs_id)
+        assert "settlement identical carried from mapping observation" in evidence[0]
+
+
+def upgrade(c, rules, equivalence="pending"):
+    w = Writer(c, NOW)
+    kalshi = q(c, "SELECT venue_instrument_id FROM venue_instrument WHERE native_id = 'KX-CLE'")[0][0]
+    cle = q(c, "SELECT outcome_id FROM outcome WHERE team_abbreviation = 'CLE'")[0][0]
+    ensure_mapping(w, dict(venue_instrument_id=kalshi, side=0, outcome_id=cle, polarity="direct",
+                           mapping_status="manual_verified", settlement_equivalence=equivalence, method="m",
+                           evidence="e", rules_native=rules, effective_from_ms=None, observed_ts_ms=NOW))
+    return side_head(c, kalshi, 0)
+
+
+def test_a_verdict_checked_against_other_rules_text_is_checked_again():
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    correct_mapping(c, "kalshi", "KX-CLE", 0, evidence="rules read", method="manual", now_ms=NOW - 1,
+                    settlement_equivalence="identical")
+    head = upgrade(c, "rules text the check never saw")
+    assert (head.status, head.equivalence) == ("manual_verified", "pending")
+
+
+def test_two_checked_verdicts_that_disagree_are_a_conflict():
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    correct_mapping(c, "kalshi", "KX-CLE", 0, evidence="rules read", method="manual", now_ms=NOW - 1,
+                    settlement_equivalence="identical")
+    with pytest.raises(IdentityConflict, match="settlement checked identical"):
+        upgrade(c, None, "not_equivalent")
+
+
+def test_one_mapping_lookup_reads_only_its_own_side():
+    # ensure_mapping resolves one side's head through index mapping_instrument, never by reading
+    # every head (PR #15 review): no query it runs scans the mapping table.
+    c = db.connect(":memory:")
+    db.migrate(c)
+    imported_first(c)
+    ran = []
+    c.set_trace_callback(ran.append)
+    upgrade(c, None)
+    c.set_trace_callback(None)
+    reads = [s for s in ran if s.lstrip().upper().startswith("SELECT") and "instrument_mapping_observation" in s]
+    assert reads
+    for sql in reads:
+        plan = [r[-1] for r in q(c, f"EXPLAIN QUERY PLAN {sql}")]
+        assert not any(p.startswith("SCAN") and "mapping" in p for p in plan), (sql, plan)
 
 
 # -- The recorded golden-game candidate (local only) ---------------------------------------------------

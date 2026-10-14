@@ -235,7 +235,11 @@ def ensure_mapping(w, row: dict) -> int | None:
     No mapping yet: insert it. The same outcome and polarity under a stronger status (a hand-
     checked games.toml link over an unverified historical candidate): insert it superseding
     the head. Otherwise the head already says as much, and nothing is written. A different
-    outcome or polarity is a conflict for a correction to settle, never an automatic choice."""
+    outcome or polarity is a conflict for a correction to settle, never an automatic choice.
+
+    A stronger status changes only the status: a settlement verdict already checked on the head
+    carries over, with the rules it was checked against, unless this source brings different
+    rules text, which needs checking again."""
     head = side_head(w.conn, row["venue_instrument_id"], row["side"])
     if head is None:
         return w.insert("instrument_mapping_observation", dict(row, supersedes_id=None))
@@ -243,9 +247,24 @@ def ensure_mapping(w, row: dict) -> int | None:
         raise IdentityConflict(f"instrument {row['venue_instrument_id']} side {row['side']}: mapped to outcome"
                                f" {head.outcome_id} ({head.polarity}); this source says {row['outcome_id']}"
                                f" ({row['polarity']}). Settle it with a correction")
-    if _STATUS_RANK.get(row["mapping_status"], 0) > _STATUS_RANK.get(head.status, 3):
-        return w.insert("instrument_mapping_observation", dict(row, supersedes_id=head.mapping_obs_id))
-    return None
+    if _STATUS_RANK.get(row["mapping_status"], 0) <= _STATUS_RANK.get(head.status, 3):
+        return None
+    new = dict(row, supersedes_id=head.mapping_obs_id)
+    if head.equivalence != "pending":
+        if row["settlement_equivalence"] not in ("pending", head.equivalence):
+            raise IdentityConflict(f"instrument {row['venue_instrument_id']} side {row['side']}: settlement checked"
+                                   f" {head.equivalence}; this source says {row['settlement_equivalence']}."
+                                   " Settle it with a correction")
+        rules = w.conn.execute("SELECT rules_native FROM instrument_mapping_observation WHERE mapping_obs_id = ?",
+                               (head.mapping_obs_id,)).fetchone()[0]
+        if row.get("rules_native") in (None, rules):
+            new.update(settlement_equivalence=head.equivalence, rules_native=rules,
+                       evidence=f"{row['evidence']}; settlement {head.equivalence} carried from mapping"
+                                f" observation {head.mapping_obs_id}")
+        else:
+            new.update(evidence=f"{row['evidence']}; settlement {head.equivalence} on mapping observation"
+                                f" {head.mapping_obs_id} was checked against other rules text: check again")
+    return w.insert("instrument_mapping_observation", new)
 
 
 def apply_corrections(conn: sqlite3.Connection, path: Path, now_ms: int) -> list[int]:
