@@ -121,12 +121,37 @@ def cmd_catalog(args) -> int:
 TICK_S = 1.0
 
 
+class SealFailed(RuntimeError):
+    """A segment could not be sealed: its completed requests are not in the sealed archive."""
+
+    def __init__(self, errors: list[BaseException]):
+        super().__init__("; ".join(str(e) for e in errors))
+        self.errors = errors
+
+
 async def _tick(archive: ArchiveWriter) -> None:
     """The archive's housekeeping, as the recorder runs it: fsync on cadence and seal a
-    segment when it is due, even while its source is idle or finished."""
+    segment when it is due, even while its source is idle or finished. A failed seal stops
+    the run: what it held is missing from the sealed archive, and when the disk is full,
+    everything after it would fail too."""
     while True:
         archive.tick()
+        if archive.seal_errors:
+            raise SealFailed(list(archive.seal_errors))
         await asyncio.sleep(TICK_S)
+
+
+def _close(archive: ArchiveWriter) -> list[BaseException]:
+    """Close the archive; every seal that failed, during the run or at close, once each."""
+    errors = list(archive.seal_errors)
+    try:
+        archive.close()
+    except Exception as exc:            # drain() re-raises a seal pending at close
+        errors.append(exc)
+    for exc in archive.seal_errors + errors:
+        if not any(exc is e for e in errors):
+            errors.append(exc)
+    return errors
 
 
 async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
@@ -149,16 +174,31 @@ async def _backfill(cfg: Config, sources: list[str], ranges) -> int:
         archive = ArchiveWriter(root, session_id=session_id, segment_max_s=cfg.backfill["segment_max_s"],
                                 fsync_interval_s=cfg.params.fsync_interval_s, clock=backfill.clock)
         housekeeping = asyncio.create_task(_tick(archive))
+        fetch = None
         try:
             async with aiohttp.ClientSession() as http:
                 rests = {s: RestRecorder(http, archive.stream(s, f"backfill-{session_id[:12]}"),
                                          timeout_s=cfg.backfill["rest_timeout_s"]) for s in backfill.SOURCES.values()}
-                stats, seen = await backfill.run(rests, done, cfg, sources, ranges, signer)
+                fetch = asyncio.create_task(backfill.run(rests, done, cfg, sources, ranges, signer))
+                await asyncio.wait({fetch, housekeeping}, return_when=asyncio.FIRST_COMPLETED)
+                if housekeeping.done():         # it ends only when a seal failed
+                    housekeeping.exception()    # reported below, from archive.seal_errors
+                    fetch.cancel()
+                    await asyncio.gather(fetch, return_exceptions=True)
         finally:
             housekeeping.cancel()
-            archive.close()
+            if fetch is not None and not fetch.done():
+                fetch.cancel()
+            seal_errors = _close(archive)
     finally:
         lock.release()
+    if seal_errors:
+        for exc in seal_errors:
+            print(f"sealing failed: {exc!r}", file=sys.stderr)
+        print("the unsealed segments stay as .jsonl.part; free space or fix the cause, then rerun: the next"
+              " run seals them (recover_orphans) and resumes", file=sys.stderr)
+        return 2
+    stats, seen = fetch.result()
     for source in sources:
         name = backfill.SOURCES[source]
         print(f"{source}: fetched {stats.fetched[name]}, already archived {stats.skipped[name]}, "
