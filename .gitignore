@@ -8,6 +8,10 @@ __pycache__/
 # Secrets must never be committed.
 *.pem
 .env
+# The recorded golden game's expected trace: vendor-derived, written locally by tests/golden.py.
+/tests/fixtures/golden/849832/expected.json
+# B1 historical reference archive (raw-recorder backfill): vendor data, never committed.
+/archive-hist/
 # Novig Paper (play-money) test archive: never evidence, never committed.
 archive-paper/
 # B0 feasibility inputs and caches (tools/b0): large, re-fetchable, never committed.
