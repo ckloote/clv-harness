@@ -9,11 +9,11 @@ the golden output; run 3 must reproduce run 1 exactly.
 - `v0-synthetic`: a synthetic game in the real wire shapes, committed with its
   archive. Its numbers are checked by hand (tests/test_golden_game.py): the
   Novig close is the DESIGN.md §2.4 worked fixture.
-- `849832`: the recorded ALDS Game 4. The repository is public, so its raw
-  frames stay local (vendor data is not republished); only its spec files and
-  expected trace (numbers, frame refs and frame hashes, no book levels) are
-  committed, and the test runs where the archive is present
-  (docs/decisions/2026-10-10-v0-golden-game.md).
+- `849832`: the recorded ALDS Game 4. The repository is public, so nothing
+  vendor-derived is committed (docs/decisions/2026-10-14-b1-reference-import.md):
+  its raw frames and its expected trace stay local, and only its spec files are
+  committed. `expected.json` is git-ignored; this script writes it where the
+  archive is present, and the test compares against it once it exists.
 
 Regenerate after a deliberate change, then review the diff:
 

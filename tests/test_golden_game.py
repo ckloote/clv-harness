@@ -8,8 +8,8 @@
   run's facts after it reproduces the original trace.
 - The synthetic numbers are checked by hand here, independently of the
   committed trace, so regenerating it cannot silently accept a wrong number.
-- The recorded 849832 replays to its committed trace where the archive is
-  present (its raw frames are not committed).
+- The recorded 849832 replays to its local expected trace where the archive
+  and that trace are present (neither is committed: vendor data).
 """
 import json
 from fractions import Fraction
@@ -107,16 +107,25 @@ def test_every_number_cites_a_hashed_frame(synthetic):
     assert all(cl["frame"]["sha256"] for cl in before["off"][0]["claims"])
 
 
-@pytest.mark.skipif(not (golden.REPO / "archive").exists(), reason="the 849832 raw archive is local only")
-def test_game_849832_replays_to_its_committed_trace():
+def decimal_odds(american: str) -> Fraction:
+    a = Fraction(american)
+    return 1 + (100 / -a if a < 0 else a / 100)
+
+
+@pytest.mark.skipif(not (golden.REPO / "archive").exists() or not (golden.GAME4 / "expected.json").exists(),
+                    reason="the 849832 raw archive and its expected trace are local only "
+                           "(write the trace with `uv run python tests/golden.py`)")
+def test_game_849832_replays_to_its_local_trace():
     from clv.games import GAMES
     r = golden.replay(golden.REPO / "archive", GAMES, golden.GAME4, 849832, levels=False)
     assert golden.expected_text(r) == (golden.GAME4 / "expected.json").read_text()
     assert r["before_recomputed"] == r["before"]
-    doc = json.loads((golden.GAME4 / "expected.json").read_text())
-    s = pick(doc["before"], "close_live_mid_depth_500", "novig")
-    assert (s["p_close"]["exact"], s["d_entry"]["exact"], s["entry"]["decision_quote"]["price_native"]) == \
-        (s["p_close"]["exact"], s["d_entry"]["exact"], s["entry"]["decision_quote"]["price_native"])
-    # Check 2: DraftKings' de-vig of the entry's two-way market, against Novig's reference.
-    assert (s["entry"]["opposite_quote"]["price_native"], s["check2"]["q_entry"]["exact"], s["check2"]["outlier"]) \
-        == (s["entry"]["opposite_quote"]["price_native"], s["check2"]["q_entry"]["exact"], False)
+    s = pick(r["before"], "close_live_mid_depth_500", "novig")
+    assert s["p_close"] is not None
+    # d_entry is derived exactly from the American quote, and check 2's q_e is the two-way
+    # proportional de-vig of that quote and its opposite side, from the same frame.
+    d, d_other = (decimal_odds(q["price_native"]) for q in (s["entry"]["decision_quote"], s["entry"]["opposite_quote"]))
+    assert Fraction(s["d_entry"]["exact"]) == d
+    assert Fraction(s["check2"]["q_entry"]["exact"]) == (1 / d) / (1 / d + 1 / d_other)
+    assert s["entry"]["opposite_quote"]["frame"]["ref"] == s["entry"]["decision_quote"]["frame"]["ref"]
+    assert s["check2"]["outlier"] is False
