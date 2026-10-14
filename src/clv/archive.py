@@ -118,6 +118,29 @@ def read_segment(root: Path, seg: Segment) -> list[Frame]:
     return frames
 
 
+def stream_segment(root: Path, seg: Segment) -> Iterator[Frame]:
+    """A segment's frames one at a time, for segments too large to hold unpacked (the B1
+    backfill's). The file's bytes are hashed against the journal before any frame is
+    yielded, and the frame count and the final newline are checked at the end."""
+    path = Path(root) / seg.relpath
+    h, size = hashlib.sha256(), 0
+    with path.open("rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+            size += len(chunk)
+    if size != seg.bytes or h.hexdigest() != seg.sha256:
+        raise ArchiveError(f"{seg.relpath}: does not match its journal entry")
+    n = 0
+    with gzip.open(path, "rb") as f:
+        for raw in f:
+            if not raw.endswith(b"\n"):
+                raise ArchiveError(f"{seg.relpath}: ends mid-line")
+            yield _decode(seg, n, raw[:-1])
+            n += 1
+    if n != seg.frame_count:
+        raise ArchiveError(f"{seg.relpath}: {n} frames, journal says {seg.frame_count}")
+
+
 def _decode(seg: Segment, line: int, raw: bytes) -> Frame:
     obj = json.loads(raw)
     if not isinstance(obj, dict) or tuple(obj) != LINE_KEYS or not isinstance(obj["frame"], str) \
@@ -176,6 +199,35 @@ class RestExchange:
             if k.lower() == name.lower():
                 return v
         return None
+
+
+def stream_exchanges(root: Path, segs: Iterable[Segment]) -> Iterator[RestExchange]:
+    """REST exchanges of large archives, holding one segment's frames at a time.
+
+    A request's records all belong to one stream, possibly across a segment boundary, so each
+    stream's segments are read in order and an exchange is yielded once it completes. One the
+    recorder never completed is yielded at the end of its stream, with `complete` None."""
+    by_stream: dict[str, list[Segment]] = {}
+    for s in segs:
+        by_stream.setdefault(s.stream_id, []).append(s)
+    for stream_id in sorted(by_stream):
+        pending: dict[str, dict] = {}
+        for seg in sorted(by_stream[stream_id], key=lambda s: s.segment_id):
+            for f in stream_segment(root, seg):
+                if f.dir == "event":
+                    e = json.loads(f.frame)
+                    if e.get("type") == "rest_request":
+                        pending[e["request_id"]] = {"request": e, "body": None, "refs": [f.ref]}
+                    elif e.get("type") == "rest_complete" and e.get("request_id") in pending:
+                        p = pending.pop(e["request_id"])
+                        yield RestExchange(e["request_id"], p["request"], p["body"], e, (*p["refs"], f.ref))
+                elif f.dir == "in" and f.conn_id in pending:
+                    if pending[f.conn_id]["body"] is not None:
+                        raise ArchiveError(f"{f.ref}: second response body for request {f.conn_id}")
+                    pending[f.conn_id]["body"] = f
+                    pending[f.conn_id]["refs"].append(f.ref)
+        for rid, p in pending.items():
+            yield RestExchange(rid, p["request"], p["body"], None, tuple(p["refs"]))
 
 
 def rest_exchanges(frames: Iterable[Frame]) -> Iterator[RestExchange]:

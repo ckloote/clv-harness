@@ -7,6 +7,10 @@
     clv correct --spec fixes.toml    append mapping corrections (clv.identity.apply_corrections)
     clv score                        a scoring run over a new fact snapshot, or --fact-snapshot N
     clv trace --run N                a scoring run's numbers, traced to raw frames, as JSON
+    clv trace --execution N          one trade execution and every record of it, as JSON
+    clv backfill import              B1: load archive-hist/ (games, instruments, then linked markets' data)
+    clv backfill link                B1: tie historical markets to games; write links for review (data/b1/)
+    clv backfill coverage            B1: the per-game coverage table and waterfall (data/b1/)
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -23,8 +27,8 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
-
-from clv import archive, db, entries, gaps, identity, ingest, mlb, trace
+from clv import archive, backfill, db, entries, gaps, identity, ingest, mlb, trace
+from clv.backfill import coverage
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
 from clv.off import sources
@@ -243,11 +247,19 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("score", help="closes, CLV and null EV for every entry, as a new run")
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--fact-snapshot", type=int, help="recompute over the facts of an earlier snapshot, as a new run")
-    p = sub.add_parser("trace", help="print a scoring run, traced to raw frames, as JSON")
-    p.add_argument("--run", type=int, required=True)
+    p = sub.add_parser("trace", help="print a scoring run, or one trade execution, traced to raw frames, as JSON")
+    p.add_argument("--run", type=int)
+    p.add_argument("--execution", type=int, help="a trade_execution: every record of it, cited to frame and item")
+    p.add_argument("--hist-archive", type=Path, default=REPO / "archive-hist")
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--archive", type=Path, default=REPO / "archive")
     p.add_argument("--no-levels", action="store_true", help="omit each book's stored levels")
+    p = sub.add_parser("backfill", help="B1: the historical reference import from archive-hist/")
+    p.add_argument("step", choices=["import", "link", "coverage"])
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--hist-archive", type=Path, default=REPO / "archive-hist")
+    p.add_argument("--archive", type=Path, default=REPO / "archive", help="the R0 archive, for Novig stream trades")
+    p.add_argument("--out", type=Path, default=REPO / "data" / "b1", help="where `link` and `coverage` write")
     args = ap.parse_args(argv)
     now = int(time.time() * 1000)
     if args.cmd == "inspect":
@@ -285,8 +297,28 @@ def main(argv: list[str] | None = None) -> None:
         r = scoring.run(conn, now, snapshot_id=args.fact_snapshot)
         print(f"run {r.scoring_run_id} over fact snapshot {r.fact_snapshot_id}: {r.closes} closes, {r.scores} scores")
         print_scores(conn, r.scoring_run_id)
+    elif args.cmd == "backfill":
+        conn = db.connect(args.db)
+        db.migrate(conn)
+        if args.step == "import":
+            for name, rep in (("identity", backfill.import_identity(conn, args.hist_archive, now)),
+                              ("data", backfill.import_data(conn, args.hist_archive, args.archive, now))):
+                print(f"{name}: " + ", ".join(f"{k} {v}" for k, v in sorted(rep.items())))
+        elif args.step == "coverage":
+            for path in coverage.write(conn, args.out, now):
+                print(f"wrote {path}")
+        else:
+            _, rep = backfill.link(conn, args.hist_archive, args.out, now)
+            print(", ".join(f"{k} {v}" for k, v in sorted(rep.items())))
+            print(f"review {args.out / 'links.review.md'}; approve from {args.out / 'links.proposed.toml'}")
     elif args.cmd == "trace":
-        sys.stdout.write(trace.dumps(trace.trace(db.connect(args.db), args.run, args.archive, not args.no_levels)))
+        if (args.run is None) == (args.execution is None):
+            raise SystemExit("clv trace: give --run or --execution")
+        if args.execution is not None:
+            doc = trace.trace_execution(db.connect(args.db), args.execution, args.archive, args.hist_archive)
+        else:
+            doc = trace.trace(db.connect(args.db), args.run, args.archive, not args.no_levels, args.hist_archive)
+        sys.stdout.write(trace.dumps(doc))
 
 
 def print_scores(conn, run_id: int) -> None:
