@@ -2,6 +2,8 @@
 the Kalshi tier follows the cutoff, and the Novig history routes are signed."""
 import asyncio
 import dataclasses
+import errno
+import itertools
 import json
 import os
 from collections import Counter
@@ -372,3 +374,60 @@ async def test_the_archive_is_fsynced_on_cadence_while_the_backfill_runs(tmp_pat
     finally:
         await srv.close()
     assert False in fsyncs                          # during the run, not only at its close
+
+
+def no_space(part, **kw):
+    raise OSError(errno.ENOSPC, "No space left on device", str(part))
+
+
+async def test_a_seal_that_fails_mid_run_stops_the_backfill_and_the_next_run_recovers(tmp_path, monkeypatch, capsys):
+    # A segment rotates mid-run and cannot be sealed (PR #16 review): the run stops and fails,
+    # rather than reporting success with requests missing from the sealed archive. The next
+    # run seals what was left (recover_orphans) and resumes from it.
+    v = Vendors()
+    v.fail_once.clear()
+    v.delay_s = 0.1
+    srv = TestServer(v.app)
+    await srv.start_server()
+    monkeypatch.setattr(cli, "TICK_S", 0.01)
+    try:
+        cfg = backfill_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        cfg = dataclasses.replace(cfg, backfill=dict(cfg.backfill, segment_max_s=1))
+        ticks = itertools.count()
+        monkeypatch.setattr(cli, "load_signer", lambda c: fake_signer)
+        monkeypatch.setattr(backfill.time, "time", lambda: NOW_S + next(ticks) / 2)     # segments come due
+        monkeypatch.setattr("raw_recorder.archive.seal_part", no_space)
+        assert await cli._backfill(cfg, ["mlb"], []) == 2
+        first = Counter(v.hits)
+        assert "No space left on device" in capsys.readouterr().err
+        assert list(cfg.backfill_root.rglob("*.jsonl.part"))
+        monkeypatch.undo()
+        v.hits.clear()
+        assert await run_cli(cfg, monkeypatch, sources=("mlb",)) == 0
+    finally:
+        await srv.close()
+    # The fetch stopped: a full run makes 13 requests (10 schedule months, teams, 2 play-by-play).
+    assert sum(first.values()) < 13
+    assert "sealed orphan" in capsys.readouterr().out
+    assert not list(cfg.backfill_root.rglob("*.jsonl.part"))
+    # What the stopped run completed was recovered, not fetched again; a request it cancelled
+    # mid-response (play-by-play) was.
+    assert first["/api/v1/teams"] == 1 and v.hits["/api/v1/teams"] == 0
+    assert v.hits["/api/v1/game/1001/playByPlay"] == v.hits["/api/v1/game/1003/playByPlay"] == 1
+    assert sum(v.hits.values()) < 13
+
+
+async def test_a_seal_that_fails_at_close_fails_the_backfill(tmp_path, monkeypatch, capsys):
+    v = Vendors()
+    v.fail_once.clear()
+    srv = TestServer(v.app)
+    await srv.start_server()
+    monkeypatch.setattr("raw_recorder.archive.seal_part", no_space)
+    try:
+        cfg = backfill_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        assert await run_cli(cfg, monkeypatch, sources=("mlb",)) == 2
+    finally:
+        await srv.close()
+    captured = capsys.readouterr()
+    assert "sealing failed" in captured.err and "rerun" in captured.err
+    assert "fetched" not in captured.out                # no per-source summary to mislead
