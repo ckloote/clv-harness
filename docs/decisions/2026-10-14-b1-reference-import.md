@@ -33,7 +33,7 @@ Docs and PRs carry aggregate counts only, never per-game prices, and test fixtur
   - several candidates or none;
   - a disagreeing result;
   - a cancelled (`scalar`) settlement.
-- **Approval:** the approved corrections make the clean links `manual_verified`. This is the Track B verdict's "manual_verified from settlement result and close_time": the rule does the lookup, and a person signs off on the sample and decides every edge case. Only the approved file's sha256 and its counts are recorded here.
+- **Approval:** the approved corrections make the clean links `manual_verified`. This is the Track B verdict's "manual_verified from settlement result and close_time": the rule does the lookup, and a person signs off and decides the edge cases. For the full run, the sign-off rested on independent cross-checks of every clean link rather than a hand-read sample, and the edge cases were all left out (Results). Only the approved file's sha256 and its counts are recorded here.
 
 **Only what a pregame close can use is loaded.** Candles and trades are imported only for linked markets, and only before their game's first pitch. In-play trading is most of the volume (the pilot's 56 markets held about 690,000 trades over 32 h), and nothing after the start can enter a close (DESIGN.md §5.4). The archive keeps everything.
 
@@ -77,4 +77,40 @@ Docs and PRs carry aggregate counts only, never per-game prices, and test fixtur
   - They differ where B1's cutoff sits at the earliest start claim, not the first pitch.
   - B0's hand-mapped edge cases come out as cases for review.
 
-**Full run:** to be filled in once it has been fetched, reviewed and approved.
+**Full run, 2026-10-14/15** (both seasons, aggregate counts only), into `data/clv.sqlite` (6.9 GB).
+
+- **Fetch:** 2 h, 2.9 GB archived, no failed requests.
+  - MLB: 4,953 scheduled games, play-by-play for the 4,425 Final ones.
+  - Kalshi: 9,378 markets (8,102 on the historical tier), 10 not yet settled.
+  - Novig: 72 daily trade files and 772 MLB moneyline markets. 2 markets were still open; a rerun fetches them again until they settle.
+  - Peak memory was 6 GB: the fetcher keeps every listing it has read.
+- **Links:**
+  - Kalshi: 4,476 events clean, 197 for review, 16 excluded. Novig: 749 markets clean, 23 for review.
+  - **Approved 2026-10-15:** the proposed set as it stood, 19,402 corrections, with every edge case left out. Those 220 games stay unverified, so the cohort has no doubleheader, postponed or misdated game. `links.approved.toml` sha256 `4b778be777766bc7bd9081b847c51c7eba951aca526619e59b8da319fb1e5283`.
+  - **Checked before approval**, against evidence the rules do not use:
+    - Each clean Kalshi market's own rules text names the linked game's two teams (8,952 of 8,952 markets), the team it pays on, and its date (8,952; in 10 the start moved to the next day, the official date did not).
+    - Of the 4,732 2026 markets that give a time, 4,680 equal the StatsAPI start. The other 26 games were rescheduled after listing, or listed before a postseason time was set (849832 among them). Each closed 2–4.5 h after the StatsAPI start and was the only game between the two teams that day.
+    - Every clean Novig event's `startsTs` equals the StatsAPI scheduled start (749 of 749).
+    - For 739 of the 749 games clean on both venues, Novig's start and Kalshi's `close_time` alone pick the same Kalshi event the rule linked; the other 10 are Kalshi edge cases.
+    - The approval rests on these checks and the rules' own conditions; the 220 edge cases were not reviewed one by one.
+- **Data, for the linked games, before their first pitch:**
+  - **Kalshi:** 9,236 markets, 6.65M candles and 10.59M executions; 118k trade sightings repeated one already loaded (the tier handoff, or a page fetched again) and were counted once. Another 42.5M trades and 1.54M candles were after the first pitch and not loaded. No two tiers' candles disagreed.
+  - **Novig:** 647,620 MAKER executions; TAKER rows 522,068 balanced and 18,709 ambiguous (3.5%).
+  - **Stream:** 13,341 pregame stream trades matched a MAKER row and 3 did not.
+- **Timing:** import 6 min (identity) and 18 min (data), link 2 min, coverage 26 s. Coverage rebuilds the same table from a new fact snapshot.
+- **Coverage, of 4,946 games:**
+
+| Step | Kalshi remaining | Novig remaining |
+|---|---:|---:|
+| games | 4,946 | 4,946 |
+| no_trusted_off (18) | 4,928 | 4,928 |
+| off_disagreement (395) | 4,533 | 4,533 |
+| no_link | 4,242 | 682 |
+| mapping_unverified | 4,108 | 677 |
+| no candle before the cutoff / VWAP insufficient | **4,101** | **654** |
+
+- **What it means for B2:**
+  - **Kalshi** has a candle close for 4,101 games, about 2.7 times the 1,500-event target. Novig has a VWAP close for 654, all from 2026.
+  - **The 24 h martingale offset is a 2026 check only.** A candle within the max quote age 24 h before the start exists for 2,113 of 2,151 2026 games, but 32 of 1,950 2025 games: 2025 markets opened less than a day ahead. At 6 h it is 3,824 of 4,101, at 1 h 4,086 and at 15 min 4,100.
+  - **`off_disagreement` drops 395 games (8%)**, as in the pilot, and in both seasons (172 in 2025, 223 in 2026). The rule (`off.max_source_disagreement_s`, 120 s) may be too tight for StatsAPI's "In Progress" timing on historical games; B2 decides against the A2 agreement report.
+- **Rebuild from a clean database:** not yet done at full scale. The pilot showed the steps are idempotent and the table reproducible.
