@@ -104,4 +104,46 @@ Committed docs carry aggregate statistics: check-1 estimates and 90% intervals, 
 
 ## Results
 
-To be appended.
+**Runs, 2026-10-16, on `data/clv.sqlite`.** A copy taken before the runs is `data/clv.pre-b2.sqlite`. Migration 0005 and the settlement import came first: 9,856 StatsAPI, 9,368 Kalshi and 1,540 Novig settlements. Then the dispersion run, then the check run. The full aggregates are in `docs/calibration-report.md`.
+
+**Dispersion and the stop rule (Kalshi candle).**
+- **Measured sd of Δp:** 2.76, 1.68, 0.87 and 0.58 pp at 24 h, 6 h, 1 h and 15 min.
+- **Item 12 under that series:** a correct pipeline passes 100.0%; a level drift at the margin fails 99.7%, and a curvature drift 100.0%.
+
+The stop rule was met, and the check run went ahead as specified.
+
+**Gate B2: not met.**
+
+| Family | Verdict |
+|---|---|
+| Kalshi candle | **failed**: at 24 h the intercept is +0.443 pp [+0.345, +0.541] against ±0.5 pp. Every other component at every offset is inside its margin, and no bin is flagged |
+| Kalshi VWAP | insufficient_data: 126 games at 24 h and 1,419 at 6 h. Check 1 alone would also fail it at 24 h (+0.616 pp [+0.269, +0.963]) |
+| Novig VWAP | insufficient_data: 9 games at 24 h |
+
+- **Under this definition, the Kalshi candle family is abandoned as a historical benchmark** (Decision, Check 1).
+- **The oracle sweep shows no in-play contamination.** At every offset the 0 s and 30 s buffers are at or below the 60 s close.
+- **Every audit the gate requires is 0:** no candle straddles the off, and no trade is counted from both sides.
+
+**Post hoc** (read-only, after the verdict; it cannot change it). No pipeline cause was found.
+- **Book quality:** at 24 h there is no one-sided book, the median spread is 1 cent, and the median quote is 1.2 minutes old.
+- **The drift is steady:** it holds across months and in the tightest books.
+- **It splits in two:**
+  - a rise of both teams' YES midpoints, +0.145 pp [+0.129, +0.160];
+  - the home team firming relative to the away team, +0.308 pp [+0.211, +0.406].
+
+  Both fade by 6 h (+0.014 and +0.091 pp) and are absent at 1 h and 15 min.
+- **Kalshi VWAP and Novig lean the same way at 6 h.**
+- **Not testable:** whether early-life market prices cause it, because B1 fetched only the 32 h before each market's `close_time`.
+
+**Reading:** genuine predictable drift in the reference at the 24 h horizon, which is a finding about Kalshi, not an offset to subtract (DESIGN.md §9.2). The machinery did its job: the audits, polarity and close selection hold, and check 1 caught a real drift.
+
+**Reproducibility.** A clean rebuild in `data/rebuild/` reproduced everything exactly. It ran every step from an empty database: `clv migrate`, `backfill import`, `backfill link`, `clv correct` with `links.approved.toml` (sha256 checked), `backfill import`, `backfill coverage`, and both calibration runs, in 36 minutes.
+- **The coverage table:** byte-identical to the current database's and to B1's full-run table (4,946 games). This is the first full-scale rebuild B1 left open.
+- **All six calibration runs:** identical verdicts and statistics (every estimate and interval), offset prices and closes, compared game by game and team by team.
+
+## Consequences of the results
+
+- **B3 is not justified on this definition.** The Odds API history is bought only for windows that passed B2 (DESIGN.md §13).
+- **Kalshi is not a benchmark for early entries.** At 24 h, a Kalshi midpoint close would lend home entries about +0.45 pp of drift in probability (about +0.9 pp of EV at even odds) and away entries the reverse. At 1 h and 15 min the midpoints are martingales to within ±0.02 pp.
+- **Any later historical calibration is a new definition, never a revision of this verdict.** A definition without the 24 h offset is legitimate only if it rests on something independent of this result, such as a decision that model entries are taken within a few hours of the start. It must say it was chosen after this failure.
+- **Track A's live Novig reference remains the real benchmark.** Its own check 1 should look hard at the long offsets, since Novig leans the same direction at 6 h here.
