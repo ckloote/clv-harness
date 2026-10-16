@@ -16,9 +16,11 @@ snapshot, in one transaction, and holds no statistics of its own (clv.score.cont
      under it (clv.score.simulation). Nothing is fitted, so nothing about drift is seen.
 
 **Check-1 population**, per offset: events with a trusted off whose home outcome's reference
-is mapped `exact` or `manual_verified` (mapping.primary_cohort), priced at the offset and at
-the close. Settlement equivalence is between an entry venue and the reference, and check 1 has
-no entry, so it is not required.
+mapping is primary-cohort eligible (mapping.primary_cohort: `exact` or `manual_verified`, not in
+conflict), priced at the offset and at the close. Only a pending settlement-equivalence verdict
+is admitted: equivalence is between an entry venue and the reference, and check 1 has no entry.
+Every other exclusion (`mapping_unverified`, `mapping_conflict`, `mapping_rejected`,
+`rules_mismatch`) keeps the mapping out, under its own reason.
 
 **Verdict:**
 - `insufficient_data`: an offset lacks the data to fit (controls.InsufficientCalibrationData),
@@ -57,6 +59,9 @@ from clv.score import controls, simulation
 
 CALIBRATION_VERSION = "calibration-v0.1"
 FAMILIES = (("kalshi", "candle_mid_top"), ("kalshi", "trade_vwap"), ("novig", "trade_vwap"))
+# The only mapping exclusion calibration admits: no entry venue, so no equivalence to settle.
+ADMITTED_EXCLUSIONS = ("equivalence_pending",)
+MAPPING_EXCLUSIONS = ("mapping_unverified", "mapping_conflict", "mapping_rejected", "rules_mismatch")
 OC_SEED = 20261015
 
 
@@ -72,6 +77,7 @@ class Spec:
     buffers: tuple[int, ...]
     buffer_s: int
     cohort: tuple[str, ...]
+    admitted_exclusions: tuple[str, ...]
     sample_events: int
     min_clusters: int
     margin_intercept: float
@@ -89,7 +95,7 @@ class Spec:
         sha = lambda m: hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
         return cls(tuple(param("controls.martingale_offsets")), tuple(param("controls.oracle_offsets")),
                    tuple(param("close.buffer_sweep_s")), param("close.buffer_s"), tuple(param("mapping.primary_cohort")),
-                   param("controls.sample_events"), controls.MIN_CLUSTERS,
+                   ADMITTED_EXCLUSIONS, param("controls.sample_events"), controls.MIN_CLUSTERS,
                    param("controls.martingale_margin_intercept_pp") / 100, param("controls.martingale_margin_slope"),
                    param("controls.martingale_margin_curvature_pp") / 100,
                    param("controls.martingale_curvature_radius_pp") / 100, param("controls.martingale_price_bins"),
@@ -222,8 +228,8 @@ def _price(conn, off, ref, as_of, d, executions, spec: Spec, cohort_required: bo
         return close.Price(None, off.reason)
     if isinstance(ref, str):
         return close.Price(None, ref)
-    if cohort_required and ref.mapping.status not in spec.cohort:
-        return close.Price(None, "mapping_unverified")
+    if cohort_required and not (ref.mapping.eligible or ref.mapping.ineligible_reason in spec.admitted_exclusions):
+        return close.Price(None, ref.mapping.ineligible_reason)
     return close.hist_price_as_of(conn, ref, as_of, d, executions)
 
 
@@ -364,12 +370,19 @@ def _dispersion(pairs, spec: Spec, replicates: int) -> list[dict]:
                           for name in names]
     increments = simulation.increments_from_spread(sds)
     start = pairs[spec.offsets[0]][0]                   # the earliest offset's entry prices
-    oc = simulation.operating_characteristics(
-        np.random.default_rng(OC_SEED), offsets=[label(k) for k in spec.offsets], counts=counts,
-        increment_sd=increments, start_prices=start, margin_intercept=spec.margin_intercept,
-        margin_slope=spec.margin_slope, margin_curvature=spec.margin_curvature,
-        curvature_radius=spec.curvature_radius, replicates=replicates)
     detail = {"increment_sd": increments, "counts": counts, "replicates": replicates, "seed": OC_SEED}
+    try:
+        oc = simulation.operating_characteristics(
+            np.random.default_rng(OC_SEED), offsets=[label(k) for k in spec.offsets], counts=counts,
+            increment_sd=increments, start_prices=start, margin_intercept=spec.margin_intercept,
+            margin_slope=spec.margin_slope, margin_curvature=spec.margin_curvature,
+            curvature_radius=spec.curvature_radius, replicates=replicates)
+    except controls.InsufficientCalibrationData as exc:
+        # The measured series cannot be fitted (e.g. too little price variation): keep the
+        # measurements; the rates are unavailable, as for too few events (PR #22 review).
+        return results + [dict(kind="dispersion", offset_s=0, component=f"oc:{name}", n_events=max(counts),
+                               n_rows=max(counts), outcome="insufficient_data", detail={**detail, "reason": str(exc)})
+                          for name in names]
     return results + [dict(kind="dispersion", offset_s=0, component=f"oc:{name}", n_events=max(counts),
                            n_rows=max(counts), estimate=oc[name], detail=detail) for name in names]
 
@@ -458,12 +471,12 @@ def report(conn: sqlite3.Connection, snapshot_id: int, out_dir: Path) -> tuple[P
         obs = conn.execute("SELECT outcome_id, offset_s, p_num, p_den, reason FROM calibration_observation"
                            " WHERE calibration_run_id = ?", (run_id,)).fetchall()
         # A close is priced whatever its mapping's status; the check-1 population needs the cohort.
-        unverified = {r[0] for r in obs if r[4] == "mapping_unverified"}
-        waterfall = Counter((closes[o][2] or ("priced, mapping_unverified" if o in unverified else "priced"))
+        excluded = {r[0]: r[4] for r in obs if r[4] in MAPPING_EXCLUSIONS}
+        waterfall = Counter((closes[o][2] or (f"priced, {excluded[o]}" if o in excluded else "priced"))
                             for o in home if o in closes)
         lines += [f"Home-outcome closes at close.buffer_s = {spec['buffer_s']} s, of {len(home)} games:", "",
                   "| Result | Games |", "|---|---:|"] + [f"| {k} | {v} |" for k, v in waterfall.most_common()]
-        priced = [o for o in home if o in closes and closes[o][2] is None and o not in unverified]
+        priced = [o for o in home if o in closes and closes[o][2] is None and o not in excluded]
         if any(closes[o][4] is not None for o in priced):
             flagged = sum(1 for o in priced if closes[o][4])
             lines += ["", f"A candle contained the cutoff for {flagged} of {len(priced)} priced closes in the cohort "
@@ -562,8 +575,9 @@ def _results_md(res, spec) -> list[str]:
             for name, need in (("correct_pipeline_passes", "≥ 95%"), ("level_drift_fails", "≥ 90%"),
                                ("curvature_drift_fails", "≥ 90%")):
                 r = oc[f"oc:{name}"]
-                out.append(f"- {name.replace('_', ' ')}: " + ("insufficient data" if r[5] is None else f"{r[5]:.1%}")
-                           + f" (requirement {need})")
+                why = json.loads(r[10]).get("reason")
+                out.append(f"- {name.replace('_', ' ')}: "
+                           + (f"insufficient data ({why})" if r[5] is None else f"{r[5]:.1%}") + f" (requirement {need})")
     return out
 
 

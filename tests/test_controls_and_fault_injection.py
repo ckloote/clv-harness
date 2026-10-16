@@ -29,6 +29,8 @@ class Faults:
     level_drift: float = 0.0              # added to every close
     close_flip: bool = False              # the close candle quotes the complement
     late_close: set = field(default_factory=set)      # games whose close candle is at -300 s and with no 15 m candle
+    conflict: bool = False                # every mapping observed twice, neither superseding the other
+    flat: bool = False                    # every price 0.5 at every offset and at the close
 
 
 def ins(c, table, **row):
@@ -58,6 +60,8 @@ def build(n=N_GAMES, faults=Faults(), seed=1):
         path = [rng.uniform(0.30, 0.70)]
         for _ in OFFSETS:
             path.append(path[-1] + rng.normal(0, 0.002))
+        if faults.flat:
+            path = [0.5] * len(path)
         p_close = path[-1] + faults.level_drift
         if faults.close_flip:
             p_close = 1 - p_close
@@ -67,9 +71,10 @@ def build(n=N_GAMES, faults=Faults(), seed=1):
                       kind="exchange_book", side0_id="yes", side0_label="YES", side1_id="no", side1_label="NO",
                       payout_currency="USD", payout_cents_per_contract=100, first_seen_ts_ms=START, **cite)
             for side, polarity in ((0, "direct"), (1, "complement")):
-                ins(c, "instrument_mapping_observation", venue_instrument_id=iid, side=side, outcome_id=outcome,
-                    polarity=polarity, mapping_status="manual_verified", settlement_equivalence="pending",
-                    method="m", evidence="e", observed_ts_ms=START)
+                for _ in range(2 if faults.conflict else 1):
+                    ins(c, "instrument_mapping_observation", venue_instrument_id=iid, side=side, outcome_id=outcome,
+                        polarity=polarity, mapping_status="manual_verified", settlement_equivalence="pending",
+                        method="m", evidence="e", observed_ts_ms=START)
             mid = (lambda p: 1 - p) if flip else (lambda p: p)
             candles = [(start - k * 1000 - 30_000, path[i]) for i, k in enumerate(OFFSETS)
                        if not (g in faults.late_close and k == 900)]
@@ -253,3 +258,35 @@ def test_the_report_rebuilds_from_the_database(target, tmp_path):
     _, (disp,) = calibration.run(c, START + 1, mode="dispersion", snapshot_id=snap, families=CANDLE, replicates=10)
     assert "§9.4 item 12 under the measured series (10 replicates" in calibration.report(c, snap + 1, tmp_path)[0] \
         .read_text()
+
+
+def test_a_conflicted_mapping_never_enters_calibration(target, tmp_path):
+    # PR #22 review: a side with two unsuperseded verified mappings keeps its `manual_verified`
+    # status but is ineligible as `mapping_conflict`. Only a pending equivalence is admitted.
+    target(30)
+    c = build(n=40, faults=Faults(conflict=True))
+    snap, (run,) = calibration.run(c, START, families=CANDLE)
+    assert run.verdict == "insufficient_data" and run.n_by_offset == {k: 0 for k in OFFSETS}
+    reasons = {r[0] for r in c.execute("SELECT DISTINCT reason FROM calibration_observation WHERE calibration_run_id = ?",
+                                       (run.calibration_run_id,))}
+    assert reasons == {"mapping_conflict"}
+    oracle = results(c, run.calibration_run_id, "oracle")
+    assert {r[3] for r in oracle.values()} == {"insufficient_data"} and {r[4] for r in oracle.values()} == {0}
+    text = calibration.report(c, snap, tmp_path)[0].read_text()
+    assert "| priced, mapping_conflict | 40 |" in text
+    assert json.loads(c.execute("SELECT spec_json FROM calibration_run").fetchone()[0])["admitted_exclusions"] \
+        == ["equivalence_pending"]
+
+
+def test_a_dispersion_run_without_price_variation_keeps_its_measurements(target):
+    # PR #22 review: a series the simulation cannot fit (every price 0.5) must not roll back the
+    # run: the measured spread stays, and the simulated rates are insufficient_data.
+    target(30)
+    c = build(n=40, faults=Faults(flat=True))
+    _, runs = calibration.run(c, START, mode="dispersion", replicates=5)
+    (candle,) = [r for r in runs if r.method == "candle_mid_top"]
+    d = results(c, candle.calibration_run_id, "dispersion")
+    assert all(d[(k, "sd_dp")][0] == 0 and d[(k, "sd_dp")][4] == 40 for k in OFFSETS)
+    oc = [r for (k, comp), r in d.items() if k == 0]
+    assert len(oc) == 3 and {r[3] for r in oc} == {"insufficient_data"}
+    assert len(runs) == 3                             # every family's run was kept
