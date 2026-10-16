@@ -2,7 +2,7 @@
 
 Date: 2026-10-16
 
-Status: proposed. It changes no verdict. The B2 results stand as recorded in `2026-10-16-b2-prespecification.md`.
+Status: accepted. It changes no verdict. The B2 results stand as recorded in `2026-10-16-b2-prespecification.md`.
 
 ## Context
 
@@ -51,6 +51,7 @@ The cost case for B3 is then made again from scratch.
 
 - **Track A is the critical path.** DESIGN.md §13's calendar slot for B3 (December–March) is freed, and A1 starts now (`2026-10-16-a1-scope.md`).
 - **The historical data stays as evidence.** The B1 archive (`archive-hist/`) and database stay git-ignored and backed up. Nothing derived from them is committed beyond the aggregates already recorded.
-- **Follow-ups:**
-  - The README status line and the §13 calendar still read as though B3 were pending. Update them when this record is accepted.
-  - Any doc that cites Gate B as reachable needs the same correction.
+- **Follow-ups, made on acceptance:**
+  - the README status line;
+  - DESIGN.md §13: Track B's status and the calendar;
+  - `docs/feasibility.md` §6 item 2, whose Odds API recheck was deferred to B3.

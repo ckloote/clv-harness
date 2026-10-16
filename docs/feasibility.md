@@ -117,7 +117,7 @@ Cutoff = StatsAPI first pitch − 60 s (`close.buffer_s`).
 1. **Suspended games** (S2–S4): find one in the 2025 or 2026 season, and record its StatsAPI states plus Novig's and Kalshi's settlement.
 2. **P0 item 3:**
    - Novig and Kalshi terms for research use of their data. **Resolved 2026-10-13.** The terms allow this use: personal research, with no resale or redistribution. The harness keeps vendor data and anything derived from it out of the repository (`docs/decisions/2026-10-14-b1-reference-import.md`).
-   - The Odds API pricing and historical availability, rechecked immediately before any B3 purchase. Still open, and deferred to B3.
+   - The Odds API pricing and historical availability, rechecked immediately before any B3 purchase. **Moot 2026-10-16:** B3 is cancelled (`docs/decisions/2026-10-16-track-b-closed.md`). Live pricing and quota are rechecked at A4.
 3. **Kalshi depth:** candles give only the top of book. A depth benchmark (`mid_depth_*`) has no Kalshi history, so Kalshi historical closes are `mid_top` only.
 4. **Novig before 2026-08-03:** confirm with Novig that no earlier public trade data exists.
 

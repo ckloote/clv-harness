@@ -2,7 +2,14 @@
 
 Measurement infrastructure for evaluating sports-betting entries by **closing-line value (CLV)**: did an entry get a better price than an independent, defensible estimate of the same outcome's pre-event fair probability? It is deliberately built **before** any betting model. Its job is to make a claimed edge testable and to expose apparent edge that depends on timestamp errors, stale prices, mismatched contracts, illiquid reference markets or research choices.
 
-**Status: V0 built.** The R0 raw postseason recorder is built and recording. V0 has the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/`), an ingest of one recorded game, and its off resolution, closes, CLV and null EV scores and check 2's per-entry comparison, traced to raw frames, with a mapping-correction replay and a golden game in CI. See the implementation plan in [DESIGN.md §13](DESIGN.md) and the V0 results in [docs/decisions/2026-10-10-v0-golden-game.md](docs/decisions/2026-10-10-v0-golden-game.md).
+**Status: V0 built, Track B closed, A1 next.**
+
+- **R0:** the raw postseason recorder is built and recording.
+- **V0:** the parameters (`config/params.toml`), parsers that read the raw archive, the V0 schema (`migrations/`), an ingest of one recorded game, and its off resolution, closes, CLV and null EV scores and check 2's per-entry comparison. All of it is traced to raw frames, with a mapping-correction replay and a golden game in CI ([results](docs/decisions/2026-10-10-v0-golden-game.md)).
+- **Track B:** B1 imported two seasons of Kalshi and Novig history (4,946 games). B2 calibrated the historical close families, and Gate B2 was not met: the Kalshi candle family failed check 1 at 24 h ([results](docs/decisions/2026-10-16-b2-prespecification.md)). B3 is cancelled, and Track B is closed without a historical benchmark ([decision](docs/decisions/2026-10-16-track-b-closed.md)).
+- **Next:** A1, the live Novig reference connector ([scope](docs/decisions/2026-10-16-a1-scope.md)).
+
+See the implementation plan in [DESIGN.md §13](DESIGN.md).
 
 | Document | What it is |
 |---|---|

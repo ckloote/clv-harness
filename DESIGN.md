@@ -833,6 +833,8 @@ Write `migrations/0001_v0.sql` (the V0 stage of §8.5) with its §8.4 tests, and
 
 ### Track B — Historical reference and calibration
 
+**Status:** closed 2026-10-16. Gate B2 was not met and B3 is cancelled (`docs/decisions/2026-10-16-track-b-closed.md`). The stages below remain the template for any later historical definition.
+
 Ordered so that everything free, including the close machinery's own check, happens before money is spent.
 
 **B0** is P0 item 2.
@@ -866,10 +868,12 @@ Late-news analysis and outcome corroboration are specified in `docs/RESEARCH_PRO
 | Period | Priority | Decision checkpoint |
 |---|---|---|
 | Now through the end of the MLB postseason | R0 recorder; P0 in parallel | At least one golden game captured; access questions answered |
-| October–November 2026 | V0, A1, B1 | First reproducible game; reliable live collector |
-| November–December 2026 | A2–A3, B2 | Off resolution and a defensible live close; historical close family passes or is abandoned |
-| December 2026–March 2027 | B3 (conditional), A4, G1/G2, D1 | Purchase justified or cancelled; stable operational sample; benchmark locked |
+| October–November 2026 | A1 | Reliable live collector |
+| November–December 2026 | A2–A3 | Off resolution and a defensible live close |
+| December 2026–March 2027 | A4, G1/G2, D1 | Stable operational sample; benchmark locked |
 | 2027 MLB season | Full live MLB G1–G3 | First authoritative-start, live-depth prospective evaluation |
+
+V0, B1 and B2 are done, and Track B is closed (`docs/decisions/2026-10-16-track-b-closed.md`).
 
 Do not peg the definitive live MLB gate to an assumed exact Opening Day until the published 2027 schedule and venue coverage are verified.
 
