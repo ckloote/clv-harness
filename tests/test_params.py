@@ -82,7 +82,8 @@ def test_recorder_copies_match():
         rec = tomllib.load(f)
     for name, value in rec["r0"].items():
         assert param(f"r0.{name}") == value, name
-    for name in ("channel_probe_interval_s", "transport_liveness_max_s"):
+    for name in ("channel_probe_interval_s", "transport_liveness_max_s", "probe_timeout_s",
+                 "subscription_check_interval_s"):
         assert param(f"stream.{name}") == rec["stream"][name], name
     assert param("stream.reconnect_backoff_s") == rec["stream"]["reconnect_backoff_s"]
 

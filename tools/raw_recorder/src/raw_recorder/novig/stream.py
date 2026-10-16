@@ -5,6 +5,15 @@ Per connection (new conn_id each time; stream_id == conn_id):
 * Signed upgrade (`GET /v3/ws`), no compression (text frames replay simply).
 * `subscribe` maps each market to this connection's single channel. Every
   frame we send is archived as `out`; every text frame received as `in`.
+* Subscribes are sent only in batches the `stream` bucket can afford (one
+  request never exceeds a full bucket, which Novig passes only when full);
+  the rest wait, archived once as `subscribe_deferred`. A market counts as
+  subscribed only when the reply to its own nonce lists it on this channel
+  with a snapshot. An unanswered, refused or unconfirmed subscribe is
+  archived and retried on the reconnect backoff schedule, per market.
+* Every `stream.subscription_check_interval_s` a `status` request lists the
+  venue's subscriptions; a market the venue no longer lists is archived as
+  `subscription_lost` and resubscribed (DESIGN.md §7.2).
 * Control frames are handled explicitly (`autoping=False`): each received
   Ping is archived, answered with a Pong, and the Pong archived. Transport
   health is not channel evidence.
@@ -183,7 +192,14 @@ class _Connection:
         self.stream = stream
         self.conn_id = conn_id
         self.nonce = 0
-        self.markets: set[str] = set()
+        self.markets: set[str] = set()          # confirmed: the reply to their subscribe listed them
+        self.confirmed_at: dict[str, float] = {}
+        self.pending: dict[int, tuple[frozenset[str], float]] = {}   # subscribe nonce -> (markets, sent)
+        self.retry_at: dict[str, float] = {}     # market -> earliest resubscribe after a failure
+        self.retry_delay: dict[str, float] = {}
+        self.deferred: frozenset[str] = frozenset()      # last archived subscribe_deferred set
+        self.status_pending: dict[int, float] = {}       # status nonce -> sent
+        self.last_status = owner.mono()
         self.last_activity: dict[str, float] = {}
         self.last_probe: dict[str, float] = {}
         self.transitioned: set[str] = set()     # markets with a lifecycle delta awaiting a book probe
@@ -197,14 +213,35 @@ class _Connection:
         self.stream.write("out", self.conn_id, text)
         return self.nonce
 
-    async def subscribe(self, markets: set[str]) -> None:
-        if markets:
-            await self.send({"subscribe": {"markets": {m: self.o.channel for m in sorted(markets)}}})
-            self.o.budget.spend(self.o.weight * len(markets))
-            now = self.o.mono()
-            for m in markets:
-                self.last_probe[m] = now  # the subscribe snapshot is this interval's evidence
-            self.markets |= markets
+    def in_flight(self) -> set[str]:
+        return {m for asked, _ in self.pending.values() for m in asked}
+
+    async def subscribe(self, wanted: set[str]) -> None:
+        """Subscribe the wanted markets that are neither confirmed, awaiting a reply nor
+        waiting out a retry delay, as many as the bucket affords now."""
+        now, w = self.o.mono(), self.o.weight
+        todo = sorted(m for m in wanted - self.markets - self.in_flight()
+                      if self.retry_at.get(m, float("-inf")) <= now)
+        tokens = self.o.budget.available()
+        n = min(len(todo), max(0, int(tokens // w)), int(self.o.budget.capacity // w))
+        send, wait = todo[:n], frozenset(todo[n:])
+        if send:
+            nonce = await self.send({"subscribe": {"markets": {m: self.o.channel for m in send}}})
+            self.o.budget.spend(w * len(send))
+            self.pending[nonce] = (frozenset(send), now)
+        if wait and wait != self.deferred:
+            self.stream.event(self.conn_id, "subscribe_deferred", reason="stream_budget",
+                              channel=self.o.channel, markets=sorted(wait), est_tokens=round(tokens, 1))
+        self.deferred = wait
+
+    def subscribe_failed(self, markets: set[str], now: float) -> None:
+        """Retry each market after its own backoff (stream.reconnect_backoff_s), so a market the
+        venue keeps refusing cannot drain the bucket."""
+        p = self.o.params
+        for m in markets:
+            delay = self.retry_delay.get(m, p.reconnect_backoff_initial_s)
+            self.retry_at[m] = now + delay
+            self.retry_delay[m] = min(delay * 2, p.reconnect_backoff_max_s)
 
     async def unsubscribe(self, markets: set[str]) -> None:
         if markets:
@@ -212,14 +249,76 @@ class _Connection:
             self.o.budget.spend(len(markets))
             self.markets -= markets
             self.transitioned -= markets
+            for m in markets:
+                self.confirmed_at.pop(m, None)
+                self.retry_at.pop(m, None)
+                self.retry_delay.pop(m, None)
 
-    def note_activity(self, text: str) -> None:
-        try:
-            obj = json.loads(text)
-        except ValueError:
+    def on_reply(self, obj: dict) -> None:
+        """Settle the subscribe or status request a reply answers, by its nonce."""
+        ev, cid, ch = self.stream.event, self.conn_id, self.o.channel
+        nonce, now = obj.get("nonce"), self.o.mono()
+        if "code" in obj and "snapshot" not in obj and "delta" not in obj:
+            # An error reply. Without a nonce (a throttled or unparsable request) it names no
+            # request: an unanswered subscribe then times out and is retried.
+            asked = self.pending.pop(nonce, (None, None))[0] if nonce is not None else None
+            self.status_pending.pop(nonce, None)
+            ev(cid, "ws_error_reply", code=obj.get("code"), message=redact.scrub(str(obj.get("message"))),
+               nonce=nonce, channel=ch, markets=sorted(asked) if asked else None)
+            if asked:
+                self.subscribe_failed(set(asked), now)
             return
-        if not isinstance(obj, dict):
-            return
+        if nonce in self.pending:
+            asked, _ = self.pending.pop(nonce)
+            listed = (obj.get("subscribed") or {}).get("markets") or {}
+            snap = obj.get("snapshot") or {}
+            ok = {m for m in asked if listed.get(m) == ch and m in snap}
+            for m in ok:
+                self.last_probe[m] = now  # the subscribe snapshot is this interval's evidence
+                self.confirmed_at[m] = now
+                self.retry_at.pop(m, None)
+                self.retry_delay.pop(m, None)
+            self.markets |= ok
+            if missing := set(asked) - ok:
+                ev(cid, "subscribe_unconfirmed", nonce=nonce, channel=ch, markets=sorted(missing))
+                self.subscribe_failed(missing, now)
+        elif nonce in self.status_pending:
+            sent = self.status_pending.pop(nonce)
+            listed = ((obj.get("status") or {}).get("subscriptions") or {}).get("markets") or {}
+            # Only markets confirmed before the request was sent can be judged by its reply.
+            lost = {m for m in self.markets if self.confirmed_at.get(m, now) <= sent and listed.get(m) != ch}
+            if lost:
+                ev(cid, "subscription_lost", nonce=nonce, channel=ch, markets=sorted(lost))
+                self.markets -= lost
+                self.transitioned -= lost
+                for m in lost:
+                    self.confirmed_at.pop(m, None)
+            unexpected = {m for m, c in listed.items() if c == ch} - self.markets - self.in_flight() - lost
+            if unexpected:
+                ev(cid, "subscription_unexpected", nonce=nonce, channel=ch, markets=sorted(unexpected))
+
+    def expire(self, now: float) -> None:
+        """Requests unanswered after stream.probe_timeout_s: archived; a subscribe is retried."""
+        timeout = self.o.params.probe_timeout_s
+        for nonce, (asked, sent) in list(self.pending.items()):
+            if now - sent >= timeout:
+                del self.pending[nonce]
+                self.stream.event(self.conn_id, "subscribe_timeout", nonce=nonce, channel=self.o.channel,
+                                  markets=sorted(asked))
+                self.subscribe_failed(set(asked), now)
+        for nonce, sent in list(self.status_pending.items()):
+            if now - sent >= timeout:
+                del self.status_pending[nonce]
+                self.stream.event(self.conn_id, "status_timeout", nonce=nonce, channel=self.o.channel)
+
+    async def check_subscriptions(self, now: float) -> None:
+        if self.markets and now - self.last_status >= self.o.params.subscription_check_interval_s:
+            self.last_status = now
+            nonce = await self.send({"status": {}})
+            self.o.budget.spend(1)
+            self.status_pending[nonce] = now
+
+    def note_activity(self, obj: dict) -> None:
         now = self.o.mono()
         for key in ("snapshot", "delta"):
             body = obj.get(key)
@@ -260,7 +359,13 @@ class _Connection:
             t = msg.type
             if t == aiohttp.WSMsgType.TEXT:
                 self.stream.write("in", cid, msg.data, recv_ts_ms=ts)
-                self.note_activity(msg.data)
+                try:
+                    obj = json.loads(msg.data)
+                except ValueError:
+                    obj = None
+                if isinstance(obj, dict):
+                    self.note_activity(obj)
+                    self.on_reply(obj)
             elif t == aiohttp.WSMsgType.PING:
                 ev(cid, "ws_control", op="ping", direction="in",
                    payload_hex=bytes(msg.data).hex(), recv_ts_ms=ts)
@@ -286,8 +391,9 @@ class _Connection:
                 return
 
     async def maintain(self) -> None:
-        """Once a second: follow the desired market set, and probe quiet channels and books
-        after a lifecycle transition."""
+        """Once a second: follow the desired market set, settle unanswered requests, check
+        the venue's subscriptions, and probe quiet channels and books after a lifecycle
+        transition."""
         interval = self.o.params.channel_probe_interval_s
         while True:
             await asyncio.sleep(1)
@@ -297,9 +403,11 @@ class _Connection:
                 await self.ws.close()
                 return
             await self.unsubscribe(self.markets - desired)
-            await self.subscribe(desired - self.markets)
-
             now = self.o.mono()
+            self.expire(now)
+            await self.subscribe(desired)
+            await self.check_subscriptions(now)
+
             due = sorted(m for m in self.markets
                          if m in self.transitioned or now - max(self.last_activity.get(m, float("-inf")),
                                                                 self.last_probe.get(m, float("-inf"))) >= interval)
