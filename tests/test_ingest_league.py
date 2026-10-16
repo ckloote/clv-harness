@@ -246,6 +246,33 @@ def test_a_crashed_sessions_part_keeps_its_window_unsettled(tmp_path):
     assert q(c, "SELECT count(*) FROM tick") == [(4,)]
 
 
+def test_an_orphaned_frame_behind_a_clock_step_keeps_its_window_unsettled(tmp_path):
+    # PR #26 follow-up review: the orphaned part's first frame is after E1's window, but a later one,
+    # received after the wall clock stepped back, is inside it. The watermark must stop at that one.
+    root = tmp_path / "archive"
+    write_archive(root)
+    crash = Clock()
+    crash.t = S + 2 * H + 1_000
+    crashed = ArchiveWriter(root, session_id="s9", segment_max_s=86_400, fsync_interval_s=5, clock=crash)
+    ws = crashed.stream("novig", "c9")
+    ws.write("out", "c9", json.dumps({"nonce": 1, "subscribe": {"markets": {M1: "book"}}}))
+    back = S + 2 * H - 1_000                                    # the clock stepped back 2 s
+    ws.write("in", "c9", json.dumps({"ts": back, "nonce": 1, "subscribed": {"markets": {M1: "book"}}, "snapshot": {
+        M1: {"eventId": E1, "book": {"seq": 90, "orders": orders(LAL, DEN, "0.70", "0.28")},
+             "lifecycle": {"seq": 1, "status": "OPEN"}}}}), recv_ts_ms=back)
+    later = Clock()
+    later.t = NOW
+    ArchiveWriter(root, session_id="s10", segment_max_s=86_400, fsync_interval_s=5, clock=later).close()
+    assert sealed_through(root) == back
+    c = fresh()
+    with pytest.raises(IngestError, match="sealed through"):
+        ingest_league_event(c, root, E1, now_ms=NOW)
+    recover_orphans(root, session_id="s11")
+    ArchiveWriter(root, session_id="s11", segment_max_s=86_400, fsync_interval_s=5, clock=later).close()
+    ingest_league_event(c, root, E1, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM tick") == [(5,)]           # the orphan's snapshot is in it
+
+
 def test_a_league_event_is_ingested_once(recorded):
     c = fresh()
     ingest_league_event(c, recorded, E1, now_ms=NOW)

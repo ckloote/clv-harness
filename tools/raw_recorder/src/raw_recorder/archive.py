@@ -268,18 +268,23 @@ def find_parts(root: Path) -> list[Path]:
     return sorted(root.glob(f"*/*/*{PART_SUFFIX}"))
 
 
-def first_frame_ms(part: Path) -> int | None:
-    """The receive time of a part's first complete frame; None if it has none (empty, or only
-    a torn first line, which recovery drops). An unreadable complete line gives 0, so a
-    watermark bounded by it never passes the part."""
+def earliest_frame_ms(part: Path) -> int | None:
+    """The earliest receive time among a part's complete frames, as sealing it would record;
+    None if it has none (empty, or only a torn tail, which recovery drops). Not the first
+    frame's: receive times are wall-clock, and a clock stepped back puts a later frame earlier.
+    An unreadable complete line gives 0, so a watermark bounded by it never passes the part.
+    Reads the whole part: only a crashed session's parts are read, and only until recovery."""
+    earliest = None
     with open(part, "rb") as f:
-        line = f.readline()
-    if not line.endswith(b"\n"):
-        return None
-    try:
-        return int(decode_line(line)["recv_ts_ms"])
-    except (ValueError, KeyError, TypeError):
-        return 0
+        for line in f:
+            if not line.endswith(b"\n"):
+                break                           # a torn tail
+            try:
+                t = int(decode_line(line)["recv_ts_ms"])
+            except (ValueError, KeyError, TypeError):
+                return 0
+            earliest = t if earliest is None else min(earliest, t)
+    return earliest
 
 
 def recover_orphans(root: Path, *, session_id: str | None) -> list[SealedEntry]:
@@ -452,7 +457,8 @@ class ArchiveWriter:
         """Every frame in the archive received before this time is in a sealed, journalled
         segment: this writer's, and any other session's. A crashed session's parts stay until a
         recorder starts and seals them (recover_orphans), and a short command's writer (`catalog`,
-        `mlb-feed`) must not publish past them meanwhile."""
+        `mlb-feed`) must not publish past them meanwhile. Each part is bounded by its earliest
+        frame, never its first (earliest_frame_ms)."""
         now = self.clock()
         with self._lock:
             streams = list(self._streams.values())
@@ -466,7 +472,7 @@ class ArchiveWriter:
             if part in own:
                 continue
             try:
-                t = first_frame_ms(part)
+                t = earliest_frame_ms(part)
             except FileNotFoundError:
                 continue                        # sealed since it was listed
             if t is not None:

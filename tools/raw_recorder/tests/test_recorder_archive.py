@@ -336,3 +336,17 @@ def test_only_a_complete_frame_in_a_foreign_part_bounds_the_watermark(tmp_path):
     (day / "bad.0001.jsonl.part").write_bytes(b"not a frame\n")                     # unreadable: pins it
     assert w.sealed_through() == 0
     w.close()
+
+
+def test_a_foreign_part_bounds_the_watermark_by_its_earliest_frame_not_its_first(tmp_path):
+    # PR #26 follow-up review: receive times are wall-clock, so a clock stepped back puts a later
+    # frame before the first one.
+    clock = Clock(T0 + 10_000)
+    crashed = writer(tmp_path, clock)
+    s = crashed.stream("novig", "c1")
+    s.write("in", "c1", "first")                                        # received T0 + 10 s
+    s.write("in", "c1", "after the clock stepped back", recv_ts_ms=T0)   # then a crash
+    clock.t = T0 + 600_000
+    short = writer(tmp_path, clock)
+    short.close()
+    assert read_watermark(tmp_path) == T0
