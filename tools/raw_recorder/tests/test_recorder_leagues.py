@@ -227,3 +227,53 @@ def test_status_for_a_league_event_checks_novig_only(tmp_path):
     assert "novig" in areas and not areas & {"kalshi", "odds_api", "mlb_statsapi"}
     missing = status(cfg, [], now, None, events=[e], event_id="nope")
     assert missing.worst == "FAIL" and "no league event nope" in missing.checks[0][2]
+
+
+async def test_league_discovery_stays_off_while_novig_is_disabled(tmp_path):
+    # PR #25 review: disabling the source must stop its requests, league catalog included.
+    now = time.time_ns() // 1_000_000
+    app, seen = novig_catalog(now + 20 * H)
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        cfg = league_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        cfg.novig["enabled"] = False
+        rec = Recorder(cfg, [], inhibitor=FakeInhibitor())
+        task = asyncio.create_task(rec.run())
+        await asyncio.sleep(0.6)
+        rec.stop.set()
+        await task
+    finally:
+        await srv.close()
+    assert seen == [] and rec.events == []
+    events = [json.loads(f["frame"]) for f in iter_archive(cfg.archive_root) if f["dir"] == "event"]
+    (off,) = [e for e in events if e["type"] == "league_discovery_disabled"]
+    assert off["leagues"] == ["NBA"] and off["reason"] == "novig disabled"
+    assert not (cfg.archive_root / "novig").exists()
+
+
+async def test_status_for_a_league_event_ignores_sources_it_does_not_use(tmp_path):
+    # PR #25 review: a Novig-only session archives Kalshi, The Odds API and StatsAPI as
+    # disabled; that fails an MLB game's status, but not a league event's.
+    now = time.time_ns() // 1_000_000
+    app, _ = novig_catalog(now + 20 * H)
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        cfg = league_config(tmp_path, str(srv.make_url("")).rstrip("/"))
+        rec = Recorder(cfg, [], inhibitor=FakeInhibitor())
+        task = asyncio.create_task(rec.run())
+        await asyncio.sleep(1.0)
+        rec.stop.set()
+        await task
+    finally:
+        await srv.close()
+    (e,) = rec.events
+    after = time.time_ns() // 1_000_000                      # status reads sessions started by then
+    rep = status(cfg, [], after, 12345, events=[e], event_id="e7")
+    recorder = [(level, message) for level, area, message in rep.checks if area == "recorder"]
+    assert any("session started" in m for _, m in recorder)  # the archived session was read
+    assert all(level != "FAIL" for level, _ in recorder)
+    assert not any("sources_disabled" in m for _, m in recorder)
+    mlb = status(cfg, [game(1, now + H)], after, 12345, game_pk=1)
+    assert any(level == "FAIL" and "sources_disabled" in m for level, area, m in mlb.checks if area == "recorder")

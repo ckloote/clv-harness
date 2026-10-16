@@ -108,7 +108,8 @@ async def _catalog(cfg: Config) -> int:
                  _rest(archive, http, "novig", "catalog", sid, cfg),
                  _rest(archive, http, "kalshi", "catalog", sid, cfg) if cfg.enabled(cfg.kalshi) else None)
         merged, found = await discovery.discover(cfg, *rests, now_ms())
-        league_round = await leagues.discover(cfg, rests[1], now_ms()) if cfg.enabled_leagues() else None
+        league_round = (await leagues.discover(cfg, rests[1], now_ms())
+                        if cfg.enabled_leagues() and cfg.enabled(cfg.novig) else None)
     print(f"# Matched this round; merged into {cfg.discovered_path} ({len(merged)} games in all).")
     print("# The responses behind them are archived. Copy an entry into games.toml to override it.\n")
     print(discovery.render(found.games, now_ms(), found.warnings + found.notes))

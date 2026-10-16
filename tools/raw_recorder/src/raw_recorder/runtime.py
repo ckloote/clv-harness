@@ -299,8 +299,14 @@ class Recorder:
         specs = []
         if cfg.discovery.get("enabled", False):
             specs += self._discovery_specs(http)
-        if cfg.enabled_leagues():
+        if cfg.enabled_leagues() and cfg.enabled(cfg.novig):
             specs += self._league_specs(http)
+        elif cfg.enabled_leagues():
+            # League events are found from Novig's catalog and recorded on Novig only: with
+            # Novig disabled there is nothing to discover or record for them.
+            names = [lg["name"] for lg in cfg.enabled_leagues()]
+            self.note("league_discovery_disabled", reason="novig disabled", leagues=names)
+            self.warn_config(f"league discovery off ({', '.join(names)}): [novig] is disabled in {cfg.path}")
         if cfg.enabled(cfg.kalshi):
             specs += self._kalshi_specs(http)
         if cfg.enabled(cfg.odds_api):

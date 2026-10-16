@@ -40,6 +40,9 @@ from .session import free_disk_mb
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 LEVELS = (OK, WARN, FAIL)
 DISABLED_EVENTS = {"odds_disabled", "novig_stream_disabled", "sources_disabled", "novig_refused"}
+# A league event (A1) is recorded on Novig only: other sources being off does not concern it.
+LEAGUE_SOURCES = {"novig"}
+NOVIG_ONLY_IRRELEVANT = {"odds_disabled"}
 PROBE_GRACE_MS = 10_000     # a probe sent this recently may still be awaiting its reply
 
 
@@ -121,10 +124,17 @@ def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
     else:
         start, events = session
         rep.add(OK, "recorder", f"session started {_age(now_ms, start)}")
+        league = isinstance(w.game, LeagueEvent)
         for e in events:
-            if e["type"] in DISABLED_EVENTS:
-                level = WARN if e["type"] == "novig_stream_disabled" else FAIL
-                rep.add(level, "recorder", f"{e['type']}: {e.get('reason') or e.get('sources')}")
+            if e["type"] not in DISABLED_EVENTS or (league and e["type"] in NOVIG_ONLY_IRRELEVANT):
+                continue
+            if league and e["type"] == "sources_disabled":
+                relevant = [s for s in e.get("sources") or [] if s in LEAGUE_SOURCES]
+                if not relevant:
+                    continue
+                e = dict(e, sources=relevant)
+            level = WARN if e["type"] == "novig_stream_disabled" else FAIL
+            rep.add(level, "recorder", f"{e['type']}: {e.get('reason') or e.get('sources')}")
         errors = [e for e in events if e["type"] in ("task_error", "seal_error")]
         if errors:
             rep.add(WARN, "recorder", f"{len(errors)} task/seal error(s) this session; last: "
