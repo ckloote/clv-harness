@@ -12,10 +12,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from raw_recorder.archive import ArchiveWriter
+from raw_recorder.archive import ArchiveWriter, recover_orphans
 
 from clv import db
-from clv.archive import WATERMARK
+from clv.archive import WATERMARK, sealed_through
 from clv.ingest import IngestError, ingest_league_event, ingest_league_events, unsettled
 
 S = 1_792_202_400_000            # e1's scheduled start
@@ -219,6 +219,30 @@ def test_a_stale_mirror_never_settles_a_window(recorded, tmp_path):
     shutil.rmtree(mirror)
     shutil.copytree(recorded, mirror)
     ingest_league_event(c, mirror, E1, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM tick") == [(4,)]
+
+
+def test_a_crashed_sessions_part_keeps_its_window_unsettled(tmp_path):
+    # PR #26 follow-up review: after a crash, a short command (catalog, mlb-feed) opened another
+    # writer without recovering the orphaned parts, and its close published the present time.
+    root = tmp_path / "archive"
+    write_archive(root)
+    crash = Clock()
+    crash.t = S + 30 * 60_000
+    crashed = ArchiveWriter(root, session_id="s9", segment_max_s=86_400, fsync_interval_s=5, clock=crash)
+    crashed.stream("novig", "c9").event("c9", "ws_connect_attempt", markets=[M1], channel="book")
+    later = Clock()
+    later.t = NOW
+    short = ArchiveWriter(root, session_id="s10", segment_max_s=86_400, fsync_interval_s=5, clock=later)
+    short.stream("recorder", "catalog-s10").event("catalog-s10", "command_start", command="catalog")
+    short.close()
+    assert sealed_through(root) == S + 30 * 60_000             # inside E1's window: not settled
+    c = fresh()
+    with pytest.raises(IngestError, match="sealed through"):
+        ingest_league_event(c, root, E1, now_ms=NOW)
+    recover_orphans(root, session_id="s11")                     # the next recorder start
+    ArchiveWriter(root, session_id="s11", segment_max_s=86_400, fsync_interval_s=5, clock=later).close()
+    ingest_league_event(c, root, E1, now_ms=NOW)
     assert q(c, "SELECT count(*) FROM tick") == [(4,)]
 
 

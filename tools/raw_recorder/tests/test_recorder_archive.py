@@ -306,3 +306,33 @@ def test_the_watermark_is_rewritten_on_its_interval(tmp_path, monkeypatch):
     w.tick()
     assert read_watermark(tmp_path) == T0 + 5_000               # nothing active: the present
     w.close()
+
+
+def test_a_crashed_sessions_parts_hold_every_writers_watermark(tmp_path):
+    # PR #26 follow-up review: a short command's writer (catalog, mlb-feed) opened after a crash
+    # must not publish past the crashed session's parts, which only a recorder start recovers.
+    clock = Clock(T0)
+    crashed = writer(tmp_path, clock)
+    crashed.stream("novig", "c1").write("in", "c1", "never sealed")      # then the host lost power
+    clock.t = T0 + 600_000
+    short = writer(tmp_path, clock)
+    short.stream("recorder", "catalog-x").event("catalog-x", "command_start")
+    short.close()
+    assert read_watermark(tmp_path) == T0
+    recover_orphans(tmp_path, session_id="r" * 32)                       # the next recorder start
+    clock.t = T0 + 700_000
+    after = writer(tmp_path, clock)
+    after.close()
+    assert read_watermark(tmp_path) == T0 + 700_000
+
+
+def test_only_a_complete_frame_in_a_foreign_part_bounds_the_watermark(tmp_path):
+    clock = Clock(T0 + 60_000)
+    day = tmp_path / "novig" / "2026-10-07"
+    day.mkdir(parents=True)
+    (day / "torn.0001.jsonl.part").write_bytes(b'{"recv_ts_ms": 1, "conn')          # no complete frame
+    w = writer(tmp_path, clock)
+    assert w.sealed_through() == T0 + 60_000
+    (day / "bad.0001.jsonl.part").write_bytes(b"not a frame\n")                     # unreadable: pins it
+    assert w.sealed_through() == 0
+    w.close()

@@ -8,9 +8,10 @@ Layout (§7.1 as amended by docs/decisions/2026-10-06-r0-recorder.md)::
     <root>/<source>/<YYYY-MM-DD, UTC>/manifest.json                         view built from the journal
     <root>/sealed_through.json                                              the seal watermark
 
-The seal watermark is a time before which every frame the writer received is in
-a sealed, journalled segment: the earliest receive time still in an active or
-queued segment (or in a part whose seal failed), else the present. The writer
+The seal watermark is a time before which every frame in the archive is in a
+sealed, journalled segment: the earliest receive time still in an active or
+queued segment (or in a part whose seal failed), or in any other `.part` under the
+root (a crashed session's orphans, until a recorder seals them), else the present. The writer
 rewrites it every WATERMARK_INTERVAL_S and on close. A reader (clv.ingest) treats
 a window as complete only once the watermark is past its end; a mirror copies a
 snapshot of it before the segments it vouches for, and publishes it after them
@@ -267,6 +268,20 @@ def find_parts(root: Path) -> list[Path]:
     return sorted(root.glob(f"*/*/*{PART_SUFFIX}"))
 
 
+def first_frame_ms(part: Path) -> int | None:
+    """The receive time of a part's first complete frame; None if it has none (empty, or only
+    a torn first line, which recovery drops). An unreadable complete line gives 0, so a
+    watermark bounded by it never passes the part."""
+    with open(part, "rb") as f:
+        line = f.readline()
+    if not line.endswith(b"\n"):
+        return None
+    try:
+        return int(decode_line(line)["recv_ts_ms"])
+    except (ValueError, KeyError, TypeError):
+        return 0
+
+
 def recover_orphans(root: Path, *, session_id: str | None) -> list[SealedEntry]:
     """Seal every `.part` left by a previous, uncleanly stopped session.
 
@@ -346,10 +361,10 @@ class Stream:
         seg.fh.close()
         self.writer.submit_seal(seg.path, seg.first_recv_ms)
 
-    def unsealed_since(self) -> int | None:
-        """The earliest receive time in this stream's active segment, if it has one."""
+    def unsealed(self) -> tuple[Path, int | None] | None:
+        """This stream's active segment and its earliest receive time, if it has one."""
         with self.lock:
-            return self._seg.first_recv_ms if self._seg is not None else None
+            return (self._seg.path, self._seg.first_recv_ms) if self._seg is not None else None
 
     def rotate(self) -> None:
         with self.lock:
@@ -397,7 +412,7 @@ class ArchiveWriter:
         self._pending: list[Future] = []
         self._last_fsync = time.monotonic()
         self.seal_errors: list[BaseException] = []
-        self._queued: dict[Future, int | None] = {}     # seal -> its segment's earliest receive time
+        self._queued: dict[Future, tuple[Path, int | None]] = {}   # seal -> its part, earliest receive time
         self._stuck: list[int] = []                     # earliest receive times of parts whose seal failed
         self._queue_lock = threading.Lock()
         self._last_watermark = float("-inf")
@@ -421,26 +436,41 @@ class ArchiveWriter:
     def submit_seal(self, part: Path, first_recv_ms: int | None = None) -> None:
         fut = self._sealer.submit(seal_part, part, session_id=self.session_id, clock=self.clock)
         with self._queue_lock:
-            self._queued[fut] = first_recv_ms
+            self._queued[fut] = (part, first_recv_ms)
         fut.add_done_callback(self._seal_done)
         self._pending.append(fut)
 
     def _seal_done(self, fut: Future) -> None:
         with self._queue_lock:
-            first = self._queued.pop(fut, None)
+            _, first = self._queued.pop(fut, (None, None))
             if fut.exception() is not None and first is not None:
                 self._stuck.append(first)       # the part is still unsealed: never vouch past it
         if fut.exception() is not None:
             self.seal_errors.append(fut.exception())
 
     def sealed_through(self) -> int:
-        """Every frame received before this time is in a sealed, journalled segment."""
+        """Every frame in the archive received before this time is in a sealed, journalled
+        segment: this writer's, and any other session's. A crashed session's parts stay until a
+        recorder starts and seals them (recover_orphans), and a short command's writer (`catalog`,
+        `mlb-feed`) must not publish past them meanwhile."""
         now = self.clock()
         with self._lock:
             streams = list(self._streams.values())
-        bounds = [t for s in streams if (t := s.unsealed_since()) is not None]
+        mine = [u for s in streams if (u := s.unsealed()) is not None]
         with self._queue_lock:
-            bounds += [t for t in self._queued.values() if t is not None] + self._stuck
+            mine += list(self._queued.values())
+            bounds = list(self._stuck)
+        bounds += [t for _, t in mine if t is not None]
+        own = {path for path, _ in mine}
+        for part in find_parts(self.root):
+            if part in own:
+                continue
+            try:
+                t = first_frame_ms(part)
+            except FileNotFoundError:
+                continue                        # sealed since it was listed
+            if t is not None:
+                bounds.append(t)
         return min([now, *bounds])
 
     def write_watermark(self) -> None:
