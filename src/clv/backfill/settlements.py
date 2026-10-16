@@ -16,7 +16,8 @@ correction never rewrites a settlement. Every stored instrument is settled, link
 
 A row that repeats its subject's latest answer is not a new observation. A changed answer
 (Novig can regrade a market) is a new row superseding the last. Rows are recorded in the
-order their responses were received, whatever the order of the archive's segments.
+order their responses were received, whatever the order of the archive's segments, and a
+record no later than its subject's latest stored row is never stored after it.
 """
 from __future__ import annotations
 
@@ -40,21 +41,32 @@ def _e4(text: str, ref: str) -> int:
     return int(v)
 
 
+def _order(observed_ms: int, ref: str, item: int) -> tuple:
+    """A record's place in receive order: receive time, then its frame and item, so records
+    received in the same millisecond still have one fixed order."""
+    relpath, _, line = ref.rpartition("#")
+    return observed_ms, relpath, int(line), item
+
+
 def _record(w, report: Counter, rows: list[tuple]) -> None:
-    """Store (observed ms, source, subject, row, ref, item) in receive order, skipping repeats."""
-    for _, source, subject, row, ref, item in sorted(rows, key=lambda r: (r[0], r[1], r[2], r[4], r[5])):
-        last = w.conn.execute("SELECT settlement_obs_id, result, value_native FROM settlement_observation"
-                              " WHERE source = ? AND subject = ? ORDER BY settlement_obs_id DESC LIMIT 1",
-                              (source, subject)).fetchone()
+    """Store (observed ms, source, subject, row, ref, item) in receive order, skipping repeats.
+
+    A record at or before its subject's latest stored row in receive order was considered when
+    that row was stored, so it is never stored after it: a rerun cannot let an earlier repeat
+    supersede a later correction (PR #20 review)."""
+    for observed, source, subject, row, ref, item in sorted(rows, key=lambda r: (_order(r[0], r[4], r[5]), r[2])):
+        last = w.conn.execute(
+            "SELECT s.settlement_obs_id, s.result, s.value_native, s.observed_ts_ms, a.relpath, s.raw_line, s.raw_item"
+            " FROM settlement_observation s JOIN raw_artifact a USING (raw_artifact_id)"
+            " WHERE s.source = ? AND s.subject = ? ORDER BY s.settlement_obs_id DESC LIMIT 1",
+            (source, subject)).fetchone()
+        if last is not None and _order(observed, ref, item) <= (last[3], last[4], last[5], last[6]):
+            continue                        # already considered: stored, or skipped as a repeat
         if last is not None and (last[1], last[2]) == (row["result"], row.get("value_native")):
             report[f"{source}_settlements_repeated"] += 1
             continue
-        aid, line = w.cite(ref)
-        if w.conn.execute("SELECT 1 FROM settlement_observation WHERE raw_artifact_id = ? AND raw_line = ?"
-                          " AND raw_item = ? AND subject = ?", (aid, line, item, subject)).fetchone():
-            continue                        # this record is stored, and a later one changed the answer
         w.insert("settlement_observation", dict(source=source, subject=subject, supersedes_id=last and last[0],
-                                                **row, raw_artifact_id=aid, raw_line=line, raw_item=item))
+                                                **row, **w.cited(ref), raw_item=item))
         report[f"{source}_settlements" + ("_superseding" if last else "")] += 1
 
 

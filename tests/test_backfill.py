@@ -594,3 +594,31 @@ def test_settlements_load_once_and_a_regrade_supersedes(archives, tmp_path):
     assert rep["novig_markets_unsettled"] == 1
     backfill.import_identity(c, hist, NOW + 7)
     assert settled(c) == after
+
+
+def test_a_rerun_never_lets_an_earlier_repeat_supersede_a_correction(archives):
+    # PR #20 review: StatsAPI reports 901 as BOS win, again BOS win, then corrected to NYY win.
+    # The first import stores the first answer and the correction; replaying the same archive
+    # must not store the skipped repeat after the correction and restore the wrong result.
+    hist, _ = archives
+    clock = Clock()
+    clock.t = iso_ms("2026-10-15T00:00:00Z")
+    w = ArchiveWriter(hist, session_id="h3", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
+    m = w.stream("mlb_hist", "backfill-h3")
+    query = "sportId=1&startDate=2026-08-01&endDate=2026-08-31&gameType=R%2CF%2CD%2CL%2CW"
+    for rid, winner in (("s2", "BOS"), ("s3", "NYY")):
+        games = [g if g["gamePk"] != 901 else row(901, "2026-08-04", "2026-08-04T23:10:00Z", "NYY", "BOS",
+                                                  winner=winner) for g in SCHEDULE]
+        rest(clock, m, rid, "/api/v1/schedule", "schedule", {"dates": [{"games": games}]}, query=query)
+    w.close()
+    c = db.connect(":memory:")
+    db.migrate(c)
+    game = "SELECT o.team_abbreviation, s.result, s.supersedes_id IS NOT NULL FROM settlement_observation s" \
+           " JOIN outcome o USING (outcome_id) JOIN event e ON e.event_id = s.event_id" \
+           " WHERE e.league_game_id = '901' ORDER BY s.settlement_obs_id"
+    backfill.import_identity(c, hist, NOW)
+    first = q(c, game)
+    assert sorted(first) == [("BOS", "lose", 1), ("BOS", "win", 0), ("NYY", "lose", 0), ("NYY", "win", 1)]
+    for again in (NOW + 1, NOW + 2):
+        backfill.import_identity(c, hist, again)
+        assert q(c, game) == first
