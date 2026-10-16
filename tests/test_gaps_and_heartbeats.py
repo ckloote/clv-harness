@@ -99,6 +99,24 @@ def one_connection(conn, t0, t1, reason, market="m", channel="book"):
     return out + ([disconnected(t1 + 2, conn, reason)] if reason else [])
 
 
+def subscription_lost(t, conn, market, channel="book"):
+    return fr(t, conn, "event", {"type": "subscription_lost", "channel": channel, "markets": [market]})
+
+
+def test_subscription_lost_and_resubscribed_is_a_gap_on_the_same_connection():
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a"), delta(150, "c1", "a", 2),
+                      subscription_lost(200, "c1", "a"), subscribe(220, "c1", "a", seq=5),
+                      delta(250, "c1", "a", 6), disconnected(400, "c1", "recorder_stop"))
+    assert got == [("subscription_lost", "a/book", 150, 220)]
+
+
+def test_subscription_lost_stays_open_though_the_connection_closed_on_purpose():
+    # The venue dropped it: a planned close later on the connection proves nothing about it.
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a"), delta(150, "c1", "a", 2),
+                      subscription_lost(200, "c1", "a"), disconnected(400, "c1", "recorder_stop"))
+    assert got == [("subscription_lost", "a/book", 150, None)]
+
+
 def test_planned_close_is_not_a_gap():
     for reason in ("recorder_stop", "no_active_markets"):
         assert stream_gaps(one_connection("c1", 100, 200, reason)) == []

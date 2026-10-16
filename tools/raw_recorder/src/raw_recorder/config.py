@@ -40,6 +40,8 @@ class Params:
     novig_public_book_poll_interval_s: float
     channel_probe_interval_s: float
     transport_liveness_max_s: float
+    probe_timeout_s: float
+    subscription_check_interval_s: float
     reconnect_backoff_initial_s: float
     reconnect_backoff_max_s: float
 
@@ -116,6 +118,8 @@ def load_config(path: Path | None = None) -> Config:
         novig_public_book_poll_interval_s=r0["novig_public_book_poll_interval_s"],
         channel_probe_interval_s=stream["channel_probe_interval_s"],
         transport_liveness_max_s=stream["transport_liveness_max_s"],
+        probe_timeout_s=stream["probe_timeout_s"],
+        subscription_check_interval_s=stream["subscription_check_interval_s"],
         reconnect_backoff_initial_s=stream["reconnect_backoff_s"]["initial"],
         reconnect_backoff_max_s=stream["reconnect_backoff_s"]["max"],
     )

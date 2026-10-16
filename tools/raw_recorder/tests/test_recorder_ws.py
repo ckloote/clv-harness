@@ -29,16 +29,21 @@ def params(**overrides):
                 capture_lead_s=10800, capture_tail_s=5400, odds_window_lead_s=10800,
                 segment_max_s=3600, fsync_interval_s=5, rest_timeout_s=2, min_free_disk_mb=1,
                 stream_probe_reserve_fraction=0.5, novig_public_book_poll_interval_s=10,
-                channel_probe_interval_s=1, transport_liveness_max_s=5,
+                channel_probe_interval_s=1, transport_liveness_max_s=5, probe_timeout_s=1,
+                subscription_check_interval_s=60,
                 reconnect_backoff_initial_s=0.05, reconnect_backoff_max_s=0.2)
     base.update(overrides)
     return Params(**base)
 
 
-def snapshot_reply(nonce, markets, channel):
-    return json.dumps({"ts": 1, "nonce": nonce, "snapshot": {
-        m: {"eventId": "e1", channel: {"seq": 7, "orders": {}}, "lifecycle": {"seq": 1, "status": "OPEN"}}
-        for m in markets}})
+def snapshot_reply(nonce, markets, channel, subscribed=False):
+    """A snapshot reply; a subscribe's also lists what it subscribed, as Production does."""
+    msg = {"ts": 1, "nonce": nonce}
+    if subscribed:
+        msg["subscribed"] = {"markets": {m: channel for m in markets}, "events": {}, "private": []}
+    msg["snapshot"] = {m: {"eventId": "e1", channel: {"seq": 7, "orders": {}}, "lifecycle": {"seq": 1, "status": "OPEN"}}
+                       for m in markets}
+    return json.dumps(msg)
 
 
 def make_app(state, close_after_subscribe=False, golive_at_s=None):
@@ -69,6 +74,7 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None):
 
         task = asyncio.create_task(pinger())
         feeder = None
+        subs: dict[str, str] = {}               # this connection's subscriptions, as the venue holds them
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.PONG:
@@ -76,10 +82,34 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None):
                 elif msg.type == aiohttp.WSMsgType.TEXT:
                     req = json.loads(msg.data)
                     state["requests"].append(req)
-                    for verb in ("subscribe", "snapshot"):
-                        if verb in req:
-                            sel = req[verb]["markets"]
-                            await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values()))))
+                    if "subscribe" in req and state.get("on_subscribe"):
+                        override = state["on_subscribe"](req)
+                        if override is not None:      # refused or throttled: nothing subscribed
+                            await ws.send_str(json.dumps(override))
+                            continue
+                    if "subscribe" in req:
+                        sel = {m: c for m, c in req["subscribe"]["markets"].items()
+                               if m not in state["unlisted_once"]}
+                        state["unlisted_once"] -= set(req["subscribe"]["markets"])
+                        subs.update(sel)
+                        if sel:
+                            await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values())),
+                                                             subscribed=True))
+                        else:
+                            await ws.send_str(json.dumps({"ts": 1, "nonce": req["nonce"], "subscribed": {
+                                "markets": {}, "events": {}, "private": []}, "snapshot": {}}))
+                    if "snapshot" in req:
+                        sel = req["snapshot"]["markets"]
+                        await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values()))))
+                    if "unsubscribe" in req:
+                        for subject in req["unsubscribe"]:
+                            subs.pop(subject.removeprefix("market:"), None)
+                    if "status" in req:
+                        for m in state["forget"]:     # the venue dropped these without telling us
+                            subs.pop(m, None)
+                        state["forget"] = set()
+                        await ws.send_str(json.dumps({"nonce": req["nonce"], "status": {"subscriptions": {
+                            "markets": dict(subs), "events": {}, "private": []}}}))
                     if golive_at_s is not None and "subscribe" in req:
                         feeder = asyncio.create_task(busy(ws, next(iter(req["subscribe"]["markets"]))))
                     if close_after_subscribe and "subscribe" in req:
@@ -95,12 +125,16 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None):
     return app
 
 
-def new_state():
-    return {"upgrades": [], "requests": [], "pongs": [], "pings_sent": 0}
+def new_state(**venue):
+    """`venue` sets the fake's behaviour: `on_subscribe(req)` returns a reply that replaces the
+    subscribe (nothing is subscribed), `unlisted_once` markets are left out of the first reply
+    that asks for them, and `forget` markets are dropped before the next status reply."""
+    return {"upgrades": [], "requests": [], "pongs": [], "pings_sent": 0,
+            "on_subscribe": None, "unlisted_once": set(), "forget": set(), **venue}
 
 
 async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=False, golive_at_s=None,
-                 **param_overrides):
+                 markets=frozenset({MARKET}), **param_overrides):
     srv = TestServer(make_app(state, close_after_subscribe, golive_at_s))
     await srv.start_server()
     archive = ArchiveWriter(tmp_path, session_id="w" * 32, segment_max_s=3600, fsync_interval_s=5)
@@ -108,7 +142,7 @@ async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=Fa
         async with aiohttp.ClientSession() as http:
             ws_url = str(srv.make_url("/v3/ws")).replace("http://", "ws://")
             rec = NovigStream(http=http, archive=archive, signer=SIGNER, ws_url=ws_url,
-                              channel="book", markets_fn=lambda: frozenset({MARKET}),
+                              channel="book", markets_fn=lambda: frozenset(markets),
                               params=params(**param_overrides), budget=budget or TokenBudget())
             task = asyncio.create_task(rec.run())
             await asyncio.sleep(seconds)
@@ -252,3 +286,82 @@ async def test_probe_write_failure_ends_the_connection_and_reconnects(tmp_path, 
     frames = await record(tmp_path, state, seconds=3.0)
     assert failed["failed"] and len(state["upgrades"]) >= 2
     assert len(io_errors(frames)) == 1
+
+
+# --- Subscriptions: affordable, confirmed, checked (A1; DESIGN.md §7.2) ---------------------
+
+def events(frames, kind):
+    return [e for c in ws_evidence(frames).values() for e in c.events if e["type"] == kind]
+
+
+def requests(state, verb):
+    return [r for r in state["requests"] if verb in r]
+
+
+async def test_subscribes_are_batched_to_what_the_bucket_affords(tmp_path):
+    markets = frozenset(f"m{i:02d}" for i in range(10))
+    # 64 tokens, 32 spent on the upgrade: room for 2 book markets now, then 1 a second.
+    budget = TokenBudget(capacity=64, refill_per_s=16)
+    state = new_state()
+    frames = await record(tmp_path, state, seconds=3.5, budget=budget, markets=markets,
+                          channel_probe_interval_s=60)
+    subs = [sorted(r["subscribe"]["markets"]) for r in requests(state, "subscribe")]
+    assert len(subs[0]) == 2 and len(subs) >= 3
+    assert all(len(batch) <= 64 // 16 for batch in subs)
+    asked = [m for batch in subs for m in batch]
+    assert len(asked) == len(set(asked))                 # nothing asked twice while awaiting a reply
+    deferred = events(frames, "subscribe_deferred")
+    assert deferred[0]["reason"] == "stream_budget" and len(deferred[0]["markets"]) == 8
+
+
+async def test_throttled_subscribe_times_out_and_is_retried(tmp_path):
+    calls = []
+
+    def throttle_first(req):
+        calls.append(req)
+        return {"code": "RATE_LIMITED", "message": "slow down"} if len(calls) == 1 else None
+
+    state = new_state(on_subscribe=throttle_first)
+    frames = await record(tmp_path, state, seconds=4.0, probe_timeout_s=0.5, channel_probe_interval_s=0.5)
+    (err,) = events(frames, "ws_error_reply")
+    assert err["code"] == "RATE_LIMITED" and err["nonce"] is None and err["markets"] is None
+    (timeout,) = events(frames, "subscribe_timeout")
+    assert timeout["markets"] == [MARKET]
+    assert len(requests(state, "subscribe")) == 2
+    # Probed only once the retry was confirmed.
+    probes = [i for i, r in enumerate(state["requests"]) if "snapshot" in r]
+    second_sub = [i for i, r in enumerate(state["requests"]) if "subscribe" in r][1]
+    assert probes and min(probes) > second_sub
+
+
+async def test_refused_subscribe_is_never_counted_and_backs_off(tmp_path):
+    state = new_state(on_subscribe=lambda req: {"nonce": req["nonce"], "code": "SUBSCRIPTION_LIMIT_EXCEEDED",
+                                                "message": "too many"})
+    frames = await record(tmp_path, state, seconds=2.5, channel_probe_interval_s=0.5)
+    errs = events(frames, "ws_error_reply")
+    assert errs and all(e["markets"] == [MARKET] for e in errs)
+    assert not requests(state, "snapshot")               # a refused market is never probed as if subscribed
+    assert 2 <= len(requests(state, "subscribe")) <= 3   # retried once a second at most, not every reply
+
+
+async def test_market_left_out_of_the_reply_is_retried(tmp_path):
+    other = "01a10979-c85a-7773-a716-000000000002"
+    state = new_state(unlisted_once={other})
+    frames = await record(tmp_path, state, seconds=2.5, markets=frozenset({MARKET, other}),
+                          channel_probe_interval_s=60)
+    (unconfirmed,) = events(frames, "subscribe_unconfirmed")
+    assert unconfirmed["markets"] == [other]
+    subs = [sorted(r["subscribe"]["markets"]) for r in requests(state, "subscribe")]
+    assert subs == [sorted([MARKET, other]), [other]]
+
+
+async def test_status_check_finds_a_lost_subscription_and_resubscribes(tmp_path):
+    state = new_state(forget={MARKET})
+    frames = await record(tmp_path, state, seconds=3.0, subscription_check_interval_s=0.5,
+                          channel_probe_interval_s=60)
+    (lost,) = events(frames, "subscription_lost")
+    assert lost["markets"] == [MARKET] and lost["channel"] == "book"
+    verbs = [next(k for k in r if k != "nonce") for r in state["requests"]]
+    first_status = verbs.index("status")
+    assert verbs[0] == "subscribe" and "subscribe" in verbs[first_status + 1:]
+    assert not events(frames, "subscription_unexpected")

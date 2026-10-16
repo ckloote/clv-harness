@@ -20,7 +20,10 @@ What the archive can prove in V0:
   deliberate unsubscribe.
   A subscription the recorder ended on purpose (unsubscribed, stopped, or the
   capture window ended) ends coverage; it is not a gap. Any other end is an
-  open gap from that market's last trustworthy observation.
+  open gap from that market's last trustworthy observation. A subscription the
+  venue dropped (the recorder's `status` check archived `subscription_lost`) is
+  never a deliberate end, even on a connection closed on purpose; its gap is
+  labelled `subscription_lost`.
 
 Before a subject's first observation there is no coverage, and no gap either:
 the close function requires coverage, so a missing start is never mistaken for
@@ -94,6 +97,7 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
     `subscribe` and `unsubscribe` commands, the `out` frames).
     """
     end_reason: dict[str, str] = {}
+    lost: dict[tuple[str, str], list[int]] = defaultdict(list)    # (conn, market) -> subscription_lost times
     # (conn, market) -> the recorder's subscribe/unsubscribe commands, as (send time, kind), in order.
     commands: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
     for f in frames:
@@ -101,6 +105,9 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
             e = json.loads(f.frame)
             if e.get("type") == "ws_disconnected":     # the recorder's final word on the connection
                 end_reason[f.conn_id] = e.get("reason") or "unknown"
+            elif e.get("type") == "subscription_lost":
+                for market in e.get("markets") or []:
+                    lost[(f.conn_id, market)].append(f.recv_ts_ms)
         elif f.dir == "out":
             msg = json.loads(f.frame)
             for market in ((msg.get("subscribe") or {}).get("markets") or {}):
@@ -124,6 +131,10 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
         resub = min((t for t, kind in cmds if kind == "subscribe" and t > start), default=float("inf"))
         return any(kind == "unsubscribe" and start <= t < resub and (by is None or t <= by) for t, kind in cmds)
 
+    def lost_after(span: Span, until: int | None = None) -> bool:
+        """The venue dropped this span's subscription after its last evidence (by `until`)."""
+        return any(span.last_ts < t and (until is None or t <= until) for t in lost[(span.conn_id, span.market)])
+
     gaps = []
     by_scope: dict[str, list[Span]] = defaultdict(list)
     for sp in replay.spans:
@@ -133,11 +144,16 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
         reach = spans[0]                    # the span whose coverage reaches furthest so far
         for nxt in spans[1:]:
             if nxt.first_ts > reach.last_ts and not ended_on_purpose(reach, by=nxt.first_ts):
-                gaps.append(Gap(source, scope, "reconnect", reach.last_ts, nxt.first_ts, reach.last_ref,
+                reason = "subscription_lost" if lost_after(reach, nxt.first_ts) else "reconnect"
+                gaps.append(Gap(source, scope, reason, reach.last_ts, nxt.first_ts, reach.last_ref,
                                 nxt.first_ref))
             if nxt.last_ts >= reach.last_ts:
                 reach = nxt
-        if not ended_on_purpose(reach) and end_reason.get(reach.conn_id) not in PLANNED_CLOSES:
+        if ended_on_purpose(reach):
+            continue
+        if lost_after(reach):
+            gaps.append(Gap(source, scope, "subscription_lost", reach.last_ts, None, reach.last_ref, None))
+        elif end_reason.get(reach.conn_id) not in PLANNED_CLOSES:
             # Lost, or no end recorded (a killed process, or a segment not yet sealed):
             # either way coverage after the last trustworthy observation is unproven.
             reason = "connection_lost" if reach.conn_id in end_reason else "connection_end_unrecorded"
