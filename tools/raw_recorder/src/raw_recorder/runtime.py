@@ -13,16 +13,16 @@ from pathlib import Path
 
 import aiohttp
 
-from . import RECORDER_VERSION, discovery, kalshi, mlb, redact
+from . import RECORDER_VERSION, discovery, kalshi, leagues, mlb, redact
 from .archive import ArchiveWriter, Stream, find_parts, iter_file, now_ms, recover_orphans
-from .config import Config, Game, combine, load_games, shadowed
+from .config import Config, Game, LeagueEvent, combine, load_events, load_games, shadowed
 from .novig import public as novig_public
 from .novig.signing import NovigSigner
 from .novig.stream import NovigStream, TokenBudget
 from .odds_api import OddsPoller
 from .rest import RestRecorder
 from .scheduler import Schedule
-from .session import (ArchiveLock, SleepInhibitor, clock_status, free_disk_mb, host_info,
+from .session import (ArchiveLock, SleepInhibitor, clock_status, clock_synced, free_disk_mb, host_info,
                       new_session_id)
 
 
@@ -58,13 +58,19 @@ class Recorder:
     """Records every source for the games to record. Those are the hand-checked list
     (`games`, reread from `games_path` when that file changes) over the discovered list
     (`cfg.discovered_path`, written by the discovery task and reread when it changes), so
-    new games never need a restart."""
+    new games never need a restart. League events (`cfg.events_discovered_path`, written by
+    the league discovery task, A1) are recorded the same way, on Novig only.
+
+    No capture starts before the host clock is synchronized: a host without a battery-backed
+    clock boots with the wrong time, and every recv_ts_ms would be wrong
+    (docs/decisions/2026-10-16-a1-host.md)."""
 
     GAME_FILES_CHECK_S = 5      # how often the game lists are checked for changes
     MLB_CHECK_S = 30            # how often ended windows are checked for feeds to fetch
     WAKE_CHECK_S = 5            # the longest a periodic task sleeps before looking at the wall clock
     ODDS_CHECK_S = 15           # how often the odds poller looks for an odds window that opened
     CATALOG_CHECK_S = 30        # how often newly active Novig markets get their catalog evidence
+    CLOCK_CHECK_S = 5           # how often an unsynchronized clock is checked again at startup
 
     def __init__(self, cfg: Config, games: list[Game], inhibitor: SleepInhibitor | None = None,
                  games_path: Path | None = None):
@@ -72,7 +78,8 @@ class Recorder:
         self.p = cfg.params
         self.manual, self.games_path = games, games_path
         self.games = combine(games, load_games(cfg.discovered_path, "discovered"))
-        self.schedule = Schedule(self.games, cfg.params)
+        self.events = load_events(cfg.events_discovered_path)
+        self.schedule = Schedule(self.games, cfg.params, self.events)
         self.game_files_stamp = self._game_files_stamp()
         self.session_id = new_session_id()
         self.sid = self.session_id[:12]
@@ -132,9 +139,16 @@ class Recorder:
                  "kalshi_tickers": list(g.kalshi_tickers), "capture_lead_s": g.capture_lead_s,
                  "capture_tail_s": g.capture_tail_s, "notes": list(g.notes)} for g in games]
 
+    @staticmethod
+    def _events_summary(events: list[LeagueEvent]) -> list[dict]:
+        return [{"league": e.league, "event_id": e.event_id, "label": e.label,
+                 "scheduled_start_ms": e.scheduled_start_ms, "novig_markets": list(e.novig_markets),
+                 "capture_lead_s": e.capture_lead_s, "capture_tail_s": e.capture_tail_s,
+                 "notes": list(e.notes)} for e in events]
+
     def _game_files_stamp(self) -> tuple:
         out = []
-        for path in (self.games_path, self.cfg.discovered_path):
+        for path in (self.games_path, self.cfg.discovered_path, self.cfg.events_discovered_path):
             try:
                 st = path.stat() if path else None
                 out.append((st.st_mtime_ns, st.st_size) if st else None)
@@ -143,28 +157,37 @@ class Recorder:
         return tuple(out)
 
     def reload_games(self, reason: str) -> None:
-        """Reread both game lists; archive and announce the result if it changed. A file
-        that does not parse leaves the current games in place, loudly."""
+        """Reread both game lists and the league events; archive and announce what changed.
+        A file that does not parse leaves the current list in place, loudly."""
         self.game_files_stamp = self._game_files_stamp()
         try:
             manual = load_games(self.games_path) if self.games_path else self.manual
             found = load_games(self.cfg.discovered_path, "discovered")
             games = combine(manual, found)
+            events = load_events(self.cfg.events_discovered_path)
         except (ValueError, KeyError, OSError) as exc:
             self.note("games_load_failed", reason=reason, error=repr(exc))
             warn(f"game list not reloaded ({reason}): {exc!r}; still recording the previous list")
             return
-        if games == self.games:
+        if games == self.games and events == self.events:
             return
-        for message in shadowed(manual, found):
-            self.note("games_shadowed", message=message)
-            warn(message)
-        before = {g.game_pk for g in self.games}
-        self.games, self.schedule = games, Schedule(games, self.p)
-        self.note("games_loaded", reason=reason, games=self._games_summary(games))
-        added = [g for g in games if g.game_pk not in before]
-        print(f"raw-recorder: game list reloaded ({reason}): {len(games)} games"
-              + "".join(f"\n  + {g.game_pk} {g.label} [{g.source}]" for g in added), file=sys.stderr, flush=True)
+        if games != self.games:
+            for message in shadowed(manual, found):
+                self.note("games_shadowed", message=message)
+                warn(message)
+            before = {g.game_pk for g in self.games}
+            self.note("games_loaded", reason=reason, games=self._games_summary(games))
+            added = [g for g in games if g.game_pk not in before]
+            print(f"raw-recorder: game list reloaded ({reason}): {len(games)} games"
+                  + "".join(f"\n  + {g.game_pk} {g.label} [{g.source}]" for g in added), file=sys.stderr, flush=True)
+        if events != self.events:
+            before_ev = {e.event_id for e in self.events}
+            self.note("events_loaded", reason=reason, events=self._events_summary(events))
+            added_ev = [e for e in events if e.event_id not in before_ev]
+            print(f"raw-recorder: league events reloaded ({reason}): {len(events)} events"
+                  + "".join(f"\n  + {e.league} {e.event_id} {e.label}" for e in added_ev), file=sys.stderr, flush=True)
+        self.games, self.events = games, events
+        self.schedule = Schedule(games, self.p, events)
 
     def rest(self, http: aiohttp.ClientSession, source: str, name: str) -> RestRecorder:
         stream = self.archive.stream(source, f"{name}-{self.sid}")
@@ -185,7 +208,8 @@ class Recorder:
             self.rec = self.archive.stream("recorder", f"session-{self.sid}")
             self.note("process_start", recorder_version=RECORDER_VERSION,
                       config_path=str(self.cfg.path), config_sha256=self.cfg.sha256,
-                      games=self._games_summary(self.games), host=host_info(), clock=clock_status())
+                      games=self._games_summary(self.games), events=self._events_summary(self.events),
+                      host=host_info(), clock=clock_status())
             if orphans:
                 self.note("previous_session_unclean", sessions=unclean_sessions,
                           sealed_files=[e.file for e in orphans])
@@ -194,14 +218,34 @@ class Recorder:
                 loop.add_signal_handler(sig, self.stop.set)
             loop.add_signal_handler(signal.SIGHUP, self.archive.rotate_all)
             print(f"raw-recorder {RECORDER_VERSION}: session {self.session_id}, "
-                  f"{len(self.games)} games, archive {root}", file=sys.stderr)
-            await self._serve()
+                  f"{len(self.games)} games, {len(self.events)} league events, archive {root}", file=sys.stderr)
+            if await self.wait_for_clock():
+                await self._serve()
             self.note("process_stop", reason="signal")
         finally:
             self.inhibitor.release()
             if self.archive is not None:
                 self.archive.close()
             self.lock.release()
+
+    async def wait_for_clock(self) -> bool:
+        """Hold every source until the host says its clock is synchronized, archiving
+        `clock_unsynced` once and `clock_synced` when it is. A host that cannot say (no
+        timedatectl or chronyc) is not held: its clock_status is in process_start. Returns
+        False if the recorder was stopped while waiting."""
+        if clock_synced() is not False:
+            return True
+        self.note("clock_unsynced", clock=clock_status())
+        warn("the host clock is not synchronized: capture waits for it, so no timestamp is wrong")
+        while not self.stop.is_set():
+            try:
+                await asyncio.wait_for(self.stop.wait(), self.CLOCK_CHECK_S)
+            except TimeoutError:
+                pass
+            if clock_synced() is not False:
+                self.note("clock_synced", clock=clock_status())
+                return True
+        return False
 
     async def _serve(self) -> None:
         async with aiohttp.ClientSession() as http:
@@ -255,6 +299,14 @@ class Recorder:
         specs = []
         if cfg.discovery.get("enabled", False):
             specs += self._discovery_specs(http)
+        if cfg.enabled_leagues() and cfg.enabled(cfg.novig):
+            specs += self._league_specs(http)
+        elif cfg.enabled_leagues():
+            # League events are found from Novig's catalog and recorded on Novig only: with
+            # Novig disabled there is nothing to discover or record for them.
+            names = [lg["name"] for lg in cfg.enabled_leagues()]
+            self.note("league_discovery_disabled", reason="novig disabled", leagues=names)
+            self.warn_config(f"league discovery off ({', '.join(names)}): [novig] is disabled in {cfg.path}")
         if cfg.enabled(cfg.kalshi):
             specs += self._kalshi_specs(http)
         if cfg.enabled(cfg.odds_api):
@@ -290,6 +342,26 @@ class Recorder:
             self.reload_games("discovery")
         return [("discovery", lambda: self.every("discovery", float(cfg.discovery.get("interval_s", 3600)),
                                                  discovery_round))]
+
+    def _league_specs(self, http: aiohttp.ClientSession) -> list:
+        # League events (A1): each enabled league's Novig catalog, archived, matched and merged
+        # into the discovered events (raw_recorder.leagues), then reloaded at once. The stream
+        # name starts "discovery-", so clv.ingest reads it as REST, not a WebSocket.
+        cfg = self.cfg
+        rest = self.rest(http, "novig", "discovery-leagues")
+        warned: set[str] = set()
+
+        async def league_round() -> None:
+            merged, found = await leagues.discover(cfg, rest, now_ms())
+            self.note("events_discovered", matched=self._events_summary(found.events), notes=found.notes,
+                      warnings=found.warnings, discovered_count=len(merged))
+            for w in found.warnings:
+                if w not in warned:
+                    warned.add(w)
+                    warn(f"league discovery: {w}")
+            self.reload_games("league_discovery")
+        return [("league_discovery", lambda: self.every(
+            "league_discovery", float(cfg.discovery.get("interval_s", 3600)), league_round))]
 
     def _kalshi_specs(self, http: aiohttp.ClientSession) -> list:
         # Kalshi order books, with catalog evidence when a ticker becomes active.

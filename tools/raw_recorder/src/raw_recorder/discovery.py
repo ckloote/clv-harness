@@ -41,6 +41,7 @@ from . import kalshi
 from .config import Config, Game, Params, load_games
 from .novig import public as novig_public
 from .rest import RestRecorder
+from .scheduler import bounds, default_lead_tail
 
 ET = ZoneInfo("America/New_York")
 NOVIG_MATCH_S = 6 * 3600            # a Novig market's startsTs within this of the StatsAPI gameDate
@@ -148,21 +149,16 @@ def match(schedule: list[dict], novig_markets: list[dict] | None, kalshi_markets
     return out
 
 
-def _window(g: Game, p: Params) -> tuple[int, int]:
-    lead = g.capture_lead_s if g.capture_lead_s is not None else p.capture_lead_s
-    tail = g.capture_tail_s if g.capture_tail_s is not None else p.capture_tail_s
-    return g.scheduled_start_ms - lead * 1000, g.scheduled_start_ms + tail * 1000
-
-
-def merge(existing: list[Game], found: list[Game], now_ms: int, p: Params) -> list[Game]:
-    """Fold a discovery into the discovered list without ever losing capture (module docstring)."""
-    by_pk = {g.game_pk: g for g in existing}
+def merge(existing: list, found: list, now_ms: int, p: Params, key=lambda g: g.game_pk) -> list:
+    """Fold a discovery into a discovered list without ever losing capture (module docstring).
+    Works for MLB games (by gamePk) and league events (raw_recorder.leagues, by Novig event)."""
+    by_key = {key(g): g for g in existing}
     for new in found:
-        old = by_pk.get(new.game_pk)
+        old = by_key.get(key(new))
         if old is None:
-            by_pk[new.game_pk] = new
+            by_key[key(new)] = new
             continue
-        lo, hi = _window(old, p)
+        lo, hi = bounds(old, p)
         if hi <= now_ms:
             continue                                    # over: the record of what was captured
         markets = tuple(dict.fromkeys(old.novig_markets + new.novig_markets))
@@ -170,11 +166,12 @@ def merge(existing: list[Game], found: list[Game], now_ms: int, p: Params) -> li
         if lo > now_ms:                                 # not open yet: the newest schedule wins
             g = replace(new, novig_markets=markets, kalshi_tickers=tickers)
         else:                                           # open: keep its start, only grow its end
-            tail = max(hi, _window(new, p)[1]) - old.scheduled_start_ms
+            tail = max(hi, bounds(new, p)[1]) - old.scheduled_start_ms
+            default_tail = default_lead_tail(old, p)[1]
             g = replace(old, novig_markets=markets, kalshi_tickers=tickers, notes=new.notes,
-                        capture_tail_s=tail // 1000 if tail // 1000 != p.capture_tail_s else None)
-        by_pk[new.game_pk] = g
-    return sorted(by_pk.values(), key=lambda g: (g.scheduled_start_ms, g.game_pk))
+                        capture_tail_s=tail // 1000 if tail // 1000 != default_tail else None)
+        by_key[key(new)] = g
+    return sorted(by_key.values(), key=lambda g: (g.scheduled_start_ms, key(g)))
 
 
 def render(games: list[Game], discovered_at_ms: int, notes: list[str]) -> str:

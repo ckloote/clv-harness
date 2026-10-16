@@ -15,10 +15,10 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from . import RECORDER_VERSION, backfill, discovery, mlb
+from . import RECORDER_VERSION, backfill, discovery, leagues, mlb
 from .archive import (ArchiveWriter, build_manifest, find_parts, iter_archive,
                       iter_file, now_ms, read_journal, recover_orphans, verify)
-from .config import Config, load_all_games, load_config, load_games, shadowed
+from .config import Config, LeagueEvent, load_all_games, load_config, load_events, load_games, shadowed
 from .novig.stream import CHANNEL_WEIGHT
 from .rest import RestRecorder
 from .runtime import Recorder, RecorderBusy, load_signer, signal_running_recorder
@@ -108,9 +108,15 @@ async def _catalog(cfg: Config) -> int:
                  _rest(archive, http, "novig", "catalog", sid, cfg),
                  _rest(archive, http, "kalshi", "catalog", sid, cfg) if cfg.enabled(cfg.kalshi) else None)
         merged, found = await discovery.discover(cfg, *rests, now_ms())
+        league_round = (await leagues.discover(cfg, rests[1], now_ms())
+                        if cfg.enabled_leagues() and cfg.enabled(cfg.novig) else None)
     print(f"# Matched this round; merged into {cfg.discovered_path} ({len(merged)} games in all).")
     print("# The responses behind them are archived. Copy an entry into games.toml to override it.\n")
     print(discovery.render(found.games, now_ms(), found.warnings + found.notes))
+    if league_round is not None:
+        lg_merged, lg_found = league_round
+        print(f"\n# League events this round; merged into {cfg.events_discovered_path} ({len(lg_merged)} in all).\n")
+        print(leagues.render(lg_found.events, now_ms(), lg_found.warnings + lg_found.notes))
     return 0
 
 
@@ -221,6 +227,7 @@ def cmd_games(args) -> int:
     cfg = load_config(args.config)
     t = now_ms()
     games = load_all_games(cfg)
+    events = load_events(cfg.events_discovered_path)
     code = 0
     if cfg.discovery.get("enabled", False):
         at, notes = discovery.last_run(cfg.discovered_path)
@@ -236,15 +243,36 @@ def cmd_games(args) -> int:
             print(f"  note: {n}")
     else:
         print("discovery: off in this config; only games.toml is recorded")
+    if cfg.enabled_leagues():
+        names = ", ".join(lg["name"] for lg in cfg.enabled_leagues())
+        at, notes = discovery.last_run(cfg.events_discovered_path)
+        stale_ms = 2 * float(cfg.discovery.get("interval_s", 3600)) * 1000
+        if at is None:
+            print(f"league discovery ({names}): has not run yet ({cfg.events_discovered_path} missing)")
+            code = max(code, 1)
+        else:
+            stale = t - at > stale_ms
+            print(f"league discovery ({names}): last run {_et_time(at)} ({(t - at) / 60000:,.0f} min ago)"
+                  f"{'  STALE' if stale else ''}")
+            code = max(code, 1 if stale else 0)
+        for n in notes:
+            print(f"  note: {n}")
     for message in shadowed(load_games(cfg.games_path), load_games(cfg.discovered_path, "discovered")):
         print(f"WARNING: {message}")
         code = max(code, 1)
     lo, hi = t - args.past_hours * 3_600_000, t + args.days * 86_400_000
-    shown = [w for w in capture_windows(games, cfg.params) if w.end_ms >= lo and w.start_ms <= hi]
+    shown = [w for w in capture_windows([*games, *events], cfg.params) if w.end_ms >= lo and w.start_ms <= hi]
     print(f"\n{len(shown)} game(s) with a capture window from {args.past_hours} h ago to {args.days} day(s) ahead:")
     for w in shown:
         g = w.game
         phase = "open" if w.contains(t) else ("ended" if w.end_ms <= t else "upcoming")
+        if isinstance(g, LeagueEvent):
+            print(f"\n- {g.league} event {g.event_id} {g.label} [{g.source}, {phase}]")
+            print(f"    start {_et_time(g.scheduled_start_ms)}; capture {_et_time(w.start_ms)} to {_et_time(w.end_ms)}")
+            print(f"    Novig {', '.join(g.novig_markets) or 'none'}")
+            for n in g.notes:
+                print(f"    note: {n}")
+            continue
         print(f"\n- {g.game_pk} {g.label} [{g.source}, {phase}]")
         print(f"    first pitch {_et_time(g.scheduled_start_ms)}; capture {_et_time(w.start_ms)} to {_et_time(w.end_ms)}; "
               f"odds from {_et_time(g.scheduled_start_ms - cfg.params.odds_window_lead_s * 1000)}")
@@ -414,7 +442,8 @@ def cmd_status(args) -> int:
     cfg = load_config(args.config)
     games = load_all_games(cfg)
     t = now_ms()
-    rep = status.status(cfg, games, t, running_recorder(cfg.archive_root), args.game_pk)
+    rep = status.status(cfg, games, t, running_recorder(cfg.archive_root), args.game_pk,
+                        events=load_events(cfg.events_discovered_path), event_id=args.event)
     print(status.render(rep, t))
     return rep.exit_code()
 
@@ -457,7 +486,9 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_verify)
     p = add("status", help="is the recorder capturing the current (or a given) game? read-only; "
                            "exit 0 OK, 1 WARN, 2 FAIL")
-    p.add_argument("--game-pk", type=int, help="the game to check (default: the current or next capture window)")
+    which = p.add_mutually_exclusive_group()
+    which.add_argument("--game-pk", type=int, help="the game to check (default: the current or next capture window)")
+    which.add_argument("--event", help="a league event to check, by its Novig event ID (A1)")
     p.set_defaults(fn=cmd_status)
     p = add("backfill", help="B1: archive the historical reference inputs into the backfill root; resumable")
     p.add_argument("sources", nargs="*", choices=list(backfill.SOURCES), help="default: all three")

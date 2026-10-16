@@ -93,6 +93,23 @@ def clock_status() -> dict:
     return {"tool": None, "error": "no clock status tool available"}
 
 
+def clock_synced() -> bool | None:
+    """Whether the host says its clock is NTP-synchronized; None when it cannot say."""
+    try:
+        if shutil.which("timedatectl"):
+            out = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
+                                 capture_output=True, text=True, timeout=3, check=False)
+            if out.returncode == 0 and out.stdout.strip() in ("yes", "no"):
+                return out.stdout.strip() == "yes"
+        if shutil.which("chronyc"):
+            out = subprocess.run(["chronyc", "tracking"], capture_output=True, text=True, timeout=3, check=False)
+            if out.returncode == 0:
+                return "Not synchronised" not in out.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def host_info() -> dict:
     return {"hostname": socket.gethostname(), "pid": os.getpid()}
 

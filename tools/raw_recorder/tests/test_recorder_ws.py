@@ -31,7 +31,8 @@ def params(**overrides):
                 stream_probe_reserve_fraction=0.5, novig_public_book_poll_interval_s=10,
                 channel_probe_interval_s=1, transport_liveness_max_s=5, probe_timeout_s=1,
                 subscription_check_interval_s=60,
-                reconnect_backoff_initial_s=0.05, reconnect_backoff_max_s=0.2)
+                reconnect_backoff_initial_s=0.05, reconnect_backoff_max_s=0.2,
+                a1_capture_lead_s=90000, a1_capture_tail_s=14400)
     base.update(overrides)
     return Params(**base)
 

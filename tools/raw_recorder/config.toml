@@ -28,6 +28,10 @@ probe_timeout_s = 5                         # stream.probe_timeout_s: a probe or
 subscription_check_interval_s = 60          # stream.subscription_check_interval_s
 reconnect_backoff_s = { initial = 1, max = 60 }   # stream.reconnect_backoff_s
 
+[a1]
+capture_lead_s = 90000                      # a1.capture_lead_s: 25 h, for the 24 h offset
+capture_tail_s = 14400                      # a1.capture_tail_s: 4 h after the scheduled start
+
 [novig]
 host = "https://api.novig.com"
 ws_url = "wss://api.novig.com/v3/ws"
@@ -76,3 +80,12 @@ novig_data_path = "/reporting/trade-data"
 rest_timeout_s = 180                        # a day's trades.csv is tens of MB
 segment_max_s = 300                         # seal every 5 min: at 10 requests/s of trade pages an hour is ~10 GB unpacked
 min_interval_s = { mlb = 0.2, kalshi = 0.1, novig_data = 0.5, novig_history = 0.3 }   # per host, between requests
+
+# Leagues other than MLB (A1; raw_recorder.leagues): found from the Novig catalog alone
+# every [discovery] interval, written to <archive>/events.discovered.toml, and recorded from
+# a1.capture_lead_s before each scheduled start. Enable at the A1 cutover
+# (docs/decisions/2026-10-16-a1-host.md), not beside the postseason recorder.
+[[league]]
+name = "NBA"                                # Novig's league code (docs/decisions/2026-10-16-a1-league.md)
+enabled = false
+days_ahead = 2                              # events starting within this many days are listed

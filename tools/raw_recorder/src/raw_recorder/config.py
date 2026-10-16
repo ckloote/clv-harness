@@ -8,6 +8,10 @@ Games come from two lists. The recorder discovers games itself and writes them
 to `<archive>/games.discovered.toml` (raw_recorder.discovery). `games.toml`,
 committed and checked by hand, adds games or overrides a discovered one: for a
 gamePk in both, the hand-checked entry wins whole.
+
+Leagues other than MLB (`[[league]]`, A1) are found from Novig's catalog alone
+and written to `<archive>/events.discovered.toml` (raw_recorder.leagues), one
+`LeagueEvent` per Novig event. Their windows use the `[a1]` lead and tail.
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ DEFAULT_DIR = Path(__file__).resolve().parents[2]   # tools/raw_recorder/
 DEFAULT_CONFIG = DEFAULT_DIR / "config.toml"
 DEFAULT_GAMES = DEFAULT_DIR / "games.toml"
 DISCOVERED_FILE = "games.discovered.toml"           # in the archive root; clv.games reads it too
+EVENTS_DISCOVERED_FILE = "events.discovered.toml"   # in the archive root: league events (A1)
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,8 @@ class Params:
     subscription_check_interval_s: float
     reconnect_backoff_initial_s: float
     reconnect_backoff_max_s: float
+    a1_capture_lead_s: int
+    a1_capture_tail_s: int
 
 
 @dataclass(frozen=True)
@@ -60,6 +67,26 @@ class Game:
 
 
 @dataclass(frozen=True)
+class LeagueEvent:
+    """A game in a league other than MLB, keyed by its Novig event (raw_recorder.leagues).
+
+    The recorder never decides which league game it is: A2 links it to the league's own
+    game ID. Its window defaults to the `[a1]` lead and tail, not R0's. It has no Kalshi
+    tickers until Kalshi joins as the cross-check, after Gate A1.
+    """
+    league: str
+    event_id: str
+    scheduled_start_ms: int                 # Novig's startsTs: what the venue said, never an off
+    label: str
+    novig_markets: tuple[str, ...]
+    capture_lead_s: int | None = None
+    capture_tail_s: int | None = None
+    source: str = "discovered"
+    notes: tuple[str, ...] = ()
+    kalshi_tickers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Config:
     path: Path
     sha256: str
@@ -72,6 +99,7 @@ class Config:
     games_path: Path = DEFAULT_GAMES
     discovery: dict = field(default_factory=lambda: {"enabled": False})
     backfill: dict = field(default_factory=dict)
+    leagues: tuple[dict, ...] = ()          # [[league]] entries, enabled or not
 
     @property
     def backfill_root(self) -> Path:
@@ -81,6 +109,13 @@ class Config:
     @property
     def discovered_path(self) -> Path:
         return self.archive_root / DISCOVERED_FILE
+
+    @property
+    def events_discovered_path(self) -> Path:
+        return self.archive_root / EVENTS_DISCOVERED_FILE
+
+    def enabled_leagues(self) -> list[dict]:
+        return [lg for lg in self.leagues if self.enabled(lg)]
 
     def enabled(self, section: dict) -> bool:
         return bool(section.get("enabled", True))
@@ -102,7 +137,7 @@ def load_config(path: Path | None = None) -> Config:
     path = Path(path or os.environ.get("RAW_RECORDER_CONFIG") or DEFAULT_CONFIG).resolve()
     raw = path.read_bytes()
     doc = tomllib.loads(raw.decode("utf-8"))
-    r0, stream = doc["r0"], doc["stream"]
+    r0, stream, a1 = doc["r0"], doc["stream"], doc["a1"]
     params = Params(
         kalshi_poll_interval_s=r0["kalshi_poll_interval_s"],
         odds_poll_interval_s=r0["odds_poll_interval_s"],
@@ -122,6 +157,8 @@ def load_config(path: Path | None = None) -> Config:
         subscription_check_interval_s=stream["subscription_check_interval_s"],
         reconnect_backoff_initial_s=stream["reconnect_backoff_s"]["initial"],
         reconnect_backoff_max_s=stream["reconnect_backoff_s"]["max"],
+        a1_capture_lead_s=a1["capture_lead_s"],
+        a1_capture_tail_s=a1["capture_tail_s"],
     )
     for name, value in params.__dict__.items():
         if value < 0 or (value == 0 and name != "odds_quota_floor"):
@@ -137,7 +174,16 @@ def load_config(path: Path | None = None) -> Config:
     return Config(path=path, sha256=hashlib.sha256(raw).hexdigest(), archive_root=root,
                   params=params, novig=doc["novig"], kalshi=doc["kalshi"],
                   odds_api=doc["odds_api"], mlb=doc["mlb"], games_path=games,
-                  discovery=doc.get("discovery", {"enabled": False}), backfill=doc.get("backfill", {}))
+                  discovery=doc.get("discovery", {"enabled": False}), backfill=doc.get("backfill", {}),
+                  leagues=tuple(_league(lg) for lg in doc.get("league", [])))
+
+
+def _league(lg: dict) -> dict:
+    if not lg.get("name"):
+        raise ValueError("a [[league]] entry needs a name (Novig's league code)")
+    if lg["name"] == "MLB":
+        raise ValueError("MLB is discovered from the StatsAPI schedule ([discovery]), not as a [[league]]")
+    return lg
 
 
 def load_games(path: Path | None = None, source: str = "manual") -> list[Game]:
@@ -162,6 +208,22 @@ def load_games(path: Path | None = None, source: str = "manual") -> list[Game]:
     if len(pks) != len(set(pks)):
         raise ValueError(f"duplicate game_pk in {path.name}")
     return games
+
+
+def load_events(path: Path) -> list[LeagueEvent]:
+    """The league events in `<archive>/events.discovered.toml` (raw_recorder.leagues.render)."""
+    if not path.exists():
+        return []
+    doc = tomllib.loads(path.read_text())
+    events = [LeagueEvent(
+        league=e["league"], event_id=e["event_id"], scheduled_start_ms=_parse_utc(e["scheduled_start_utc"]),
+        label=e.get("label", ""), novig_markets=tuple(e.get("novig_markets", ())),
+        capture_lead_s=e.get("capture_lead_s"), capture_tail_s=e.get("capture_tail_s"),
+        notes=tuple(e.get("notes", ()))) for e in doc.get("event", [])]
+    ids = [e.event_id for e in events]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"duplicate event_id in {path.name}")
+    return events
 
 
 def combine(manual: list[Game], discovered: list[Game]) -> list[Game]:
