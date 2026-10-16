@@ -4,6 +4,14 @@ Every row cites the sealed segment and line it came from (raw_artifact,
 raw_line). The ingest is deterministic for a given archive, game list,
 parser version and `now_ms`, so a clean database reproduces it exactly.
 
+A league event (A1, `ingest_league_event`) is ingested from the venue side only:
+its Novig instruments, books, liveness evidence and collection gaps, with no
+event, outcome, mapping or off observation, since which league game it is is
+decided in A2. A `venue_ingest` row (migrations/0006_a1.sql) records it, and it
+is ingested only once its window has settled: the archive's seal watermark
+(raw_recorder.archive) is past the window's end, so every frame of the window is
+in a sealed segment here, the workstation mirror included.
+
 What goes where (migrations/0001_v0.sql):
 
 - identity: event (gamePk), outcomes (the two teams), event_alias per provider,
@@ -30,13 +38,21 @@ import json
 import sqlite3
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 
 from clv import archive, gaps, mlb
 from clv.config import param
-from clv.games import GAMES, capture_window, load_game
+from clv.games import (
+    GAMES,
+    capture_window,
+    league_events,
+    league_window,
+    load_game,
+    load_league_event,
+)
 from clv.identity import (
     IdentityConflict,
     ensure_event,
@@ -47,7 +63,7 @@ from clv.identity import (
 )
 from clv.off import sources
 from clv.scoring import odds_api
-from clv.timeutil import iso_ms
+from clv.timeutil import iso_ms, ms_iso
 from clv.venues import kalshi
 from clv.venues.novig import parser as novig
 from clv.venues.protocol import BinaryBook, Level
@@ -63,12 +79,14 @@ class IngestError(Exception):
 
 @dataclass
 class IngestReport:
-    game_pk: int
-    event_id: int
+    game_pk: int | None                     # an MLB game; None for a league event
+    event_id: int | None                    # its event row; a league event has none until A2
     rows: Counter = field(default_factory=Counter)
     quarantined: Counter = field(default_factory=Counter)        # reason -> count
     quarantine_span: dict = field(default_factory=dict)         # reason -> (first ref, last ref, first ms, last ms)
     unmatched: dict = field(default_factory=dict)               # vendor event id -> why it is not this game
+
+    native_event_id: str | None = None      # a league event's Novig event
 
     def quarantine(self, reason: str, ref: str, ts_ms: int) -> None:
         """Never stored as a fact; the raw archive keeps the frame (DESIGN.md §2.4)."""
@@ -225,9 +243,10 @@ class _Books:
         self.observe(restated, status, ref, snapshot_ref, "delta_unchanged", None, report)
 
 
-def _stream_frame(w: Writer, report: IngestReport, books: _Books, status: dict[str, str], market: str,
-                  outs: list, resynced: set[str], event_id: int, game_pk: int) -> None:
-    """One stream frame's outputs for one market.
+def _stream_frame(report: IngestReport, books: _Books, status: dict[str, str], market: str,
+                  outs: list, resynced: set[str], off: Callable[[novig.Lifecycle], None] | None) -> None:
+    """One stream frame's outputs for one market. `off` records a lifecycle transition as an
+    off observation; a league event (A1) has no event to attach one to yet, so it passes None.
 
     Order: a sequence gap first makes the stored state untrusted; then the frame's status
     is taken (the replay has already dropped a status behind the lifecycle sequence, which
@@ -246,10 +265,8 @@ def _stream_frame(w: Writer, report: IngestReport, books: _Books, status: dict[s
     for o in outs:
         if not isinstance(o, novig.Lifecycle):
             continue
-        if (obs := sources.from_lifecycle(o, game_pk)) is not None:
-            w.insert("off_observation", dict(event_id=event_id, source=obs.source, kind=obs.kind, subject=obs.subject,
-                                             detected_off_ts_ms=obs.detected_off_ts_ms,
-                                             observed_ts_ms=obs.observed_ts_ms, **w.cited(o.ref)))
+        if off is not None:
+            off(o)
         if o.status != status[market]:
             status[market] = o.status
             changed = o
@@ -266,6 +283,94 @@ def _stream_frame(w: Writer, report: IngestReport, books: _Books, status: dict[s
         if p.status == "confirmed":
             books.evidence("stream", "probe_confirmed", p.recv_ts_ms, p.ref)
 
+
+def _novig_catalog(w: Writer, root: Path, lo: int, hi: int, markets) -> tuple[list, list, dict[str, tuple]]:
+    """Novig's REST exchanges in the window, its WebSocket segments overlapping it, and each
+    wanted market's first catalog response (its own, or a league listing)."""
+    novig_segs = archive.overlapping(archive.segments(root, "novig"), lo, hi)
+    w.know(novig_segs)
+    ws = [s for s in novig_segs if not s.stream_id.startswith(WS_PREFIXES)]
+    novig_x = list(archive.rest_exchanges(f for f in archive.iter_frames(root, [s for s in novig_segs if s not in ws])
+                                          if lo <= f.recv_ts_ms <= hi))
+    catalog: dict[str, tuple] = {}
+    for x in novig_x:
+        for m in novig.catalog_markets(x):          # the market's own response, or a league listing
+            if m.market in markets and m.market not in catalog:
+                catalog[m.market] = (x, m)
+    return novig_x, ws, catalog
+
+
+def _novig_instrument(w: Writer, x, m) -> tuple[int, tuple[str, str]]:
+    (s0, n0, _), (s1, n1, _) = m.outcomes
+    return ensure_instrument(w, dict(
+        venue="novig", native_id=m.market, native_event_id=m.event, operator=None, kind="exchange_book",
+        side0_id=s0, side0_label=n0, side1_id=s1, side1_label=n1, payout_currency="USD",
+        payout_cents_per_contract=int(novig.PAYOUT_USD_PER_CONTRACT * 100), quantity_increment="1",
+        first_seen_ts_ms=m.recv_ts_ms, **w.cited(x.body.ref)))
+
+
+def _novig_record(w: Writer, report: IngestReport, root: Path, novig_x: list, ws: list, books: dict[str, _Books],
+                  status: dict[str, str], catalog_outcomes: dict, off) -> tuple[list, novig.StreamReplay, list]:
+    """Novig's public book polls, then its stream replay, into the books' facts. Returns the
+    stream frames, the fed replay and the poll gaps, for the caller's collection gaps."""
+    novig_poll_gaps = gaps.poll_gaps("novig", novig_x, {"public_book"})
+    poll_reason = _poll_reasons(novig_poll_gaps)
+    last_session: dict[str, str] = {}
+    for x in novig_x:
+        if not x.ok:
+            continue
+        if x.request.get("purpose") == "catalog":
+            for m in novig.catalog_markets(x):
+                if m.market in books and m.status != status[m.market]:
+                    status[m.market] = m.status
+                    books[m.market].status_change("poll", m.status, x.body.ref, m.recv_ts_ms, None, report)
+            continue
+        if x.request.get("purpose") != "public_book":
+            continue
+        book = novig.public_book(x, catalog_outcomes.get(x.path.split("/")[-2], ()))   # .../markets/{id}/book
+        if book.market not in books:
+            continue
+        first_of_session = last_session.get(book.market) != x.request["session_id"]
+        last_session[book.market] = x.request["session_id"]
+        books[book.market].observe(book, status[book.market], x.body.ref, None, "poll_unchanged",
+                                   poll_reason(x, first_of_session), report)
+
+    # One connection carries many markets. Only frames naming one of ours can change their
+    # books (the replay keeps each market's state apart), so the rest are not replayed; every
+    # command and recorder event is kept, since gaps.stream_gaps reads them.
+    ours = tuple(books)
+    stream_frames = [f for f in archive.iter_frames(root, ws) if f.dir != "in" or any(m in f.frame for m in ours)]
+    replay = novig.StreamReplay(catalog_outcomes)
+    resynced: set[str] = set()
+    for f in stream_frames:
+        # A frame is handled as a whole: a snapshot carries its lifecycle status, sequence check
+        # and book together, and the status may restate the stored book only once the frame's
+        # own book result is known (it may be a gap, a replacement or a quarantined state).
+        by_market: dict[str, list] = {}
+        for o in replay.feed(f):
+            if getattr(o, "market", None) in books:
+                by_market.setdefault(o.market, []).append(o)
+        for market, outs in by_market.items():
+            _stream_frame(report, books[market], status, market, outs, resynced, off)
+    return stream_frames, replay, novig_poll_gaps
+
+
+def _write_gaps(w: Writer, found: list[gaps.Gap], subjects: set[str], keep=lambda subject: False) -> None:
+    """Collection gaps whose subject is one of ours (or that `keep` admits), each as an open
+    row and, once it ended, a close row."""
+    for gp in found:
+        subject = gp.scope.split("/", 1)[0]
+        if subject not in subjects and not keep(subject):
+            continue
+        opened = w.insert("collection_gap", dict(
+            kind="open", opens_gap_id=None, source=gp.source, scope=gp.scope, reason=gp.reason,
+            boundary_ts_ms=gp.start_ms, observed_ts_ms=w.now,
+            **(w.cited(gp.start_ref) if gp.start_ref else {"raw_artifact_id": None, "raw_line": None})))
+        if gp.end_ms is not None:
+            w.insert("collection_gap", dict(
+                kind="close", opens_gap_id=opened, source=gp.source, scope=gp.scope, reason=gp.reason,
+                boundary_ts_ms=gp.end_ms, observed_ts_ms=w.now,
+                **(w.cited(gp.end_ref) if gp.end_ref else {"raw_artifact_id": None, "raw_line": None})))
 
 def _poll_reasons(poll_gaps: list[gaps.Gap]):
     """A poll that ends a collection gap re-establishes its subject's state: a resync, so a
@@ -362,16 +467,7 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                         f"({g['label']}{''.join('; ' + n for n in g.get('notes', []))})")
 
     # -- Novig: catalog, instruments, mappings -------------------------------------------------
-    novig_segs = archive.overlapping(archive.segments(root, "novig"), lo, hi)
-    w.know(novig_segs)
-    ws = [s for s in novig_segs if not s.stream_id.startswith(WS_PREFIXES)]
-    novig_x = list(archive.rest_exchanges(f for f in archive.iter_frames(root, [s for s in novig_segs if s not in ws])
-                                          if lo <= f.recv_ts_ms <= hi))
-    catalog: dict[str, tuple] = {}
-    for x in novig_x:
-        for m in novig.catalog_markets(x):          # the market's own response, or a league listing
-            if m.market in g["novig_markets"] and m.market not in catalog:
-                catalog[m.market] = (x, m)
+    novig_x, ws, catalog = _novig_catalog(w, root, lo, hi, g["novig_markets"])
     # A book that leaves out an outcome with no orders still has both: the catalog names them.
     catalog_outcomes = {mk: tuple(o[0] for o in m.outcomes) for mk, (_, m) in catalog.items()}
     novig_books: dict[str, _Books] = {}
@@ -380,12 +476,7 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
         if market not in catalog:
             raise IngestError(f"no Novig catalog response for market {market} in the capture window")
         x, m = catalog[market]
-        (s0, n0, _), (s1, n1, _) = m.outcomes
-        iid, (s0, s1) = ensure_instrument(w, dict(
-            venue="novig", native_id=market, native_event_id=m.event, operator=None, kind="exchange_book",
-            side0_id=s0, side0_label=n0, side1_id=s1, side1_label=n1, payout_currency="USD",
-            payout_cents_per_contract=int(novig.PAYOUT_USD_PER_CONTRACT * 100), quantity_increment="1",
-            first_seen_ts_ms=m.recv_ts_ms, **w.cited(x.body.ref)))
+        iid, (s0, s1) = _novig_instrument(w, x, m)
         w.insert("event_alias", dict(
             event_id=event_id, provider="novig", provider_event_id=m.event, title=None,
             scheduled_start_ms=m.starts_ts_ms,
@@ -407,43 +498,13 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
                                      int(novig.PAYOUT_USD_PER_CONTRACT * 100))
         novig_status[market] = m.status
 
-    # -- Novig: public book polls (before the stream) -------------------------------------------
-    novig_poll_gaps = gaps.poll_gaps("novig", novig_x, {"public_book"})
-    poll_reason = _poll_reasons(novig_poll_gaps)
-    last_session: dict[str, str] = {}
-    for x in novig_x:
-        if not x.ok:
-            continue
-        if x.request.get("purpose") == "catalog":
-            for m in novig.catalog_markets(x):
-                if m.market in novig_books and m.status != novig_status[m.market]:
-                    novig_status[m.market] = m.status
-                    novig_books[m.market].status_change("poll", m.status, x.body.ref, m.recv_ts_ms, None, report)
-            continue
-        if x.request.get("purpose") != "public_book":
-            continue
-        book = novig.public_book(x, catalog_outcomes.get(x.path.split("/")[-2], ()))   # .../markets/{id}/book
-        if book.market not in novig_books:
-            continue
-        first_of_session = last_session.get(book.market) != x.request["session_id"]
-        last_session[book.market] = x.request["session_id"]
-        novig_books[book.market].observe(book, novig_status[book.market], x.body.ref, None, "poll_unchanged",
-                                         poll_reason(x, first_of_session), report)
-
-    # -- Novig: stream replay -------------------------------------------------------------------
-    stream_frames = list(archive.iter_frames(root, ws))
-    replay = novig.StreamReplay(catalog_outcomes)
-    resynced: set[str] = set()
-    for f in stream_frames:
-        # A frame is handled as a whole: a snapshot carries its lifecycle status, sequence check
-        # and book together, and the status may restate the stored book only once the frame's
-        # own book result is known (it may be a gap, a replacement or a quarantined state).
-        by_market: dict[str, list] = {}
-        for o in replay.feed(f):
-            if getattr(o, "market", None) in novig_books:
-                by_market.setdefault(o.market, []).append(o)
-        for market, outs in by_market.items():
-            _stream_frame(w, report, novig_books[market], novig_status, market, outs, resynced, event_id, game_pk)
+    def off(o: novig.Lifecycle) -> None:
+        if (obs := sources.from_lifecycle(o, game_pk)) is not None:
+            w.insert("off_observation", dict(event_id=event_id, source=obs.source, kind=obs.kind, subject=obs.subject,
+                                             detected_off_ts_ms=obs.detected_off_ts_ms,
+                                             observed_ts_ms=obs.observed_ts_ms, **w.cited(o.ref)))
+    stream_frames, replay, novig_poll_gaps = _novig_record(w, report, root, novig_x, ws, novig_books, novig_status,
+                                                           catalog_outcomes, off)
 
     # -- Kalshi: listings, instruments, mappings, order-book polls ---------------------------------
     kalshi_segs = archive.overlapping(archive.segments(root, "kalshi"), lo, hi)
@@ -562,17 +623,86 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
     subjects = {f"novig:market:{m}" for m in g["novig_markets"]} | {f"kalshi:market:{t}" for t in g["kalshi_tickers"]}
     found = (gaps.stream_gaps("novig", stream_frames, replay) + novig_poll_gaps + kalshi_gaps
              + gaps.poll_gaps("odds_api", ox, {"odds"}))
-    for gp in found:
-        subject = gp.scope.split("/", 1)[0]
-        if subject not in subjects and not subject.startswith("odds_api:"):
-            continue
-        opened = w.insert("collection_gap", dict(
-            kind="open", opens_gap_id=None, source=gp.source, scope=gp.scope, reason=gp.reason,
-            boundary_ts_ms=gp.start_ms, observed_ts_ms=w.now,
-            **(w.cited(gp.start_ref) if gp.start_ref else {"raw_artifact_id": None, "raw_line": None})))
-        if gp.end_ms is not None:
-            w.insert("collection_gap", dict(
-                kind="close", opens_gap_id=opened, source=gp.source, scope=gp.scope, reason=gp.reason,
-                boundary_ts_ms=gp.end_ms, observed_ts_ms=w.now,
-                **(w.cited(gp.end_ref) if gp.end_ref else {"raw_artifact_id": None, "raw_line": None})))
+    _write_gaps(w, found, subjects, keep=lambda subject: subject.startswith("odds_api:"))
     return report
+
+
+# -- league events (A1): the venue side only ----------------------------------------------------
+
+def unsettled(root: Path, e: dict) -> str | None:
+    """Why a league event cannot be ingested yet, or None once its window has settled: the
+    archive's seal watermark is past the window's end. Elapsed time is not evidence: a mirror
+    can lag or stall, and an event once recorded as loaded is never loaded again."""
+    _, hi = league_window(e)
+    wm = archive.sealed_through(root)
+    if wm is None:
+        return f"the archive has no seal watermark ({archive.WATERMARK}) to show its window is complete"
+    if wm <= hi:
+        return f"the archive is sealed through {ms_iso(wm)}, not past its window's end {ms_iso(hi)}"
+    return None
+
+
+def loaded(conn: sqlite3.Connection, event_id: str) -> bool:
+    return conn.execute("SELECT 1 FROM venue_ingest WHERE venue = 'novig' AND native_event_id = ? AND parser_version = ?",
+                        (event_id, PARSER_VERSION)).fetchone() is not None
+
+
+def ingest_league_event(conn: sqlite3.Connection, root: Path, event_id: str, now_ms: int | None = None,
+                        event: dict | None = None) -> IngestReport:
+    """Ingest one league event's venue side in a single transaction. Refuses one already
+    ingested, or whose window has not settled."""
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    e = event if event is not None else load_league_event(event_id, root)
+    if loaded(conn, event_id):
+        raise IngestError(f"league event {event_id} is already ingested; ingest into a clean database")
+    if (why := unsettled(Path(root), e)) is not None:
+        raise IngestError(f"league event {event_id} is not settled: {why}")
+    lo, hi = league_window(e)
+    markets = list(e["novig_markets"])
+    w = Writer(conn, now)
+    conn.execute("BEGIN")
+    try:
+        report = IngestReport(None, None, native_event_id=event_id)
+        novig_x, ws, catalog = _novig_catalog(w, Path(root), lo, hi, markets)
+        catalog_outcomes = {mk: tuple(o[0] for o in m.outcomes) for mk, (_, m) in catalog.items()}
+        books: dict[str, _Books] = {}
+        status: dict[str, str] = {}
+        for market in markets:
+            if market not in catalog:
+                raise IngestError(f"no Novig catalog response for market {market} in the capture window")
+            x, m = catalog[market]
+            if m.event != event_id:
+                raise IngestError(f"Novig market {market} belongs to event {m.event}, not {event_id}")
+            iid, sides = _novig_instrument(w, x, m)
+            books[market] = _Books(w, iid, f"novig:market:{market}", sides, int(novig.PAYOUT_USD_PER_CONTRACT * 100))
+            status[market] = m.status
+        stream_frames, replay, poll_gaps = _novig_record(w, report, Path(root), novig_x, ws, books, status,
+                                                         catalog_outcomes, None)
+        _write_gaps(w, gaps.stream_gaps("novig", stream_frames, replay) + poll_gaps,
+                    {f"novig:market:{m}" for m in markets})
+        w.insert("venue_ingest", dict(
+            venue="novig", league=e["league"], native_event_id=event_id, label=e.get("label", ""),
+            scheduled_start_ms=iso_ms(e["scheduled_start_utc"]), window_start_ms=lo, window_end_ms=hi,
+            markets_json=json.dumps(markets), parser_version=PARSER_VERSION, ingested_ts_ms=now))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    report.rows = w.rows
+    return report
+
+
+def ingest_league_events(conn: sqlite3.Connection, root: Path, now_ms: int | None = None) -> list[tuple[dict, object]]:
+    """Every discovered league event not yet ingested whose window has settled, each in its
+    own transaction. Returns (event, IngestReport or the IngestError that stopped it) for each
+    one attempted; events still waiting are left for a later run."""
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    out = []
+    for e in league_events(root):
+        if loaded(conn, e["event_id"]) or unsettled(Path(root), e) is not None:
+            continue
+        try:
+            out.append((e, ingest_league_event(conn, root, e["event_id"], now, event=e)))
+        except IngestError as exc:
+            out.append((e, exc))
+    return out

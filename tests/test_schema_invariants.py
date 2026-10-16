@@ -13,7 +13,7 @@ from clv.close.vwap import TradeVwap, trade_vwap
 FACTS = ["raw_artifact", "event", "event_alias", "outcome", "venue_instrument", "instrument_mapping_observation",
          "tick", "tick_level", "book_snapshot", "book_snapshot_level", "liveness_evidence", "collection_gap",
          "off_observation", "signal", "entry", "entry_quote_observation", "entry_opposite_quote", "trade_execution",
-         "trade_source_observation", "historical_candle", "settlement_observation"]
+         "trade_source_observation", "historical_candle", "settlement_observation", "venue_ingest"]
 DERIVED = ["fact_snapshot", "mapping_resolution", "off_resolution", "close_def", "close_price", "scoring_run",
            "clv_score", "calibration_run", "calibration_observation", "calibration_result"]
 H = "a" * 64
@@ -118,7 +118,18 @@ def seed(c) -> dict:
         ids["calres"] = ins(c, "calibration_result", calibration_run_id=ids["cal"], kind="check1", offset_s=900,
                             component="intercept", n_events=40, n_rows=40, estimate=0.001, se=0.002,
                             lo=-0.0023, hi=0.0043, margin=0.005, outcome="passed", computed_ts_ms=T)
+    if has_table(c, "venue_ingest"):                                                 # from 0006
+        ids["vingest"] = venue_ingest(c)
     return ids
+
+
+def venue_ingest(c, **over):
+    """An NBA event's venue side, ingested once its 29 h window settled."""
+    row = dict(venue="novig", league="NBA", native_event_id="nev1", label="DEN @ LAL", scheduled_start_ms=T,
+               window_start_ms=T - 90_000_000, window_end_ms=T + 14_400_000, markets_json='["nm1"]',
+               parser_version="v0.1", ingested_ts_ms=T + 20_000_000)
+    row.update(over)
+    return ins(c, "venue_ingest", **row)
 
 
 def has_table(c, name):
@@ -464,7 +475,7 @@ def test_0002_keeps_every_valid_0001_row_exactly_and_marks_it_legacy():
     score(c, ids, "kalshi", p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800)
     score(c, ids, "novig", **fresh_close(c, ids), clv_ev_num=-791, clv_ev_den=11800)
     old = {t: [tuple(r) for r in c.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in ("close_price", "clv_score")}
-    assert db.migrate(c) == [2, 3, 4, 5]
+    assert db.migrate(c) == [2, 3, 4, 5, 6]
     for t, rows in old.items():
         width = len(rows[0])
         assert [tuple(r)[:width] for r in c.execute(f"SELECT {', '.join(cols(c, t)[:width])} FROM {t} ORDER BY 1")] \
@@ -578,7 +589,9 @@ def test_0004_adds_the_b1_tables_to_a_populated_database():
     c = db.connect(":memory:")
     db.migrate(c, upto=3)
     ids = seed(c)
-    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-4] + DERIVED[:-3]}
+    later = {"trade_execution", "trade_source_observation", "historical_candle", "settlement_observation", "venue_ingest"}
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+              for t in [t for t in FACTS if t not in later] + DERIVED[:-3]}
     assert db.migrate(c, upto=4) == [4]
     assert {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before} == before
     assert c.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -663,9 +676,10 @@ def test_0005_adds_the_b2_tables_to_a_populated_database():
     c = db.connect(":memory:")
     db.migrate(c, upto=4)
     ids = seed(c)
-    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-1] + DERIVED[:-3]}
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+              for t in [t for t in FACTS if t not in ("settlement_observation", "venue_ingest")] + DERIVED[:-3]}
     old = [tuple(r) for r in c.execute("SELECT * FROM close_price ORDER BY 1")]
-    assert db.migrate(c) == [5]
+    assert db.migrate(c, upto=5) == [5]
     assert {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before} == before
     width = len(old[0])
     assert [tuple(r)[:width] for r in c.execute("SELECT * FROM close_price ORDER BY 1")] == old
@@ -811,3 +825,39 @@ def test_a_historical_close_may_cut_off_at_the_start_and_a_live_one_may_not(conn
             created_ts_ms=T))
     with pytest.raises(sqlite3.IntegrityError, match="not before the earliest plausible start"):
         close(conn, ids, "novig", ids["tick"], cutoff_ts_ms=T + 484_996, close_def_id=new_def(conn))
+
+
+# -- A1: league events ingested from the venue side (0006) --------------------------------------------
+
+def test_0006_adds_venue_ingest_to_a_populated_database():
+    c = db.connect(":memory:")
+    db.migrate(c, upto=5)
+    seed(c)
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-1] + DERIVED}
+    assert db.migrate(c) == [6]
+    assert {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before} == before
+    assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    venue_ingest(c)                                    # and the new table takes rows
+
+
+@pytest.mark.parametrize("over", [
+    dict(league="MLB"),                                # MLB games are ingested by gamePk
+    dict(venue="kalshi"),
+    dict(window_end_ms=T - 90_000_000),                # an empty window
+    dict(scheduled_start_ms=T + 14_400_000),           # the venue's start outside its window
+    dict(markets_json="[]"),
+    dict(markets_json='{"nm1": 1}'),
+    dict(markets_json="not json"),
+    dict(ingested_ts_ms=T),                            # before its window ended
+])
+def test_invalid_venue_ingests_are_rejected(conn, over):
+    with pytest.raises(sqlite3.IntegrityError):
+        venue_ingest(conn, **over)
+
+
+def test_a_league_event_is_ingested_once_per_parser_version(conn):
+    venue_ingest(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        venue_ingest(conn)
+    venue_ingest(conn, parser_version="v0.2")
+

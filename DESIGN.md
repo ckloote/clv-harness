@@ -475,6 +475,7 @@ The schema grows with the build. A table exists from the stage that first writes
 | A2 | `event_schedule_observation` | — | Schedule revisions once many games flow |
 | A4 | `poll_attempt`, `poll_result` | — | Soft-book polling |
 | B1 | `historical_candle`, if Kalshi supplies candles | — | Historical reference import |
+| A1 | `venue_ingest` | — | A league event is loaded from the venue side before A2 links it to a league game; the record keeps it from being loaded twice |
 | B2 or G2, whichever first | `settlement_observation` | `calibration_run`, `calibration_observation`, `calibration_result` | Oracle controls need outcomes; check 1 and the oracle sweep are recorded runs |
 | G1 or B3, whichever first | `control_outlier_review` | — | Check 2 cannot pass with undocumented outlier disposition |
 | When contract rules must be tracked per provider over time | `contract_rule_observation` | — | Until then, v1 moneyline rules live in `docs/measurement-contract.md` and each mapping carries its `settlement_equivalence` verdict |

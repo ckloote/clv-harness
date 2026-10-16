@@ -6,6 +6,16 @@ Layout (§7.1 as amended by docs/decisions/2026-10-06-r0-recorder.md)::
     <root>/<source>/<YYYY-MM-DD, UTC>/<stream_id>.<segment_id>.jsonl.gz     sealed, 0444
     <root>/<source>/<YYYY-MM-DD, UTC>/manifest.jsonl                        append-only journal
     <root>/<source>/<YYYY-MM-DD, UTC>/manifest.json                         view built from the journal
+    <root>/sealed_through.json                                              the seal watermark
+
+The seal watermark is a time before which every frame in the archive is in a
+sealed, journalled segment: the earliest receive time still in an active or
+queued segment (or in a part whose seal failed), or in any other `.part` under the
+root (a crashed session's orphans, until a recorder seals them), else the present. The writer
+rewrites it every WATERMARK_INTERVAL_S and on close. A reader (clv.ingest) treats
+a window as complete only once the watermark is past its end; a mirror copies a
+snapshot of it before the segments it vouches for, and publishes it after them
+(deploy/archive-mirror.sh).
 
 One line per frame::
 
@@ -44,6 +54,8 @@ PART_SUFFIX = ".jsonl.part"
 SEALED_SUFFIX = ".jsonl.gz"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _DAY_MS = 86_400_000
+WATERMARK = "sealed_through.json"   # in the archive root; clv.archive reads it too
+WATERMARK_INTERVAL_S = 30           # how often the writer rewrites it
 
 
 def now_ms() -> int:
@@ -256,6 +268,25 @@ def find_parts(root: Path) -> list[Path]:
     return sorted(root.glob(f"*/*/*{PART_SUFFIX}"))
 
 
+def earliest_frame_ms(part: Path) -> int | None:
+    """The earliest receive time among a part's complete frames, as sealing it would record;
+    None if it has none (empty, or only a torn tail, which recovery drops). Not the first
+    frame's: receive times are wall-clock, and a clock stepped back puts a later frame earlier.
+    An unreadable complete line gives 0, so a watermark bounded by it never passes the part.
+    Reads the whole part: only a crashed session's parts are read, and only until recovery."""
+    earliest = None
+    with open(part, "rb") as f:
+        for line in f:
+            if not line.endswith(b"\n"):
+                break                           # a torn tail
+            try:
+                t = int(decode_line(line)["recv_ts_ms"])
+            except (ValueError, KeyError, TypeError):
+                return 0
+            earliest = t if earliest is None else min(earliest, t)
+    return earliest
+
+
 def recover_orphans(root: Path, *, session_id: str | None) -> list[SealedEntry]:
     """Seal every `.part` left by a previous, uncleanly stopped session.
 
@@ -279,6 +310,7 @@ class _Segment:
     fh: io.BufferedWriter
     deadline_ms: int
     dirty: bool = False
+    first_recv_ms: int | None = None        # the earliest receive time written: the watermark's bound
 
 
 @dataclass
@@ -303,6 +335,7 @@ class Stream:
             seg.fh.write(line)
             seg.fh.flush()
             seg.dirty = True
+            seg.first_recv_ms = ts if seg.first_recv_ms is None else min(seg.first_recv_ms, ts)
         return ts
 
     def event(self, conn_id: str, type_: str, **fields) -> int:
@@ -331,7 +364,12 @@ class Stream:
         seg.fh.flush()
         os.fsync(seg.fh.fileno())
         seg.fh.close()
-        self.writer.submit_seal(seg.path)
+        self.writer.submit_seal(seg.path, seg.first_recv_ms)
+
+    def unsealed(self) -> tuple[Path, int | None] | None:
+        """This stream's active segment and its earliest receive time, if it has one."""
+        with self.lock:
+            return (self._seg.path, self._seg.first_recv_ms) if self._seg is not None else None
 
     def rotate(self) -> None:
         with self.lock:
@@ -379,6 +417,10 @@ class ArchiveWriter:
         self._pending: list[Future] = []
         self._last_fsync = time.monotonic()
         self.seal_errors: list[BaseException] = []
+        self._queued: dict[Future, tuple[Path, int | None]] = {}   # seal -> its part, earliest receive time
+        self._stuck: list[int] = []                     # earliest receive times of parts whose seal failed
+        self._queue_lock = threading.Lock()
+        self._last_watermark = float("-inf")
 
     def stream(self, source: str, stream_id: str) -> Stream:
         if not _ID_RE.match(source) or not _ID_RE.match(stream_id):
@@ -396,14 +438,58 @@ class ArchiveWriter:
         with self._lock:
             self._streams.pop((stream.source, stream.stream_id), None)
 
-    def submit_seal(self, part: Path) -> None:
+    def submit_seal(self, part: Path, first_recv_ms: int | None = None) -> None:
         fut = self._sealer.submit(seal_part, part, session_id=self.session_id, clock=self.clock)
+        with self._queue_lock:
+            self._queued[fut] = (part, first_recv_ms)
         fut.add_done_callback(self._seal_done)
         self._pending.append(fut)
 
     def _seal_done(self, fut: Future) -> None:
+        with self._queue_lock:
+            _, first = self._queued.pop(fut, (None, None))
+            if fut.exception() is not None and first is not None:
+                self._stuck.append(first)       # the part is still unsealed: never vouch past it
         if fut.exception() is not None:
             self.seal_errors.append(fut.exception())
+
+    def sealed_through(self) -> int:
+        """Every frame in the archive received before this time is in a sealed, journalled
+        segment: this writer's, and any other session's. A crashed session's parts stay until a
+        recorder starts and seals them (recover_orphans), and a short command's writer (`catalog`,
+        `mlb-feed`) must not publish past them meanwhile. Each part is bounded by its earliest
+        frame, never its first (earliest_frame_ms)."""
+        now = self.clock()
+        with self._lock:
+            streams = list(self._streams.values())
+        mine = [u for s in streams if (u := s.unsealed()) is not None]
+        with self._queue_lock:
+            mine += list(self._queued.values())
+            bounds = list(self._stuck)
+        bounds += [t for _, t in mine if t is not None]
+        own = {path for path, _ in mine}
+        for part in find_parts(self.root):
+            if part in own:
+                continue
+            try:
+                t = earliest_frame_ms(part)
+            except FileNotFoundError:
+                continue                        # sealed since it was listed
+            if t is not None:
+                bounds.append(t)
+        return min([now, *bounds])
+
+    def write_watermark(self) -> None:
+        """Rewrite <root>/sealed_through.json atomically."""
+        body = json.dumps({"sealed_through_ms": self.sealed_through(), "session_id": self.session_id,
+                           "written_ts_ms": self.clock()}, separators=(",", ":"))
+        tmp = self.root / f".{WATERMARK}.tmp"
+        with open(tmp, "w") as f:
+            f.write(body + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.root / WATERMARK)
+        self._last_watermark = time.monotonic()
 
     def tick(self) -> None:
         """Call about once a second: rotates expired segments, fsyncs on cadence."""
@@ -417,6 +503,8 @@ class ArchiveWriter:
                 s.fsync()
             self._last_fsync = time.monotonic()
         self._pending = [f for f in self._pending if not f.done()]
+        if time.monotonic() - self._last_watermark >= WATERMARK_INTERVAL_S:
+            self.write_watermark()
 
     def rotate_all(self) -> None:
         with self._lock:
@@ -435,8 +523,11 @@ class ArchiveWriter:
             self._streams.clear()
         for s in streams:
             s.close()
-        self.drain()
-        self._sealer.shutdown(wait=True)
+        try:
+            self.drain()
+        finally:
+            self._sealer.shutdown(wait=True)
+            self.write_watermark()
         # Closed days get their manifest.json view; today's stays journal-only
         # until the day closes or `raw-recorder seal` runs.
         today = utc_day(self.clock())

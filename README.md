@@ -135,6 +135,14 @@ uv run clv ingest --game-pk 849832
 
 `ingest` creates or upgrades `data/clv.sqlite` (git-ignored; `--db` to change it) and loads the game's facts: identity and mappings, Novig and Kalshi book states, liveness evidence, collection gaps and off observations. Each row cites the sealed segment and line it came from. It refuses a game that is already loaded, since a clean database must reproduce it exactly. Game 4 takes about 15 s and makes a 24 MB database. `clv migrate` alone creates or upgrades the database.
 
+**League events (A1).** A league event is loaded from the venue side only: its Novig instruments, books, liveness evidence and collection gaps, with no event, outcome, mapping or off observation. Which league game it is gets decided in A2.
+
+```bash
+uv run clv ingest --league-events
+```
+
+This loads every event in `archive/events.discovered.toml` that is not loaded yet and whose window has settled, meaning the archive's seal watermark (`archive/sealed_through.json`, written by the recorder and published by the mirror last) is past the window's end. Elapsed time alone never settles a window, since a mirror can lag. Events not yet settled are left for a later run, so it is safe to run on a timer. A `venue_ingest` row records each one, and `--league-event <Novig event ID>` loads a single one.
+
 ## Scoring a recorded game
 
 ```bash
