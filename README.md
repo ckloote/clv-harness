@@ -237,13 +237,15 @@ uv run raw-recorder games
 
 `games` is read-only and lists what the recorder will record over the next two days: each game's source, windows in ET, markets and notes, and when discovery last ran. It exits 1 if discovery is stale or a `games.toml` entry hides markets that discovery found. With no recorder running, `uv run raw-recorder catalog` runs one discovery round by hand.
 
+**Other leagues (A1).** Each enabled `[[league]]` in `config.toml` is found from Novig's catalog alone, with no schedule match. Every discovery interval the recorder reads the league's events and `MONEY` markets (archived), lists each event with a moneyline that starts within `days_ahead`, and merges it into `archive/events.discovered.toml` under the same never-lose-capture rules. An event records on Novig only, from `a1.capture_lead_s` (25 h) before its `startsTs` so the 24 h offset is captured, to `a1.capture_tail_s` (4 h) after. Which league game it is gets decided in A2, never here. NBA is committed with `enabled = false` until the A1 cutover (`docs/decisions/2026-10-16-a1-host.md`). `games` lists league events too, and `uv run raw-recorder status --event <Novig event ID>` checks one.
+
 ### Recording
 
 ```bash
 uv run raw-recorder run
 ```
 
-`run` stays up, captures every game whose window is open, and idles in between. While a window is open it holds a systemd sleep inhibitor, so keep the host on through those windows. If the host goes down or suspends anyway (closing a laptop lid suspends it regardless), the gap is recorded rather than hidden, and on waking every poller and discovery resume within seconds. The Odds API is polled as each odds window opens, then every `r0.odds_poll_interval_s`. Stop it with Ctrl-C or SIGTERM: it writes a `process_stop` event and seals everything. A killed process is recovered on the next start, which seals the orphaned segments and records `previous_session_unclean`.
+`run` stays up, captures every game whose window is open, and idles in between. While a window is open it holds a systemd sleep inhibitor, so keep the host on through those windows. If the host goes down or suspends anyway (closing a laptop lid suspends it regardless), the gap is recorded rather than hidden, and on waking every poller and discovery resume within seconds. The Odds API is polled as each odds window opens, then every `r0.odds_poll_interval_s`. If the host says its clock is not NTP-synchronized when the recorder starts, as a Raspberry Pi without a clock battery says after a power cut, nothing is captured until it is: the wait is archived as `clock_unsynced`, then `clock_synced`. Stop it with Ctrl-C or SIGTERM: it writes a `process_stop` event and seals everything. A killed process is recovered on the next start, which seals the orphaned segments and records `previous_session_unclean`.
 
 To run it as a service:
 

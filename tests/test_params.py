@@ -86,6 +86,8 @@ def test_recorder_copies_match():
                  "subscription_check_interval_s"):
         assert param(f"stream.{name}") == rec["stream"][name], name
     assert param("stream.reconnect_backoff_s") == rec["stream"]["reconnect_backoff_s"]
+    for name, value in rec["a1"].items():
+        assert param(f"a1.{name}") == value, name
 
 
 def test_unknown_key_is_an_error():

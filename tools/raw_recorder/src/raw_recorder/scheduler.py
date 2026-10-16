@@ -4,17 +4,21 @@ A game's capture window runs from `capture_lead_s` before its scheduled start
 to `capture_tail_s` after it (per-game overrides allowed). The Odds API polls
 only from `odds_window_lead_s` before each scheduled start until that start:
 entry quotes are pregame, and credits are scarce.
+
+A league event (A1) has a window too, by default `a1.capture_lead_s` before its
+scheduled start, so the 24 h offset is captured, to `a1.capture_tail_s` after.
+It has no odds window and no StatsAPI feeds: those are MLB's.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import Game, Params
+from .config import Game, LeagueEvent, Params
 
 
 @dataclass(frozen=True)
 class Window:
-    game: Game
+    game: Game | LeagueEvent
     start_ms: int
     end_ms: int
 
@@ -22,13 +26,23 @@ class Window:
         return self.start_ms <= t_ms < self.end_ms
 
 
-def capture_windows(games: list[Game], params: Params) -> list[Window]:
-    out = []
-    for g in games:
-        lead = g.capture_lead_s if g.capture_lead_s is not None else params.capture_lead_s
-        tail = g.capture_tail_s if g.capture_tail_s is not None else params.capture_tail_s
-        out.append(Window(g, g.scheduled_start_ms - lead * 1000, g.scheduled_start_ms + tail * 1000))
-    return sorted(out, key=lambda w: w.start_ms)
+def default_lead_tail(g: Game | LeagueEvent, params: Params) -> tuple[int, int]:
+    """The window an entry gets when it overrides neither end."""
+    if isinstance(g, LeagueEvent):
+        return params.a1_capture_lead_s, params.a1_capture_tail_s
+    return params.capture_lead_s, params.capture_tail_s
+
+
+def bounds(g: Game | LeagueEvent, params: Params) -> tuple[int, int]:
+    """[start, end) of an entry's capture window, in UTC ms."""
+    lead, tail = default_lead_tail(g, params)
+    lead = g.capture_lead_s if g.capture_lead_s is not None else lead
+    tail = g.capture_tail_s if g.capture_tail_s is not None else tail
+    return g.scheduled_start_ms - lead * 1000, g.scheduled_start_ms + tail * 1000
+
+
+def capture_windows(games: list[Game | LeagueEvent], params: Params) -> list[Window]:
+    return sorted((Window(g, *bounds(g, params)) for g in games), key=lambda w: w.start_ms)
 
 
 def odds_windows(games: list[Game], params: Params) -> list[Window]:
@@ -37,8 +51,8 @@ def odds_windows(games: list[Game], params: Params) -> list[Window]:
 
 
 class Schedule:
-    def __init__(self, games: list[Game], params: Params):
-        self.capture = capture_windows(games, params)
+    def __init__(self, games: list[Game], params: Params, events: list[LeagueEvent] = ()):
+        self.capture = capture_windows([*games, *events], params)
         self.odds = odds_windows(games, params)
 
     def active(self, t_ms: int) -> list[Window]:
@@ -57,5 +71,5 @@ class Schedule:
         return any(w.contains(t_ms) for w in self.odds)
 
     def ended_between(self, t0_ms: int, t1_ms: int) -> list[Window]:
-        """Capture windows whose end falls in (t0, t1]."""
-        return [w for w in self.capture if t0_ms < w.end_ms <= t1_ms]
+        """MLB games' capture windows whose end falls in (t0, t1]: their StatsAPI feeds are due."""
+        return [w for w in self.capture if isinstance(w.game, Game) and t0_ms < w.end_ms <= t1_ms]

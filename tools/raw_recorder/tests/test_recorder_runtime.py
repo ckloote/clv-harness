@@ -232,6 +232,7 @@ def test_paper_config_differs_only_where_it_must():
     prod = tomllib.loads((DEFAULT_DIR / "config.toml").read_text())
     paper = tomllib.loads((DEFAULT_DIR / "config.paper.toml").read_text())
     assert paper["r0"] == prod["r0"] and paper["stream"] == prod["stream"]   # same §10 values
+    assert paper["a1"] == prod["a1"]
     cfg = load_config(DEFAULT_DIR / "config.paper.toml")
     assert cfg.archive_root.name == "archive-paper"                        # never the real archive
     assert cfg.novig["host"] == "https://api.paper.novig.com"

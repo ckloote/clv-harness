@@ -18,6 +18,9 @@ Checks, for one game's capture window (the current one by default):
 - game discovery (when on) ran within two of its intervals, and the game's
   entry is reported with its source and any notes (an ambiguous match).
 
+A league event (A1, `--event`) gets the same process, disk, discovery and Novig
+checks; it has no Kalshi tickers, odds window or StatsAPI feed.
+
 Sequence contiguity here is an operational signal only; `clv inspect` and
 `clv ingest` own the interpretation and record gaps (DESIGN.md §7.2).
 """
@@ -29,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .archive import PART_SUFFIX, SEALED_SUFFIX, iter_file, utc_day
-from .config import Config, Game
+from .config import Config, Game, LeagueEvent
 from .replay import rest_exchanges, ws_evidence
 from .scheduler import Window, capture_windows, odds_windows
 from .session import free_disk_mb
@@ -58,10 +61,13 @@ class Report:
         return LEVELS.index(self.worst)
 
 
-def pick_window(cfg: Config, games: list[Game], now_ms: int, game_pk: int | None) -> Window | None:
-    windows = capture_windows(games, cfg.params)
+def pick_window(cfg: Config, games: list[Game], now_ms: int, game_pk: int | None,
+                events: list[LeagueEvent] = (), event_id: str | None = None) -> Window | None:
+    windows = capture_windows([*games, *events], cfg.params)
     if game_pk is not None:
-        return next((w for w in windows if w.game.game_pk == game_pk), None)
+        return next((w for w in windows if isinstance(w.game, Game) and w.game.game_pk == game_pk), None)
+    if event_id is not None:
+        return next((w for w in windows if isinstance(w.game, LeagueEvent) and w.game.event_id == event_id), None)
     current = [w for w in windows if w.contains(now_ms)]
     if current:
         return current[0]
@@ -89,13 +95,16 @@ def _age(now_ms: int, t_ms: int | None) -> str:
 
 
 def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
-           game_pk: int | None = None) -> Report:
+           game_pk: int | None = None, events: list[LeagueEvent] = (), event_id: str | None = None) -> Report:
     root, p = cfg.archive_root, cfg.params
     rep = Report()
-    w = pick_window(cfg, games, now_ms, game_pk)
+    w = pick_window(cfg, games, now_ms, game_pk, events, event_id)
     if w is None:
-        rep.add(FAIL, "games", f"no game{f' {game_pk}' if game_pk else ''} in {cfg.games_path} "
-                               f"or {cfg.discovered_path}")
+        if event_id is not None:
+            rep.add(FAIL, "games", f"no league event {event_id} in {cfg.events_discovered_path}")
+        else:
+            rep.add(FAIL, "games", f"no game{f' {game_pk}' if game_pk else ''} in {cfg.games_path} "
+                                   f"or {cfg.discovered_path}")
         return rep
     rep.game, rep.window = w.game, w
     in_window = w.contains(now_ms)
@@ -131,6 +140,8 @@ def status(cfg: Config, games: list[Game], now_ms: int, running_pid: int | None,
         return rep
     hi = min(now_ms, w.end_ms)
     _novig(rep, cfg, w, frames_between(root, "novig", w.start_ms, hi), now_ms, in_window, session)
+    if isinstance(w.game, LeagueEvent):
+        return rep                          # Novig only: no Kalshi, odds window or StatsAPI feed
     _kalshi(rep, cfg, w, frames_between(root, "kalshi", w.start_ms, hi), now_ms, in_window)
     odds_w = next(o for o in odds_windows([w.game], p))
     _odds(rep, cfg, odds_w, frames_between(root, "odds_api", odds_w.start_ms, min(now_ms, odds_w.end_ms) + 60_000),
@@ -294,7 +305,9 @@ def render(rep: Report, now_ms: int) -> str:
         return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
     lines = []
     if rep.game is not None:
-        lines.append(f"{rep.game.label} (gamePk {rep.game.game_pk})")
+        key = (f"{rep.game.league} Novig event {rep.game.event_id}" if isinstance(rep.game, LeagueEvent)
+               else f"gamePk {rep.game.game_pk}")
+        lines.append(f"{rep.game.label} ({key})")
         lines.append(f"capture window {iso(rep.window.start_ms)} .. {iso(rep.window.end_ms)}: {rep.phase} "
                      f"(now {iso(now_ms)})")
     width = max((len(c[1]) for c in rep.checks), default=0)
@@ -304,13 +317,19 @@ def render(rep: Report, now_ms: int) -> str:
     return "\n".join(lines)
 
 
-def _discovery(rep: Report, cfg: Config, game: Game, now_ms: int) -> None:
+def _discovery(rep: Report, cfg: Config, game: Game | LeagueEvent, now_ms: int) -> None:
     from .discovery import last_run
-    rep.add(OK, "games", f"{game.game_pk} is {'hand-checked (games.toml)' if game.source == 'manual' else 'discovered'}"
-            + "".join(f"; {n}" for n in game.notes))
-    if not cfg.discovery.get("enabled", False):
+    if isinstance(game, LeagueEvent):
+        rep.add(OK, "games", f"{game.league} event {game.event_id} is discovered from the Novig catalog"
+                + "".join(f"; {n}" for n in game.notes))
+        path, on = cfg.events_discovered_path, bool(cfg.enabled_leagues())
+    else:
+        rep.add(OK, "games", f"{game.game_pk} is {'hand-checked (games.toml)' if game.source == 'manual' else 'discovered'}"
+                + "".join(f"; {n}" for n in game.notes))
+        path, on = cfg.discovered_path, cfg.discovery.get("enabled", False)
+    if not on:
         return
-    at, _ = last_run(cfg.discovered_path)
+    at, _ = last_run(path)
     limit_ms = 2 * float(cfg.discovery.get("interval_s", 3600)) * 1000
     if at is None:
         rep.add(WARN, "games", "discovery has not run yet")
