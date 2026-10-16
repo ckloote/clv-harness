@@ -400,7 +400,7 @@ Table names below are conceptual; exact naming can vary if the behavior and cons
 | `collection_gap` | Append-only open/close pairs, per-subject or connection-scoped, including heartbeat and partial-poll failures |
 | `off_observation` | Multiple independent off observations with source uncertainty and native payload |
 | `signal`, `entry`, `entry_quote_observation` | All emitted candidates, precise as-of features, entry quote and assumed execution lineage |
-| `settlement_observation` | Official/venue outcomes and their corrections, without overwriting history. (Actual fills, `real_fill`, are defined in `docs/RESEARCH_PROTOCOL.md`.) |
+| `settlement_observation` | Official/venue outcomes and their corrections, without overwriting history. A venue's settlement names its instrument side; the outcome follows from the mapping in force. (Actual fills, `real_fill`, are defined in `docs/RESEARCH_PROTOCOL.md`.) |
 | `control_outlier_review` | Append-only Check-2 review: calibration run, entry ID, input fingerprint (raw quote hashes, mapping version, as-of times), reviewer/time, evidence reference and disposition; discovered errors invalidate the run rather than being waived |
 | `historical_candle` | Native candle interval and meaning; explicitly separate from instantaneous books |
 
@@ -416,9 +416,10 @@ If a fact references an unknown event or outcome during asynchronous ingest, qua
 | `mapping_resolution` | Approved mapping version and validity for each scored instrument |
 | `off_resolution` | Versioned trusted start interval and source disagreement |
 | `close_def` | Immutable serialized parameters: venue, price basis, cutoff, book-age policy, liquidity notional, fallback rules, off-resolver version |
-| `close_price` | One row per fact snapshot, definition, reference venue and canonical outcome; actual close time, liveness, liquidity, confidence and exclusion reason |
+| `close_price` | One row per fact snapshot, definition, reference venue and canonical outcome; actual close time, liveness, liquidity, confidence and exclusion reason. Its lineage is one tick (`close_live`), or one candle or trade window (`close_hist`) |
 | `scoring_run` | Scorer code version, fee model version, analysis specification and fact snapshot |
 | `clv_score` | One row **per reference venue/definition/entry/run**; all component prices, CLV, null EV, residual and modeled fees |
+| `calibration_run`, `calibration_observation`, `calibration_result` | One §9.2/§9.3 calibration of one close family on one reference venue over one fact snapshot: its specification, the fixed side's price at each offset paired with its close, every reported statistic and the verdict |
 | `analysis_cohort` | **Deferred** to `docs/RESEARCH_PROTOCOL.md`. Until then the harness produces the coverage waterfall (§11.2) without a cohort table |
 
 **Score keys:** `clv_score` includes `ref_venue` and a run/fact-snapshot identifier in its primary key (or a unique composite key) and references the exact `close_price` row, so independently computed Novig and Kalshi scores for the same entry coexist.
@@ -474,7 +475,7 @@ The schema grows with the build. A table exists from the stage that first writes
 | A2 | `event_schedule_observation` | — | Schedule revisions once many games flow |
 | A4 | `poll_attempt`, `poll_result` | — | Soft-book polling |
 | B1 | `historical_candle`, if Kalshi supplies candles | — | Historical reference import |
-| B2 or G2, whichever first | `settlement_observation` | — | Oracle controls need outcomes |
+| B2 or G2, whichever first | `settlement_observation` | `calibration_run`, `calibration_observation`, `calibration_result` | Oracle controls need outcomes; check 1 and the oracle sweep are recorded runs |
 | G1 or B3, whichever first | `control_outlier_review` | — | Check 2 cannot pass with undocumented outlier disposition |
 | When contract rules must be tracked per provider over time | `contract_rule_observation` | — | Until then, v1 moneyline rules live in `docs/measurement-contract.md` and each mapping carries its `settlement_equivalence` verdict |
 | Research protocol activation | `analysis_cohort`, `real_fill` | — | Model evaluation only |

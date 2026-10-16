@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 from raw_recorder.archive import ArchiveWriter
 
-from clv import backfill, db, identity
-from clv.backfill import links, mlb_pbp, novig_public
+from clv import archive, backfill, db, identity
+from clv.backfill import links, mlb_pbp, novig_public, settlements
 from clv.close.vwap import trade_vwap
 from clv.ingest import Writer
 from clv.timeutil import iso_ms
@@ -62,10 +62,10 @@ SCHEDULE = [
 ]
 
 
-def market(ticker, result, close, title="t"):
+def market(ticker, result, close, title="t", **kw):
     return {"ticker": ticker, "event_ticker": ticker.rsplit("-", 1)[0], "title": title, "status": "finalized",
             "result": result, "notional_value_dollars": "1.0000", "close_time": close, "settlement_ts": close,
-            "rules_primary": "If the team wins...", "rules_secondary": "postponed: within two days"}
+            "rules_primary": "If the team wins...", "rules_secondary": "postponed: within two days", **kw}
 
 
 KALSHI = [
@@ -75,8 +75,9 @@ KALSHI = [
     market("KXMLBGAME-26AUG061910NYYBOS-BOS", "no", "2026-08-06T02:40:00Z"),
     market("KXMLBGAME-26AUG041835TORBAL-TOR", "yes", "2026-08-06T01:30:00Z"),        # 903, postponed
     market("KXMLBGAME-26AUG041835TORBAL-BAL", "no", "2026-08-06T01:30:00Z"),
-    market("KXMLBGAME-26AUG042010CHCMIL-CHC", "scalar", "2026-08-05T04:00:00Z"),     # 904, cancelled
-    market("KXMLBGAME-26AUG042010CHCMIL-MIL", "scalar", "2026-08-05T04:00:00Z"),
+    market("KXMLBGAME-26AUG042010CHCMIL-CHC", "scalar", "2026-08-05T04:00:00Z",     # 904, cancelled
+           settlement_value_dollars="0.4400"),
+    market("KXMLBGAME-26AUG042010CHCMIL-MIL", "scalar", "2026-08-05T04:00:00Z", settlement_value_dollars="0.5600"),
     market("KXMLBGAME-26AUG041610LADSDG1-LAD", "no", "2026-08-04T23:00:00Z"),        # 905/906: two fit
     market("KXMLBGAME-26AUG041610LADSDG1-SD", "yes", "2026-08-04T23:00:00Z"),
     market("KXMLBGAME-26AUG042140SFARI-SF", "no", "2026-08-05T04:40:00Z"),           # 907: Kalshi's ARI is AZ
@@ -159,9 +160,9 @@ def write_hist(root: Path, csv_text: str = CSV, sid: str = "h1") -> None:
     rest(clock, n, "d", "/reporting/trade-data/2026-08-04/trades.csv", "trades_csv", None, text=csv_text)
     for mid, eid, desc, start, outs in (
             (N1, "e1", "New York Yankees @ Boston Red Sox", "2026-08-04T23:10:00Z",
-             [(NYY_O, "NYY", "LOSE"), (BOS_O, "BOS", "WIN")]),
+             [(NYY_O, "NYY", "LOSS"), (BOS_O, "BOS", "WIN")]),
             ("0005-n5", "e5", "Los Angeles Dodgers @ San Diego Padres", "2026-08-04T20:10:00Z",
-             [("o-lad", "LAD", "LOSE"), ("o-sd", "SD", "WIN")])):
+             [("o-lad", "LAD", "LOSS"), ("o-sd", "SD", "WIN")])):
         rest(clock, n, f"m{mid}", f"/v3/history/markets/{mid}", "history_market", {
             "marketId": mid, "eventId": eid, "description": "x", "marketType": "MONEY", "status": "SETTLED",
             "outcomes": [{"outcomeId": o, "name": nm, "status": s} for o, nm, s in outs]}, [f"novig:market:{mid}"])
@@ -523,3 +524,136 @@ def test_a_candle_without_a_bid_and_ask_close_is_no_quote(archives, tmp_path):
     _, rows, _ = coverage.table(c, NOW + 2)
     g = {r["game_pk"]: r for r in rows}[901]
     assert (g["kalshi_candle_age_s"], g["kalshi_reason"]) == (None, "no_candle_before_cutoff")
+
+
+# -- B2: settlements -----------------------------------------------------------------------------------
+
+def settled(c):
+    return q(c, """SELECT s.source, coalesce(o.team_abbreviation, v.native_id), s.side, s.result, s.value_e4,
+                          s.supersedes_id IS NOT NULL
+                   FROM settlement_observation s LEFT JOIN outcome o USING (outcome_id)
+                   LEFT JOIN venue_instrument v USING (venue_instrument_id) ORDER BY s.settlement_obs_id""")
+
+
+def test_every_final_game_and_settled_market_is_settled_without_links(archives):
+    hist, _ = archives
+    c = db.connect(":memory:")
+    db.migrate(c)
+    rep = backfill.import_identity(c, hist, NOW)
+    rows = settled(c)
+    mlb = {(team, r) for src, team, _, r, _, _ in rows if src == "mlb_statsapi"}
+    # Six Final games, two teams each; the postponed game once, from its Final row, the cancelled one never.
+    assert mlb == {("BOS", "win"), ("NYY", "lose"), ("NYY", "win"), ("BOS", "lose"), ("TOR", "win"),
+                   ("BAL", "lose"), ("SD", "win"), ("LAD", "lose"), ("SD", "lose"), ("LAD", "win"),
+                   ("AZ", "win"), ("SF", "lose")}
+    assert len([r for r in rows if r[0] == "mlb_statsapi"]) == 12
+    kalshi = {name: (side, r, v) for src, name, side, r, v, _ in rows if src == "kalshi_hist"}
+    assert len(kalshi) == len(KALSHI)                 # every market, linked or not
+    assert kalshi[BOS_T] == (0, "win", None)          # its YES side
+    assert kalshi["KXMLBGAME-26AUG041910NYYBOS-NYY"] == (0, "lose", None)
+    assert kalshi["KXMLBGAME-26AUG042010CHCMIL-CHC"] == (0, "fair_value", 4400)
+    novig = sorted((name, side, r) for src, name, side, r, _, _ in rows if src == "novig_hist")
+    assert novig == [("0001-n1", 0, "lose"), ("0001-n1", 1, "win"), ("0005-n5", 0, "lose"), ("0005-n5", 1, "win")]
+    assert not any(sup for *_, sup in rows)
+    assert rep["mlb_statsapi_settlements"] == 12 and rep["kalshi_hist_settlements"] == 12
+    # The Novig side is the instrument's own: side 1 of N1 is BOS, graded WIN.
+    assert q(c, "SELECT side1_id FROM venue_instrument WHERE native_id = ?", N1) == [(BOS_O,)]
+    # Each row cites its response and the item within it.
+    assert q(c, """SELECT count(*) FROM settlement_observation s JOIN raw_artifact a USING (raw_artifact_id)
+                   WHERE a.source = s.source OR (s.source = 'mlb_statsapi' AND a.source = 'mlb_hist')
+                      OR (s.source = 'kalshi_hist' AND a.source = 'kalshi_hist')""") == [(len(rows),)]
+
+
+def test_settlements_load_once_and_a_regrade_supersedes(archives, tmp_path):
+    hist, live = archives
+    c, _, _ = loaded(archives, tmp_path)
+    before = settled(c)
+    backfill.import_identity(c, hist, NOW + 5)
+    assert settled(c) == before                       # a repeated answer is not a new observation
+    # Novig regrades N1 in a later response (remediation can reopen a settled market), and an
+    # unsettled market (TBD) gives no row.
+    clock = Clock()
+    clock.t = iso_ms("2026-10-15T00:00:00Z")
+    w = ArchiveWriter(hist, session_id="h2", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
+    n = w.stream("novig_hist", "backfill-h2")
+    rest(clock, n, "r1", f"/v3/history/markets/{N1}", "history_market", {
+        "marketId": N1, "eventId": "e1", "description": "x", "marketType": "MONEY", "status": "SETTLED",
+        "settledTs": clock.t, "outcomes": [{"outcomeId": NYY_O, "name": "NYY", "status": "0.4"},
+                                           {"outcomeId": BOS_O, "name": "BOS", "status": "0.6"}]},
+         [f"novig:market:{N1}"])
+    rest(clock, n, "r5", "/v3/history/markets/0005-n5", "history_market", {
+        "marketId": "0005-n5", "eventId": "e5", "description": "x", "marketType": "MONEY", "status": "OPEN",
+        "outcomes": [{"outcomeId": "o-lad", "name": "LAD", "status": "TBD"},
+                     {"outcomeId": "o-sd", "name": "SD", "status": "TBD"}]}, ["novig:market:0005-n5"])
+    w.close()
+    rep = backfill.import_identity(c, hist, NOW + 6)
+    after = settled(c)
+    assert after[:len(before)] == before
+    assert sorted(after[len(before):]) == [("novig_hist", N1, 0, "fair_value", 4000, True),
+                                           ("novig_hist", N1, 1, "fair_value", 6000, True)]
+    assert rep["novig_markets_unsettled"] == 1
+    backfill.import_identity(c, hist, NOW + 7)
+    assert settled(c) == after
+
+
+def archive_correction(hist):
+    """StatsAPI reports 901 as BOS win, again BOS win, then corrected to NYY win."""
+    clock = Clock()
+    clock.t = iso_ms("2026-10-15T00:00:00Z")
+    w = ArchiveWriter(hist, session_id="h3", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
+    m = w.stream("mlb_hist", "backfill-h3")
+    query = "sportId=1&startDate=2026-08-01&endDate=2026-08-31&gameType=R%2CF%2CD%2CL%2CW"
+    for rid, winner in (("s2", "BOS"), ("s3", "NYY")):
+        games = [g if g["gamePk"] != 901 else row(901, "2026-08-04", "2026-08-04T23:10:00Z", "NYY", "BOS",
+                                                  winner=winner) for g in SCHEDULE]
+        rest(clock, m, rid, "/api/v1/schedule", "schedule", {"dates": [{"games": games}]}, query=query)
+    w.close()
+
+
+GAME_901 = ("SELECT o.team_abbreviation, s.result, s.supersedes_id IS NOT NULL FROM settlement_observation s"
+            " JOIN outcome o USING (outcome_id) JOIN event e ON e.event_id = s.event_id"
+            " WHERE e.league_game_id = '901' ORDER BY s.settlement_obs_id")
+
+
+def test_a_rerun_never_lets_an_earlier_repeat_supersede_a_correction(archives):
+    # PR #20 review: the first import stores the first answer and the correction; replaying the
+    # same archive must not store the skipped repeat after the correction and restore the wrong result.
+    hist, _ = archives
+    archive_correction(hist)
+    c = db.connect(":memory:")
+    db.migrate(c)
+    backfill.import_identity(c, hist, NOW)
+    first = q(c, GAME_901)
+    assert sorted(first) == [("BOS", "lose", 1), ("BOS", "win", 0), ("NYY", "lose", 0), ("NYY", "win", 1)]
+    for again in (NOW + 1, NOW + 2):
+        backfill.import_identity(c, hist, again)
+        assert q(c, GAME_901) == first
+
+
+def test_a_history_stored_out_of_order_is_refused_not_repaired(archives):
+    # A database imported before the fix holds the repeat after the correction. Facts are
+    # append-only, so the import refuses it with a clear error instead of a bare UNIQUE failure.
+    hist, _ = archives
+    archive_correction(hist)
+    c = db.connect(":memory:")
+    db.migrate(c)
+    backfill.import_identity(c, hist, NOW)
+    w = Writer(c, NOW)
+    w.know(archive.segments(hist, mlb_pbp.SOURCE))
+    _, rows = mlb_pbp.schedule(hist)
+    repeat = sorted((x for x, g, _ in rows if g["gamePk"] == 901), key=lambda x: x.body.recv_ts_ms)[1]
+    item = next(i for x, g, i in rows if x is repeat and g["gamePk"] == 901)
+    for team, result in (("BOS", "win"), ("NYY", "lose")):          # what the old rerun appended
+        last, subject, event, outcome = q(c, """
+            SELECT s.settlement_obs_id, s.subject, s.event_id, s.outcome_id FROM settlement_observation s
+            JOIN outcome o USING (outcome_id) WHERE o.team_abbreviation = ? AND s.event_id =
+              (SELECT event_id FROM event WHERE league_game_id = '901')
+            ORDER BY s.settlement_obs_id DESC LIMIT 1""", team)[0]
+        w.insert("settlement_observation", dict(
+            source="mlb_statsapi", subject=subject, event_id=event, outcome_id=outcome, result=result,
+            observed_ts_ms=repeat.body.recv_ts_ms, supersedes_id=last, native_json="{}",
+            **w.cited(repeat.body.ref), raw_item=item))
+    before = counts(c)
+    with pytest.raises(settlements.SettlementHistoryError, match="rebuild it from a clean database"):
+        backfill.import_identity(c, hist, NOW + 1)
+    assert counts(c) == before                        # the failed import left nothing behind

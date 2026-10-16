@@ -1,7 +1,8 @@
 """Novig's historical records, as the B1 backfill archives them (raw_recorder.backfill).
 
 - `/v3/history/markets/{id}`: a market, closed ones included, in the catalog's shape but
-  without `startsTs`, with each outcome's grade (`WIN`, `LOSE`) once settled.
+  without `startsTs`, with each outcome's grade once settled: `WIN`, `LOSS`, or a fair-value price
+  (`FMV`); `TBD` before.
 - `/v3/history/events/{id}`: its event: `description` ("Away @ Home", in Novig's team
   names), `startsTs` and `status`.
 - `<date>/trades.csv`: every executed trade of one Eastern day, one row per side

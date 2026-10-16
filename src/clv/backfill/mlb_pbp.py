@@ -1,5 +1,5 @@
-"""MLB games for the historical import: identity from the StatsAPI schedule, start claims from
-play-by-play (DESIGN.md §5.2), both from the backfill archive (`mlb_hist`).
+"""MLB games for the historical import: identity and results from the StatsAPI schedule, start
+claims from play-by-play (DESIGN.md §5.2), all from the backfill archive (`mlb_hist`).
 
 The schedule lists a postponed game twice under one gamePk: a `Postponed` row on the
 original date and a `Final` row on the day it was played (docs/feasibility.md §5). Each
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from clv import archive, mlb
+from clv.backfill import settlements
 from clv.identity import ensure_event, ensure_outcome
 from clv.off import sources
 from clv.timeutil import iso_ms
@@ -48,7 +49,8 @@ class ScheduledGame:
 
 
 def schedule(root: Path) -> tuple[dict[int, ScheduledGame], list[tuple]]:
-    """Every game the archived schedules list, and each (exchange, row) for the aliases."""
+    """Every game the archived schedules list, and each (exchange, row, item) for the aliases and
+    settlements: `item` numbers the response's games in order, across its dates."""
     teams: dict[tuple[int, int], Team] = {}
     rows: list[tuple] = []
     segs = archive.segments(root, SOURCE)
@@ -61,11 +63,10 @@ def schedule(root: Path) -> tuple[dict[int, ScheduledGame], list[tuple]]:
             for t in x.body.json().get("teams", []):
                 teams[(season, t["id"])] = Team(t["id"], t["abbreviation"], t["name"])
         elif purpose == "schedule":
-            for day in x.body.json().get("dates", []):
-                for g in day.get("games", []):
-                    rows.append((x, g))
+            games = [g for day in x.body.json().get("dates", []) for g in day.get("games", [])]
+            rows += [(x, g, item) for item, g in enumerate(games)]
     by_pk: dict[int, list[dict]] = {}
-    for _, g in rows:
+    for _, g, _ in rows:
         by_pk.setdefault(g["gamePk"], []).append(g)
     games = {}
     for pk, gs in by_pk.items():
@@ -101,7 +102,7 @@ def import_games(w, root: Path, report: Counter) -> dict[int, ScheduledGame]:
         event = ensure_event(w, pk)
         for t in (g.away, g.home):
             ensure_outcome(w, event, pk, t.id, t.abbreviation, t.name)
-    for x, r in rows:
+    for x, r, _ in rows:
         g = games.get(r["gamePk"])
         if g is None or not (g.away.abbreviation and g.home.abbreviation):
             continue
@@ -135,5 +136,6 @@ def import_games(w, root: Path, report: Counter) -> dict[int, ScheduledGame]:
             w.insert("off_observation", dict(event_id=event, source=o.source, kind=o.kind, subject=o.subject,
                                              detected_off_ts_ms=o.detected_off_ts_ms, observed_ts_ms=o.observed_ts_ms,
                                              raw_artifact_id=aid, raw_line=line))
+    settlements.from_schedule(w, rows, report)
     report["mlb_games"] = len(games)
     return games
