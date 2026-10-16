@@ -173,20 +173,34 @@ def reference(conn: sqlite3.Connection, heads: dict[tuple[int, int], Mapping], v
 
     Kalshi lists one ticker per team: the outcome's own ticker is its reference, and the
     other team's ticker is a separate book, never merged in (measurement contract §4)."""
-    instruments = {r[0]: r[1] for r in conn.execute(
-        "SELECT venue_instrument_id, native_id FROM f_venue_instrument WHERE venue = ?", (venue,))}
-    found = [m for m in heads.values() if m.venue_instrument_id in instruments and m.outcome_id == outcome_id
-             and m.polarity == "direct" and m.status != "rejected"]
-    if not found:
-        return "unmapped"
-    if len(found) > 1:
-        return "ambiguous_reference"
-    (m,) = found
-    other = heads.get((m.venue_instrument_id, 1 - m.side))
-    if other is not None and other.status != "rejected" and (
-            (other.polarity == "direct") == (other.outcome_id == outcome_id)):
-        return "mapping_inconsistent"   # the other side claims this same outcome
-    return Reference(venue, instruments[m.venue_instrument_id], m.venue_instrument_id, m.side, m)
+    return References(conn, heads).get(venue, outcome_id)
+
+
+class References:
+    """`reference` for many outcomes: the venues' instruments and the mapping heads indexed once."""
+
+    def __init__(self, conn: sqlite3.Connection, heads: dict[tuple[int, int], Mapping]):
+        self.heads = heads
+        self.instruments = {(v, iid): native for iid, v, native in conn.execute(
+            "SELECT venue_instrument_id, venue, native_id FROM f_venue_instrument")}
+        self.venue_of = {iid: v for v, iid in self.instruments}
+        self.direct: dict[int, list[Mapping]] = {}
+        for m in heads.values():
+            if m.polarity == "direct" and m.status != "rejected":
+                self.direct.setdefault(m.outcome_id, []).append(m)
+
+    def get(self, venue: str, outcome_id: int) -> Reference | str:
+        found = [m for m in self.direct.get(outcome_id, ()) if self.venue_of.get(m.venue_instrument_id) == venue]
+        if not found:
+            return "unmapped"
+        if len(found) > 1:
+            return "ambiguous_reference"
+        (m,) = found
+        other = self.heads.get((m.venue_instrument_id, 1 - m.side))
+        if other is not None and other.status != "rejected" and (
+                (other.polarity == "direct") == (other.outcome_id == outcome_id)):
+            return "mapping_inconsistent"   # the other side claims this same outcome
+        return Reference(venue, self.instruments[(venue, m.venue_instrument_id)], m.venue_instrument_id, m.side, m)
 
 
 # -- pricing at a moment -----------------------------------------------------------------------------

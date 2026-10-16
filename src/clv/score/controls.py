@@ -1,7 +1,7 @@
-"""Statistical core of the calibration checks (DESIGN.md §9.2).
+"""Statistical core of the calibration checks (DESIGN.md §9.2) and the oracle sweep (§9.3).
 
 Pure functions over arrays; no database access. The harness feeds these from
-close_price / clv_score rows. Every claim made about these checks in §9.2 is
+close_price / clv_score rows (clv.score.calibration). Every claim made about these checks in §9.2 is
 backed by tests/test_calibration_simulation.py, which must pass before §9.2 or
 the §10 control margins are changed.
 
@@ -447,4 +447,27 @@ def random_side_residual(p_entry, p_close, d_entry, event_id) -> Estimate:
         raise ValueError("d_entry must be positive")
     r = (p_close - p_entry) * d_entry
     beta, se = ols_cluster(r, np.ones((len(r), 1)), event_id)
+    return Estimate(beta[0], se[0])
+
+
+# --------------------------------------------------------------------------
+# §9.3 oracle buffer sweep — a calibration construct, never a strategy result.
+# --------------------------------------------------------------------------
+
+def oracle_mean(oracle_clv, event_id) -> Estimate:
+    """Mean oracle CLV with an event-clustered 90% interval, at one offset and close buffer.
+
+    An oracle entry takes the eventual winner at a fixed pre-event offset, priced at the
+    reference there (d = 1/p_offset), so oracle_clv = p_close / p_offset - 1. Selecting the
+    winner makes the mean positive under any reference; §9.3 reads its shape across close
+    buffers (on matched events) for in-play contamination, never its level. Fewer than
+    MIN_CLUSTERS events raises InsufficientCalibrationData.
+    """
+    v = _float_1d(oracle_clv, "oracle_clv", allow_empty=True)
+    event_id = np.asarray(event_id)
+    if len(v) != len(event_id):
+        raise ValueError("oracle_clv and event_id must have the same length")
+    if len(v) == 0:
+        raise InsufficientCalibrationData("no oracle entries")
+    beta, se = ols_cluster(v, np.ones((len(v), 1)), event_id)
     return Estimate(beta[0], se[0])
