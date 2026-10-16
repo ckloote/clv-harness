@@ -16,7 +16,8 @@ sha256 is checked against `raw_artifact` before any line is read.
                entry market's overround and the outlier flag)
 
 `trace_close` traces one historical close instead: its candle, or the executions in its
-trade window, each cited to frame and item.
+trade window, each cited to the record that fixes its price and size and to the sighting
+that fixes its time (for a reconciled Novig trade, the stream's), by frame and item.
 
 Rationals are written exactly ("21/10") and as 6-place decimals for reading.
 """
@@ -31,7 +32,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from clv import lineage
-from clv.close.vwap import Executions
+from clv.close.vwap import Executions, timing_sighting
 from clv.timeutil import ms_iso
 
 
@@ -74,7 +75,10 @@ class _Frames:
         if artifact_id not in self.lines:
             relpath, sha = self.conn.execute("SELECT relpath, sha256 FROM raw_artifact WHERE raw_artifact_id = ?",
                                              (artifact_id,)).fetchone()
-            data = (self._root(relpath) / relpath).read_bytes()
+            path = self._root(relpath) / relpath
+            if not path.exists():
+                raise TraceError(f"{relpath}: not in the archive root {self._root(relpath)}")
+            data = path.read_bytes()
             if hashlib.sha256(data).hexdigest() != sha:
                 raise TraceError(f"{relpath}: bytes do not match the sha256 recorded at ingest")
             self.lines[artifact_id] = (relpath, gzip.decompress(data).split(b"\n"))
@@ -188,9 +192,17 @@ def trace_close(conn: sqlite3.Connection, close_price_id: int, root: Path, hist_
         executions = []
         for t, eid, side, price, payout in ex.window(ref[0], lo, hi):
             key, aid, line, item = conn.execute("SELECT execution_key, raw_artifact_id, raw_line, raw_item"
-                                                " FROM trade_execution WHERE execution_id = ?", (eid,)).fetchone()
+                                                " FROM f_trade_execution WHERE execution_id = ?", (eid,)).fetchone()
+            # The record that fixes the price and size, and the one that fixes the time: for a
+            # reconciled Novig trade, the CSV row and the earlier stream sighting (PR #21 review).
+            _, source, role, ts, taid, tline, titem = timing_sighting(conn, eid, "f_")
+            if ts != t:
+                raise TraceError(f"execution {key}: its timing sighting says {_iso(ts)}, the window used {_iso(t)}")
             executions.append({"key": key, "time": _iso(t), "side": side, "price": _q(price), "payout_cents": payout,
-                               "frame": frames.frame(aid, line), "item": item})
+                               "frame": frames.frame(aid, line), "item": item,
+                               "timed_by": {"source": source, "role": role, "venue_ts": _iso(ts),
+                                            "frame": frames.frame(taid, tline), "item": titem,
+                                            "record": frames.item(taid, tline, titem)}})
         v = ex.vwap(ref[0], ref[1], lo, hi)
         if (v.executions, v.payout_cents) != (n, cents) or (p is not None and v.p != p):
             raise TraceError(f"close_price {close_price_id}: its trade window recomputes to {v}, not the stored close")

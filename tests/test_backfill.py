@@ -734,3 +734,37 @@ def test_a_live_close_is_traced_with_its_run(archives, tmp_path):
                      row["cutoff_ts_ms"], NOW)).lastrowid
     with pytest.raises(trace.TraceError, match="scoring run"):
         trace.trace_close(c, cid, live, hist)
+
+
+def test_a_reconciled_execution_is_cited_to_the_sighting_that_times_it(archives, tmp_path):
+    # PR #21 review: t1's CSV row says 21:00:00, its stream sighting 20:59:55. A window ending at
+    # 21:00 holds it only by the stream time, so the trace must cite the stream sighting too.
+    from clv import lineage, trace
+    from clv.close import definitions as close
+    from clv.close.vwap import Executions
+    from clv.off import resolver
+    hist, live = archives
+    c, _, _ = loaded(archives, tmp_path)
+    snap = lineage.take(c, NOW)
+    lineage.use(c, snap)
+    heads = identity.current_mappings(c)
+    res = identity.write_resolutions(c, snap, heads, NOW)
+    (event,) = q(c, "SELECT event_id FROM event WHERE league_game_id = '901'")[0]
+    (nyy,) = q(c, "SELECT outcome_id FROM outcome WHERE event_id = ? AND team_abbreviation = 'NYY'", event)[0]
+    off_id = resolver.write(c, snap, resolver.resolve(c, event), NOW)
+    d = dataclasses.replace([d for d in close.hist_defs() if d.method == "trade_vwap"][0],
+                            vwap_min_executions=1, vwap_min_notional_usd=1)
+    ref = close.reference(c, heads, "novig", nyy)
+    as_of = iso_ms("2026-08-04T21:00:00Z")
+    p = close.hist_price_as_of(c, ref, as_of, d, Executions(c, "f_"))
+    assert (p.p, p.vwap_executions) == (Fraction(17, 25), 1)
+    cid = close.write_close(c, snap, close.ensure_def(c, d, NOW), off_id, "novig", nyy,
+                            res[(ref.venue_instrument_id, ref.side)], as_of, p, NOW)
+    (x,) = trace.trace_close(c, cid, live, hist)["window"]["executions"]
+    assert x["time"] == "2026-08-04T20:59:55.000Z"
+    assert x["frame"]["ref"].startswith("novig_hist/")                        # price and size: the CSV row
+    assert x["timed_by"]["role"] == "stream" and x["timed_by"]["frame"]["ref"].startswith("novig/")
+    assert x["timed_by"]["venue_ts"] == x["time"] and json.loads(x["timed_by"]["record"])["tradeId"] == "t1"
+    # Without the archive holding the timing sighting, the trace cannot verify the window.
+    with pytest.raises(trace.TraceError, match="not in the archive root"):
+        trace.trace_close(c, cid, tmp_path / "no-live-archive", hist)

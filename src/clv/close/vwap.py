@@ -39,6 +39,16 @@ def execution_times(conn: sqlite3.Connection, instrument_id: int, prefix: str = 
     return dict(rows.fetchall())
 
 
+def timing_sighting(conn: sqlite3.Connection, execution_id: int, prefix: str = "") -> tuple:
+    """The sighting that gives an execution its time under `execution_times`' rule: its earliest
+    stream sighting if any, else its earliest sighting. (trade_obs_id, source, role, venue_ts_ms,
+    raw_artifact_id, raw_line, raw_item)."""
+    return conn.execute(f"""
+        SELECT trade_obs_id, source, role, venue_ts_ms, raw_artifact_id, raw_line, raw_item
+        FROM {prefix}trade_source_observation WHERE execution_id = ?
+        ORDER BY role = 'stream' DESC, venue_ts_ms, trade_obs_id LIMIT 1""", (execution_id,)).fetchone()
+
+
 class Executions:
     """Each instrument's executions in time order, read once: a run prices many windows of the
     same instrument (every buffer and offset). Read through one fact snapshot (`prefix`)."""
