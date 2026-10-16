@@ -27,11 +27,19 @@ Per connection (new conn_id each time; stream_id == conn_id):
   (e.g. GOLIVE) gets that market a probe on the next maintenance tick, busy or
   not. The venue drops resting orders at GOLIVE without book deltas, so replay
   distrusts the book from the transition until a snapshot taken after it.
-* Disconnects reconnect with backoff and resubscribe. No sequence
-  interpretation or gap repair: later replay finds gaps from raw `seq`.
+* Resync (A1): a delta whose `seq` skips ahead of the last one seen for its
+  market on this connection is archived as `sequence_gap_seen`, and the market
+  gets a probe on the next tick, busy or not, repeated every
+  `stream.probe_timeout_s` until a snapshot at or past the skipped-to `seq`
+  arrives. Without it a busy channel, never quiet, would stay untrusted until
+  the connection ended. Replay, not the recorder, decides what the gap was.
+* Disconnects reconnect with backoff and resubscribe.
 
-The only parsing here is routing: the top-level market IDs of a message, to
-know which channels are quiet.
+The only parsing here is routing: the top-level market IDs of a message and each
+channel's `seq`, to know which channels are quiet and which skipped.
+
+The fault harness (raw_recorder.faults, Gate A1) reads `NovigStream.subscriptions()`
+and calls `NovigStream.resubscribe()`; nothing else reaches into a connection.
 """
 from __future__ import annotations
 
@@ -112,6 +120,23 @@ class NovigStream:
         self.on_handshake_failure = on_handshake_failure
         self.mono = mono
         self.reserve = budget.capacity * params.stream_probe_reserve_fraction
+        self.conn: _Connection | None = None    # the live connection, for the fault harness
+
+    def subscriptions(self) -> dict | None:
+        """The live connection and the markets it has confirmed, or None between connections."""
+        c = self.conn
+        return None if c is None else {"conn_id": c.conn_id, "channel": self.channel, "markets": sorted(c.markets)}
+
+    async def resubscribe(self, market: str) -> dict | None:
+        """Unsubscribe a confirmed market and subscribe it again at once, through the live
+        connection, so both commands are archived as `out` frames (Gate A1's resubscribe
+        fault). None if no connection has the market confirmed."""
+        c = self.conn
+        if c is None or market not in c.markets:
+            return None
+        await c.unsubscribe({market})
+        await c.subscribe(set(self.markets_fn()))
+        return {"conn_id": c.conn_id, "channel": self.channel}
 
     # ------------------------------------------------------------------ run
 
@@ -173,7 +198,7 @@ class NovigStream:
         resp = getattr(ws, "_response", None)
         stream.event(conn_id, "ws_connected", status=getattr(resp, "status", 101),
                      response_headers=redact.headers(list(resp.headers.items())) if resp else [])
-        conn = _Connection(self, ws, stream, conn_id)
+        conn = self.conn = _Connection(self, ws, stream, conn_id)
         try:
             await conn.serve(desired)
         except IO_ERRORS as exc:
@@ -181,6 +206,7 @@ class NovigStream:
                          error=redact.scrub(str(exc)))
             conn.close_reason = "io_error"
         finally:
+            self.conn = None
             await conn.close()
 
 
@@ -203,6 +229,8 @@ class _Connection:
         self.last_activity: dict[str, float] = {}
         self.last_probe: dict[str, float] = {}
         self.transitioned: set[str] = set()     # markets with a lifecycle delta awaiting a book probe
+        self.seq: dict[str, int] = {}           # market -> the latest seq of this channel seen here
+        self.resync: set[str] = set()           # markets whose seq skipped: probed until a snapshot catches up
         self.opened = owner.mono()
         self.close_reason: str | None = None
 
@@ -248,11 +276,18 @@ class _Connection:
             await self.send({"unsubscribe": [f"market:{m}" for m in sorted(markets)]})
             self.o.budget.spend(len(markets))
             self.markets -= markets
-            self.transitioned -= markets
+            self.forget(markets)
             for m in markets:
-                self.confirmed_at.pop(m, None)
                 self.retry_at.pop(m, None)
                 self.retry_delay.pop(m, None)
+
+    def forget(self, markets: set[str]) -> None:
+        """A subscription ended: its sequence and pending probes go with it."""
+        self.transitioned -= markets
+        self.resync -= markets
+        for m in markets:
+            self.confirmed_at.pop(m, None)
+            self.seq.pop(m, None)
 
     def on_reply(self, obj: dict) -> None:
         """Settle the subscribe or status request a reply answers, by its nonce."""
@@ -290,9 +325,7 @@ class _Connection:
             if lost:
                 ev(cid, "subscription_lost", nonce=nonce, channel=ch, markets=sorted(lost))
                 self.markets -= lost
-                self.transitioned -= lost
-                for m in lost:
-                    self.confirmed_at.pop(m, None)
+                self.forget(lost)
             unexpected = {m for m, c in listed.items() if c == ch} - self.markets - self.in_flight() - lost
             if unexpected:
                 ev(cid, "subscription_unexpected", nonce=nonce, channel=ch, markets=sorted(unexpected))
@@ -328,8 +361,32 @@ class _Connection:
                         continue
                     if self.o.channel in payload:
                         self.last_activity[market_id] = now
+                        channel = payload[self.o.channel]
+                        if isinstance(channel, dict):
+                            self.note_seq(market_id, key, channel.get("seq"))
                     if key == "delta" and "lifecycle" in payload and self.o.channel == "book":
                         self.transitioned.add(market_id)
+
+    def note_seq(self, market: str, kind: str, seq) -> None:
+        """Follow a market's channel seq: a delta past the next one asks for a resync; a snapshot
+        at or past the latest seq seen answers it (one behind was taken before, and proves nothing)."""
+        if not isinstance(seq, int) or isinstance(seq, bool):
+            return
+        last = self.seq.get(market)
+        if kind == "delta":
+            if last is None:
+                return                  # before this subscription's snapshot: nothing to compare with
+            if seq > last + 1 and market not in self.resync:
+                self.stream.event(self.conn_id, "sequence_gap_seen", channel=self.o.channel, market=market,
+                                  last_seq=last, got_seq=seq)
+                self.resync.add(market)
+                self.last_probe.pop(market, None)       # due at once
+        elif last is not None and seq < last:
+            return
+        else:
+            self.resync.discard(market)
+        if last is None or seq > last:
+            self.seq[market] = seq
 
     async def serve(self, desired: frozenset[str]) -> None:
         """Receive and maintain until either stops; a failure in either one
@@ -408,20 +465,27 @@ class _Connection:
             await self.subscribe(desired)
             await self.check_subscriptions(now)
 
+            timeout = self.o.params.probe_timeout_s
             due = sorted(m for m in self.markets
-                         if m in self.transitioned or now - max(self.last_activity.get(m, float("-inf")),
-                                                                self.last_probe.get(m, float("-inf"))) >= interval)
+                         if m in self.transitioned
+                         or (m in self.resync and now - self.last_probe.get(m, float("-inf")) >= timeout)
+                         or now - max(self.last_activity.get(m, float("-inf")),
+                                      self.last_probe.get(m, float("-inf"))) >= interval)
             if not due:
                 continue
             for m in due:
                 self.last_probe[m] = now
             tokens = self.o.budget.available()
             affordable = max(0, int((tokens - self.o.reserve) // self.o.weight))
-            # After a transition the book is untrusted until a probe: those go first, and one
-            # that cannot be afforded stays due and is retried next tick.
-            due.sort(key=lambda m: m not in self.transitioned)
+            # After a transition or a skipped seq the channel is untrusted until a snapshot: those
+            # go first, and one that cannot be afforded stays due and is retried next tick. A
+            # resync stays pending until a snapshot catches up, so a lost reply is asked again.
+            due.sort(key=lambda m: m not in self.transitioned and m not in self.resync)
             send, skip = due[:affordable], due[affordable:]
             self.transitioned -= set(send)
+            for m in skip:
+                if m in self.resync:
+                    self.last_probe.pop(m, None)        # still due next tick
             if send:
                 nonce = await self.send({"snapshot": {"markets": {m: self.o.channel for m in send}}})
                 self.o.budget.spend(self.o.weight * len(send))

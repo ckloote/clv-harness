@@ -12,6 +12,9 @@ gamePk in both, the hand-checked entry wins whole.
 Leagues other than MLB (`[[league]]`, A1) are found from Novig's catalog alone
 and written to `<archive>/events.discovered.toml` (raw_recorder.leagues), one
 `LeagueEvent` per Novig event. Their windows use the `[a1]` lead and tail.
+
+`[faults]` (Gate A1, raw_recorder.faults) is off except for the gate run and its
+rehearsals: with it on, the recorder serves a control socket for the fault harness.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ DEFAULT_CONFIG = DEFAULT_DIR / "config.toml"
 DEFAULT_GAMES = DEFAULT_DIR / "games.toml"
 DISCOVERED_FILE = "games.discovered.toml"           # in the archive root; clv.games reads it too
 EVENTS_DISCOVERED_FILE = "events.discovered.toml"   # in the archive root: league events (A1)
+CONTROL_SOCKET = ".recorder.control"                # in the archive root: the fault harness's socket
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,7 @@ class Config:
     discovery: dict = field(default_factory=lambda: {"enabled": False})
     backfill: dict = field(default_factory=dict)
     leagues: tuple[dict, ...] = ()          # [[league]] entries, enabled or not
+    faults: dict = field(default_factory=lambda: {"enabled": False})
 
     @property
     def backfill_root(self) -> Path:
@@ -113,6 +118,15 @@ class Config:
     @property
     def events_discovered_path(self) -> Path:
         return self.archive_root / EVENTS_DISCOVERED_FILE
+
+    @property
+    def control_socket_path(self) -> Path:
+        path = Path(self.faults.get("control_socket", CONTROL_SOCKET))
+        return path if path.is_absolute() else self.archive_root / path
+
+    @property
+    def relay_url(self) -> str:
+        return f"http://{self.faults.get('relay_listen', '127.0.0.1:8765')}"
 
     def enabled_leagues(self) -> list[dict]:
         return [lg for lg in self.leagues if self.enabled(lg)]
@@ -175,7 +189,8 @@ def load_config(path: Path | None = None) -> Config:
                   params=params, novig=doc["novig"], kalshi=doc["kalshi"],
                   odds_api=doc["odds_api"], mlb=doc["mlb"], games_path=games,
                   discovery=doc.get("discovery", {"enabled": False}), backfill=doc.get("backfill", {}),
-                  leagues=tuple(_league(lg) for lg in doc.get("league", [])))
+                  leagues=tuple(_league(lg) for lg in doc.get("league", [])),
+                  faults=doc.get("faults", {"enabled": False}))
 
 
 def _league(lg: dict) -> dict:

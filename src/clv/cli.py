@@ -15,6 +15,7 @@
     clv backfill coverage            B1: the per-game coverage table and waterfall (data/b1/)
     clv calibrate                    B2: check 1 and the oracle sweep per historical close family (data/b2/)
     clv calibrate --dispersion       B2: the measured spread and item-12 rates only; nothing fitted
+    clv gate a1 --from T --to T      Gate A1: every injected fault's gap, storage and depth (clv.gate.a1)
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -35,11 +36,12 @@ from clv import archive, backfill, db, entries, gaps, identity, ingest, mlb, tra
 from clv.backfill import coverage
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
+from clv.gate import a1 as gate_a1
 from clv.off import sources
 from clv.score import calibration
 from clv.score import clv as scoring
 from clv.scoring import odds_api
-from clv.timeutil import ms_iso
+from clv.timeutil import iso_ms, ms_iso
 from clv.venues import kalshi
 from clv.venues.novig import parser as novig
 from clv.venues.protocol import BinaryBook
@@ -287,6 +289,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--fact-snapshot", type=int, help="recompute over the facts of an earlier snapshot, as new runs")
     p.add_argument("--replicates", type=int, default=1_000, help="item-12 replicates in a dispersion run")
     p.add_argument("--out", type=Path, default=REPO / "data" / "b2", help="where the report is written")
+    p = sub.add_parser("gate", help="a gate's checks over a run: A1, the fault-injected live collector")
+    p.add_argument("gate", choices=["a1"])
+    p.add_argument("--from", dest="lo", required=True, help="the run's start, ISO 8601 UTC")
+    p.add_argument("--to", dest="hi", required=True, help="the run's end, after the last fault's result")
+    p.add_argument("--min-per-kind", type=int, default=2, help="faults of each kind the schedule requires")
+    p.add_argument("--out", type=Path, help="also write the report (Markdown) here")
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--archive", type=Path, default=REPO / "archive")
     args = ap.parse_args(argv)
     now = int(time.time() * 1000)
     if args.cmd == "inspect":
@@ -361,6 +371,18 @@ def main(argv: list[str] | None = None) -> None:
                   + "; events per offset " + ", ".join(f"{calibration.label(k)} {n}" for k, n in r.n_by_offset.items()))
         for path in calibration.report(conn, snap, args.out):
             print(f"wrote {path}")
+    elif args.cmd == "gate":
+        try:
+            rep = gate_a1.run(db.connect(args.db), args.archive, iso_ms(args.lo), iso_ms(args.hi), args.min_per_kind)
+        except gate_a1.GateError as exc:
+            raise SystemExit(f"clv gate a1: {exc}") from None
+        text = gate_a1.render(rep)
+        sys.stdout.write(text)
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(text)
+        if not rep.verdict():
+            raise SystemExit(1)
     elif args.cmd == "trace":
         if sum(x is not None for x in (args.run, args.execution, args.close)) != 1:
             raise SystemExit("clv trace: give one of --run, --execution or --close")

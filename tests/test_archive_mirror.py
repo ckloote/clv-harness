@@ -3,6 +3,7 @@ an active part, and publishes the recorder's seal watermark only after the data 
 import json
 import os
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 
@@ -40,8 +41,13 @@ def test_the_mirror_copies_sealed_data_and_publishes_the_watermark_last(tmp_path
     live.write("in", "live", "still being written")  # an active .part
     w.write_watermark()
     (src / ".recorder.lock").write_text("123")
+    control = socket.socket(socket.AF_UNIX)          # the fault harness's socket (Gate A1)
+    control.bind(str(src / ".recorder.control"))
     env = dict(os.environ, ARCHIVE_MIRROR_SRC=str(src), ARCHIVE_MIRROR_DST=str(dst))
-    subprocess.run([str(SCRIPT)], env=env, check=True)
+    run = subprocess.run([str(SCRIPT)], env=env, check=True, capture_output=True, text=True)
+    control.close()
+    assert "skipping" not in run.stderr + run.stdout
+    assert not (dst / ".recorder.control").exists()
     copied = sorted(p.relative_to(dst).as_posix() for p in dst.rglob("*") if p.is_file())
     day = "novig/2026-10-07"
     assert copied == [f"{day}/done.0001.jsonl.gz", f"{day}/manifest.jsonl", "sealed_through.json"]
