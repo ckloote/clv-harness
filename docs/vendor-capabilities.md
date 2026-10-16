@@ -49,6 +49,7 @@ Source: `docs.novig.com`, read 2026-10-04; targeted streaming and monetary corre
 | Over-limit requests get `429` with `Retry-After`. Throttles count per key, not per connection, and servers share token counts gradually, so a client-side model is never exact. | Verified 2026-10-04 |
 | The edge filter refuses with `403` and an **HTML body** that has no JSON `code` or `message`. Handle it distinctly from API `403`s. | Verified 2026-10-04 |
 | The `history` bucket covers only your own fills, transactions and settled orders. There is no order-book history API. | Verified 2026-10-04 |
+| Using several `trading::read` keys on one subaccount (up to 128) to spread `stream` tokens, for example one key per channel connection, is acceptable use. | Reported 2026-10-16: the operator's understanding; not confirmed in writing by Novig. Throttles count per key, but the per-IP edge filter still applies to every key from one host |
 
 ### Streaming
 
