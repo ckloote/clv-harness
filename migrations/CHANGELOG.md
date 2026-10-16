@@ -68,3 +68,15 @@ The B1 row of DESIGN.md §8.5: the historical reference import needs the executi
 - An instrument stored earlier keeps its side order, and a source that disagrees on its identity is refused.
 - A mapping is appended only when it is new or strengthens the head's status, and a mapping to another outcome is a conflict for a correction.
 - `clv ingest` now refuses a game only when its recording was already ingested (a StatsAPI `feed/live` alias from the live archive), not when the game merely exists.
+
+## 0005_b2 (B2, 2026-10-15)
+
+The B2 row of DESIGN.md §8.5: check 1 and the oracle sweep need historical closes, outcomes and recorded calibration runs (`docs/decisions/` B2 prespecification, to come).
+
+| Change | Against | Why |
+|---|---|---|
+| **`settlement_observation`** (new fact table). A StatsAPI row names its outcome; a Kalshi or Novig row names its own instrument side, never an outcome. Results are `win`, `lose` or `fair_value` with the native price. A changed answer supersedes the last for the same source and subject | §8.1: official/venue outcomes and their corrections | Which outcome a venue side is depends on the mapping in force when the row is used, so a mapping correction never rewrites a settlement. Kalshi's row is the YES side's; NO is its complement. `void` is left out until a source produces it (Kalshi and Novig settle a cancelled game at a fair price) |
+| **`close_price` cites a candle or a trade window** (`candle_id`, `cutoff_candle_active`, `vwap_lo_ms`, `vwap_hi_ms`, `vwap_executions`, `vwap_payout_cents`, added as nullable columns). Triggers: a priced close cites exactly one tick, candle or window; a tick only for `close_live`, a candle or window only for `close_hist`; the candle is the reference venue's and ends by the cutoff; the window ends by it | 0002: `book_tick_id` only | A historical close has no tick (DESIGN.md §5.6). The candle trigger makes Gate B2's "no candle straddles the off" a constraint. An unscoreable window keeps its counts, so `few_trades` shows what was there |
+| **`calibration_run`, `calibration_observation`, `calibration_result`** (new derived tables) | §8.2 has no calibration entity | §9.2 says the run records its centering constants, and `control_outlier_review` will cite a calibration run. A run is one family on one venue over one fact snapshot, with every value it used in `spec_json`. An observation is the fixed side's price at an offset, paired by trigger with its run's close and timed exactly at the offset before that close's earliest plausible start. A dispersion run (measured price moves, nothing fitted) has no verdict |
+
+**Rows are not copied.** Unlike 0002, nothing is rebuilt: the new `close_price` columns are nullable, and every existing row is a `close_live` row that keeps its tick.

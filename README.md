@@ -329,7 +329,7 @@ uv run clv backfill import
 uv run clv backfill coverage
 ```
 
-1. The first `import` loads the games, their first pitches and every market.
+1. The first `import` loads the games, their first pitches, every market, and how each game and market settled (StatsAPI winners, Kalshi results, Novig grades).
 2. `link` ties markets to games by rule (`clv.backfill.links`). It writes `data/b1/links.review.md`, with a spot-check sample and every edge case, and `data/b1/links.proposed.toml`.
 3. Review the file, keep the corrections you approve as `links.approved.toml`, and apply them with `clv correct`.
 4. The second `import` loads candles and trades for the linked markets, up to each game's first pitch.

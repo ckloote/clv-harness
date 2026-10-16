@@ -63,6 +63,7 @@ class Market:
     settlement_ts: str | None = None
     custom_strike: str | None = None    # the team the market names, as Kalshi identifies it
     item: int = 0                       # the market's position in its response
+    settlement_value: str | None = None  # a scalar (fair-price) settlement's YES value, in dollars
 
 
 def _market(m: dict, x: RestExchange, item: int) -> Market:
@@ -71,7 +72,8 @@ def _market(m: dict, x: RestExchange, item: int) -> Market:
                   m.get("result", ""), Decimal(m["notional_value_dollars"]), m.get("occurrence_datetime"),
                   m["close_time"], m.get("rules_primary", ""), m.get("rules_secondary", ""),
                   m.get("price_level_structure", ""), bool(m.get("can_close_early")),
-                  x.body.recv_ts_ms, x.refs, m.get("settlement_ts"), strike, item)
+                  x.body.recv_ts_ms, x.refs, m.get("settlement_ts"), strike, item,
+                  m.get("settlement_value_dollars") or None)
 
 
 def markets(x: RestExchange) -> list[Market]:

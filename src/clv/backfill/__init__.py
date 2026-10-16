@@ -2,8 +2,9 @@
 
 `raw-recorder backfill` archives the inputs into `archive-hist/`. These steps load them:
 
-1. `import_identity`: games, their outcomes and first pitches (mlb_pbp), and every Kalshi and
-   Novig market as an instrument (kalshi_hist, novig_public). No market is tied to a game yet.
+1. `import_identity`: games, their outcomes and first pitches (mlb_pbp), every Kalshi and Novig
+   market as an instrument (kalshi_hist, novig_public), and how each game and market settled
+   (settlements). No market is tied to a game yet.
 2. `link`: the rules in clv.backfill.links tie each market to its game as an unverified
    mapping, and write the clean ones as corrections for a person to approve (`clv correct`).
 3. `import_data`: for every linked market, candles and trades from before its game's first
@@ -19,7 +20,7 @@ from collections import Counter
 from pathlib import Path
 
 from clv import archive
-from clv.backfill import kalshi_hist, links, mlb_pbp, novig_public
+from clv.backfill import kalshi_hist, links, mlb_pbp, novig_public, settlements
 from clv.identity import current_mappings
 from clv.ingest import Writer
 
@@ -38,8 +39,10 @@ def _tx(conn, fn, *args):
 def import_identity(conn, hist_root: Path, now_ms: int | None = None) -> Counter:
     w, report = Writer(conn, int(time.time() * 1000) if now_ms is None else now_ms), Counter()
     _tx(conn, mlb_pbp.import_games, w, hist_root, report)
-    _tx(conn, kalshi_hist.import_instruments, w, hist_root, report)
-    _tx(conn, novig_public.import_instruments, w, hist_root, report)
+    kalshi = _tx(conn, kalshi_hist.import_instruments, w, hist_root, report)
+    novig, _ = _tx(conn, novig_public.import_instruments, w, hist_root, report)
+    _tx(conn, settlements.from_kalshi, w, kalshi, report)
+    _tx(conn, settlements.from_novig, w, novig, report)
     return report
 
 

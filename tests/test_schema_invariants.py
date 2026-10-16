@@ -13,9 +13,9 @@ from clv.close.vwap import TradeVwap, trade_vwap
 FACTS = ["raw_artifact", "event", "event_alias", "outcome", "venue_instrument", "instrument_mapping_observation",
          "tick", "tick_level", "book_snapshot", "book_snapshot_level", "liveness_evidence", "collection_gap",
          "off_observation", "signal", "entry", "entry_quote_observation", "entry_opposite_quote", "trade_execution",
-         "trade_source_observation", "historical_candle"]
+         "trade_source_observation", "historical_candle", "settlement_observation"]
 DERIVED = ["fact_snapshot", "mapping_resolution", "off_resolution", "close_def", "close_price", "scoring_run",
-           "clv_score"]
+           "clv_score", "calibration_run", "calibration_observation", "calibration_result"]
 H = "a" * 64
 T = 1_791_504_000_000            # scheduled start, 2026-10-09T00:00Z
 
@@ -108,6 +108,16 @@ def seed(c) -> dict:
     ids["run"] = ins(c, "scoring_run", fact_snapshot_id=ids["fs"], scorer_version="v0", fee_model_version="none",
                      analysis_spec="v0", created_ts_ms=T)
     ids["score"] = score(c, ids, "novig")
+    if has_table(c, "settlement_observation"):                                       # from 0005
+        ids["settle"] = settlement(c, ids)
+        ids["hdef"] = ins(c, "close_def", name="close_hist_candle_mid_top", family="close_hist", params_json="{}",
+                          params_sha256="b" * 64, created_ts_ms=T)
+        ids["hclose"] = hist_close(c, ids)
+        ids["cal"] = calibration_run(c, ids)
+        ids["calobs"] = calibration_observation(c, ids)
+        ids["calres"] = ins(c, "calibration_result", calibration_run_id=ids["cal"], kind="check1", offset_s=900,
+                            component="intercept", n_events=40, n_rows=40, estimate=0.001, se=0.002,
+                            lo=-0.0023, hi=0.0043, margin=0.005, outcome="passed", computed_ts_ms=T)
     return ids
 
 
@@ -150,6 +160,44 @@ def candle(c, ids, **over):
                raw_item=0)
     row.update(over)
     return ins(c, "historical_candle", **row)
+
+
+def settlement(c, ids, **over):
+    row = dict(source="mlb_statsapi", subject="mlb:game:849832/team:114", event_id=ids["event"],
+               outcome_id=ids["cle"], result="win", observed_ts_ms=T + 4 * 3_600_000, native_json="{}",
+               raw_artifact_id=ids["art"], raw_line=3, raw_item=0)
+    row.update(over)
+    return ins(c, "settlement_observation", **row)
+
+
+def hist_close(c, ids, **over):
+    """A Kalshi candle close: the seed candle ends at T - 60 s, before the cutoff."""
+    row = dict(fact_snapshot_id=ids["fs"], close_def_id=ids["hdef"], off_resolution_id=ids["offres"],
+               ref_venue="kalshi", outcome_id=ids["cle"], cutoff_ts_ms=T + 424_996, candle_id=ids["candle"],
+               cutoff_candle_active=0, quote_age_ms=485_000, p_close_num=103, p_close_den=200, spread_e4=100,
+               computed_ts_ms=T)
+    row.update(over)
+    return ins(c, "close_price", **row)
+
+
+def calibration_run(c, ids, **over):
+    row = dict(fact_snapshot_id=ids["fs"], close_def_id=ids["hdef"], ref_venue="kalshi", mode="check",
+               spec_json="{}", calibration_version="cal-v0", verdict="passed", computed_ts_ms=T)
+    row.update(over)
+    return ins(c, "calibration_run", **row)
+
+
+def calibration_observation(c, ids, **over):
+    """The price 15 min before the earliest plausible start (T + 484.996 s), from an early candle."""
+    if "early_candle" not in ids:
+        ids["early_candle"] = candle(c, ids, interval_start_ms=T - 3_260_000, interval_end_ms=T - 3_200_000,
+                                     raw_item=9)
+    row = dict(calibration_run_id=ids["cal"], event_id=ids["event"], outcome_id=ids["cle"], offset_s=900,
+               close_price_id=ids["hclose"], p_num=1, p_den=2, candle_id=ids["early_candle"],
+               cutoff_candle_active=1, quote_age_ms=0, computed_ts_ms=T)
+    row.update(over)
+    row.setdefault("as_of_ts_ms", T + 484_996 - row["offset_s"] * 1000)
+    return ins(c, "calibration_observation", **row)
 
 
 def mapping(c, instrument_id, side, outcome_id, polarity="direct", status="manual_verified", supersedes=None):
@@ -416,7 +464,7 @@ def test_0002_keeps_every_valid_0001_row_exactly_and_marks_it_legacy():
     score(c, ids, "kalshi", p_ref_entry_num=103, p_ref_entry_den=200, null_ev_num=1, null_ev_den=11800)
     score(c, ids, "novig", **fresh_close(c, ids), clv_ev_num=-791, clv_ev_den=11800)
     old = {t: [tuple(r) for r in c.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in ("close_price", "clv_score")}
-    assert db.migrate(c) == [2, 3, 4]
+    assert db.migrate(c) == [2, 3, 4, 5]
     for t, rows in old.items():
         width = len(rows[0])
         assert [tuple(r)[:width] for r in c.execute(f"SELECT {', '.join(cols(c, t)[:width])} FROM {t} ORDER BY 1")] \
@@ -530,8 +578,8 @@ def test_0004_adds_the_b1_tables_to_a_populated_database():
     c = db.connect(":memory:")
     db.migrate(c, upto=3)
     ids = seed(c)
-    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-3] + DERIVED}
-    assert db.migrate(c) == [4]
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-4] + DERIVED[:-3]}
+    assert db.migrate(c, upto=4) == [4]
     assert {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before} == before
     assert c.execute("PRAGMA foreign_key_check").fetchall() == []
     sighting(c, ids, execution(c, ids))               # and the new tables take rows
@@ -607,3 +655,147 @@ def test_invalid_candles_are_rejected(conn, over):
     ids = seed(conn)
     with pytest.raises(sqlite3.IntegrityError):
         candle(conn, ids, **dict(dict(raw_item=1), **over))
+
+
+# -- B2: settlements, historical close lineage and calibration runs (0005) ----------------------------
+
+def test_0005_adds_the_b2_tables_to_a_populated_database():
+    c = db.connect(":memory:")
+    db.migrate(c, upto=4)
+    ids = seed(c)
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in FACTS[:-1] + DERIVED[:-3]}
+    old = [tuple(r) for r in c.execute("SELECT * FROM close_price ORDER BY 1")]
+    assert db.migrate(c) == [5]
+    assert {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before} == before
+    width = len(old[0])
+    assert [tuple(r)[:width] for r in c.execute("SELECT * FROM close_price ORDER BY 1")] == old
+    assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    settlement(c, ids)                                # and the new tables take rows
+    ids["hdef"] = ins(c, "close_def", name="h", family="close_hist", params_json="{}", params_sha256="b" * 64,
+                      created_ts_ms=T)
+    ids["hclose"] = hist_close(c, ids)
+    ids["cal"] = calibration_run(c, ids)
+    calibration_observation(c, ids)
+
+
+@pytest.mark.parametrize("over", [
+    dict(outcome_id=None, event_id=None),             # StatsAPI names its outcome
+    dict(source="kalshi_hist", subject="kalshi:market:KX-CLE/yes"),     # a venue names its side, not an outcome
+    dict(result="fair_value"),                        # a fair value carries its price
+    dict(result="void"),                              # no source writes it yet
+    dict(value_native="0.44", value_e4=4400),         # a win has no price
+    dict(native_json="not json"),
+])
+def test_invalid_settlements_are_rejected(conn, over):
+    ids = seed(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        settlement(conn, ids, **dict(dict(raw_item=1), **over))
+
+
+def test_a_venue_settlement_names_its_instrument_side(conn):
+    ids = seed(conn)
+    venue = dict(source="kalshi_hist", subject="kalshi:market:KX-CLE/yes", event_id=None, outcome_id=None,
+                 venue_instrument_id=ids["kalshi"], side=0)
+    settlement(conn, ids, **venue, result="fair_value", value_native="0.4400", value_e4=4400, raw_item=1)
+    with pytest.raises(sqlite3.IntegrityError):
+        settlement(conn, ids, **dict(venue, side=None), raw_item=2)
+    with pytest.raises(sqlite3.IntegrityError, match="not of its event"):
+        settlement(conn, ids, outcome_id=ids["cle"], event_id=add_event(conn, "849833"), raw_item=3)
+
+
+def test_a_superseding_settlement_is_how_an_answer_changes(conn):
+    ids = seed(conn)
+    regraded = settlement(conn, ids, result="lose", supersedes_id=ids["settle"], raw_line=4)
+    assert conn.execute("SELECT supersedes_id FROM settlement_observation WHERE settlement_obs_id = ?",
+                        (regraded,)).fetchone()[0] == ids["settle"]
+    with pytest.raises(sqlite3.IntegrityError, match="same source and subject"):
+        settlement(conn, ids, subject="mlb:game:849832/team:145", outcome_id=ids["cws"], result="lose",
+                   supersedes_id=ids["settle"], raw_line=5)
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):     # the same record twice
+        settlement(conn, ids)
+
+
+def test_a_historical_close_candle_ends_by_the_cutoff_on_the_reference_venue(conn):
+    ids = seed(conn)
+    straddling = candle(conn, ids, interval_start_ms=T + 400_000, interval_end_ms=T + 460_000, raw_item=1)
+    with pytest.raises(sqlite3.IntegrityError, match="ending by the cutoff"):
+        hist_close(conn, ids, candle_id=straddling)
+    with pytest.raises(sqlite3.IntegrityError, match="ending by the cutoff"):
+        hist_close(conn, ids, ref_venue="novig")     # the seed candle is Kalshi's
+    on_cutoff = candle(conn, ids, interval_start_ms=T + 364_996, interval_end_ms=T + 424_996, raw_item=2)
+    hist_close(conn, ids, candle_id=on_cutoff, outcome_id=ids["cws"])     # ending exactly at it is before it
+
+
+@pytest.mark.parametrize("over, match", [
+    (dict(candle_id=None, cutoff_candle_active=None), "exactly one"),          # priced, with no lineage
+    (dict(cutoff_candle_active=None), "its flag"),
+    (dict(candle_id=None, cutoff_candle_active=None, vwap_lo_ms=T, vwap_hi_ms=T + 1), "all four"),
+    (dict(vwap_lo_ms=T, vwap_hi_ms=T + 1, vwap_executions=5, vwap_payout_cents=25_000), "exactly one"),
+    (dict(candle_id=None, cutoff_candle_active=None, vwap_lo_ms=T + 400_000, vwap_hi_ms=T + 424_997,
+          vwap_executions=5, vwap_payout_cents=25_000), "trade window"),     # past the cutoff
+    (dict(candle_id=None, cutoff_candle_active=None, book_tick_id="ktick", book_observed_ts_ms=T - 70_000),
+     "a tick for close_live"),
+])
+def test_historical_close_lineage_is_one_candle_or_one_window(conn, over, match):
+    ids = seed(conn)
+    if over.get("book_tick_id") == "ktick":
+        over = dict(over, book_tick_id=ids["ktick"])
+    with pytest.raises(sqlite3.IntegrityError, match=match):
+        hist_close(conn, ids, outcome_id=ids["cws"], **over)
+
+
+def test_a_live_close_cites_no_candle_and_an_unscoreable_window_is_kept(conn):
+    ids = seed(conn)
+    with pytest.raises(sqlite3.IntegrityError, match="close_hist"):
+        close(conn, ids, "kalshi", None, book_observed_ts_ms=None, candle_id=ids["candle"], cutoff_candle_active=0,
+              close_def_id=new_def(conn))
+    # Too few trades: no price, but the window and its counts stay as the evidence.
+    hist_close(conn, ids, outcome_id=ids["cws"], candle_id=None, cutoff_candle_active=None, p_close_num=None,
+               p_close_den=None, unscoreable_reason="few_trades", vwap_lo_ms=T + 400_000 - 600_000,
+               vwap_hi_ms=T + 400_000, vwap_executions=2, vwap_payout_cents=9_000)
+
+
+@pytest.mark.parametrize("over, match", [
+    (dict(offset_s=60, candle_id=None, cutoff_candle_active=None, p_num=None, p_den=None,
+          reason="no_quotes"), "the offset before its run's close"),                       # at the cutoff, not before it
+    (dict(as_of_ts_ms=T - 3_000_000), "the offset before its run's close"),               # not its offset's as-of time
+    (dict(candle_id="candle"), "ending by the as-of time"),                     # the candle ends after it
+    (dict(p_num=None, p_den=None), "CHECK"),                                    # no price and no reason
+    (dict(candle_id=None, cutoff_candle_active=None), "CHECK"),                 # a price without lineage
+    (dict(offset_s=0), "CHECK|offset"),
+])
+def test_invalid_calibration_observations_are_rejected(conn, over, match):
+    ids = seed(conn)
+    if over.get("candle_id") == "candle":
+        over = dict(over, candle_id=ids["candle"])
+    with pytest.raises(sqlite3.IntegrityError, match=match):
+        calibration_observation(conn, ids, **dict(dict(offset_s=3600), **over))
+
+
+@pytest.mark.parametrize("over", [
+    dict(verdict=None),                               # a check run has a verdict
+    dict(mode="dispersion"),                          # a dispersion run has none
+    dict(verdict="failed"),                           # a failure says why
+    dict(verdict="passed_ish"),
+])
+def test_invalid_calibration_runs_are_rejected(conn, over):
+    ids = seed(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        calibration_run(conn, ids, **over)
+
+
+def test_calibration_results_fit_their_run(conn):
+    ids = seed(conn)
+    row = dict(calibration_run_id=ids["cal"], offset_s=900, n_events=40, n_rows=40, estimate=0.01,
+               computed_ts_ms=T)
+    with pytest.raises(sqlite3.IntegrityError, match="dispersion"):
+        ins(conn, "calibration_result", kind="dispersion", component="sd_dp", **row)
+    dispersion = calibration_run(conn, ids, mode="dispersion", verdict=None)
+    ins(conn, "calibration_result", kind="dispersion", component="sd_dp", **dict(row, calibration_run_id=dispersion))
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):                  # an oracle mean names its buffer
+        ins(conn, "calibration_result", kind="oracle", component="all:b60", **row)
+    ins(conn, "calibration_result", kind="oracle", component="all:b60", buffer_s=60, **row)
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):                  # an interval needs its se
+        ins(conn, "calibration_result", kind="check1", component="slope", lo=-0.1, hi=0.1, **row)
+    ins(conn, "calibration_result", kind="check1", component="curvature", outcome="insufficient_data",
+        **dict(row, estimate=None))
