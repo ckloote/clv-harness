@@ -41,6 +41,12 @@ def _e4(text: str, ref: str) -> int:
     return int(v)
 
 
+class SettlementHistoryError(Exception):
+    """A subject's stored settlements are out of receive order: written by the import before the
+    PR #20 fix, where a rerun could store an earlier repeat after a correction. Facts are
+    append-only, so such a database is not repaired in place: rebuild it from the archive."""
+
+
 def _order(observed_ms: int, ref: str, item: int) -> tuple:
     """A record's place in receive order: receive time, then its frame and item, so records
     received in the same millisecond still have one fixed order."""
@@ -65,8 +71,16 @@ def _record(w, report: Counter, rows: list[tuple]) -> None:
         if last is not None and (last[1], last[2]) == (row["result"], row.get("value_native")):
             report[f"{source}_settlements_repeated"] += 1
             continue
+        aid, line = w.cite(ref)
+        if w.conn.execute("SELECT 1 FROM settlement_observation WHERE raw_artifact_id = ? AND raw_line = ?"
+                          " AND raw_item = ? AND subject = ?", (aid, line, item, subject)).fetchone():
+            # Stored, yet after the latest row in receive order: that row was appended out of order.
+            raise SettlementHistoryError(
+                f"{source} {subject}: the latest settlement (row {last[0]}) was received before {ref} item {item},"
+                f" which is already stored. This database was imported before the out-of-order fix;"
+                f" rebuild it from a clean database (clv migrate, then clv backfill import).")
         w.insert("settlement_observation", dict(source=source, subject=subject, supersedes_id=last and last[0],
-                                                **row, **w.cited(ref), raw_item=item))
+                                                **row, raw_artifact_id=aid, raw_line=line, raw_item=item))
         report[f"{source}_settlements" + ("_superseding" if last else "")] += 1
 
 

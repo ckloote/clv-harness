@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 from raw_recorder.archive import ArchiveWriter
 
-from clv import backfill, db, identity
-from clv.backfill import links, mlb_pbp, novig_public
+from clv import archive, backfill, db, identity
+from clv.backfill import links, mlb_pbp, novig_public, settlements
 from clv.close.vwap import trade_vwap
 from clv.ingest import Writer
 from clv.timeutil import iso_ms
@@ -596,11 +596,8 @@ def test_settlements_load_once_and_a_regrade_supersedes(archives, tmp_path):
     assert settled(c) == after
 
 
-def test_a_rerun_never_lets_an_earlier_repeat_supersede_a_correction(archives):
-    # PR #20 review: StatsAPI reports 901 as BOS win, again BOS win, then corrected to NYY win.
-    # The first import stores the first answer and the correction; replaying the same archive
-    # must not store the skipped repeat after the correction and restore the wrong result.
-    hist, _ = archives
+def archive_correction(hist):
+    """StatsAPI reports 901 as BOS win, again BOS win, then corrected to NYY win."""
     clock = Clock()
     clock.t = iso_ms("2026-10-15T00:00:00Z")
     w = ArchiveWriter(hist, session_id="h3", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
@@ -611,14 +608,52 @@ def test_a_rerun_never_lets_an_earlier_repeat_supersede_a_correction(archives):
                                                   winner=winner) for g in SCHEDULE]
         rest(clock, m, rid, "/api/v1/schedule", "schedule", {"dates": [{"games": games}]}, query=query)
     w.close()
+
+
+GAME_901 = ("SELECT o.team_abbreviation, s.result, s.supersedes_id IS NOT NULL FROM settlement_observation s"
+            " JOIN outcome o USING (outcome_id) JOIN event e ON e.event_id = s.event_id"
+            " WHERE e.league_game_id = '901' ORDER BY s.settlement_obs_id")
+
+
+def test_a_rerun_never_lets_an_earlier_repeat_supersede_a_correction(archives):
+    # PR #20 review: the first import stores the first answer and the correction; replaying the
+    # same archive must not store the skipped repeat after the correction and restore the wrong result.
+    hist, _ = archives
+    archive_correction(hist)
     c = db.connect(":memory:")
     db.migrate(c)
-    game = "SELECT o.team_abbreviation, s.result, s.supersedes_id IS NOT NULL FROM settlement_observation s" \
-           " JOIN outcome o USING (outcome_id) JOIN event e ON e.event_id = s.event_id" \
-           " WHERE e.league_game_id = '901' ORDER BY s.settlement_obs_id"
     backfill.import_identity(c, hist, NOW)
-    first = q(c, game)
+    first = q(c, GAME_901)
     assert sorted(first) == [("BOS", "lose", 1), ("BOS", "win", 0), ("NYY", "lose", 0), ("NYY", "win", 1)]
     for again in (NOW + 1, NOW + 2):
         backfill.import_identity(c, hist, again)
-        assert q(c, game) == first
+        assert q(c, GAME_901) == first
+
+
+def test_a_history_stored_out_of_order_is_refused_not_repaired(archives):
+    # A database imported before the fix holds the repeat after the correction. Facts are
+    # append-only, so the import refuses it with a clear error instead of a bare UNIQUE failure.
+    hist, _ = archives
+    archive_correction(hist)
+    c = db.connect(":memory:")
+    db.migrate(c)
+    backfill.import_identity(c, hist, NOW)
+    w = Writer(c, NOW)
+    w.know(archive.segments(hist, mlb_pbp.SOURCE))
+    _, rows = mlb_pbp.schedule(hist)
+    repeat = sorted((x for x, g, _ in rows if g["gamePk"] == 901), key=lambda x: x.body.recv_ts_ms)[1]
+    item = next(i for x, g, i in rows if x is repeat and g["gamePk"] == 901)
+    for team, result in (("BOS", "win"), ("NYY", "lose")):          # what the old rerun appended
+        last, subject, event, outcome = q(c, """
+            SELECT s.settlement_obs_id, s.subject, s.event_id, s.outcome_id FROM settlement_observation s
+            JOIN outcome o USING (outcome_id) WHERE o.team_abbreviation = ? AND s.event_id =
+              (SELECT event_id FROM event WHERE league_game_id = '901')
+            ORDER BY s.settlement_obs_id DESC LIMIT 1""", team)[0]
+        w.insert("settlement_observation", dict(
+            source="mlb_statsapi", subject=subject, event_id=event, outcome_id=outcome, result=result,
+            observed_ts_ms=repeat.body.recv_ts_ms, supersedes_id=last, native_json="{}",
+            **w.cited(repeat.body.ref), raw_item=item))
+    before = counts(c)
+    with pytest.raises(settlements.SettlementHistoryError, match="rebuild it from a clean database"):
+        backfill.import_identity(c, hist, NOW + 1)
+    assert counts(c) == before                        # the failed import left nothing behind
