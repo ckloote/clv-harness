@@ -23,6 +23,7 @@ JOURNAL = "manifest.jsonl"
 SEALED_SUFFIX = ".jsonl.gz"
 LINE_KEYS = ("recv_ts_ms", "conn_id", "dir", "frame")
 DIRECTIONS = ("in", "out", "event")
+WATERMARK = "sealed_through.json"   # raw_recorder.archive.WATERMARK: the seal watermark, in the archive root
 
 
 class ArchiveError(Exception):
@@ -252,3 +253,14 @@ def rest_exchanges(frames: Iterable[Frame]) -> Iterator[RestExchange]:
     for rid in order:
         p = pending[rid]
         yield RestExchange(rid, p["request"], p["body"], p["complete"], tuple(p["refs"]))
+
+
+def sealed_through(root: Path) -> int | None:
+    """The archive's seal watermark: every frame the recorder received before it is in a
+    sealed, journalled segment here (raw_recorder.archive). None if there is none to read."""
+    try:
+        doc = json.loads((Path(root) / WATERMARK).read_text())
+        return int(doc["sealed_through_ms"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+

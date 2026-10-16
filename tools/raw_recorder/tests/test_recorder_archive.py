@@ -250,3 +250,59 @@ def test_verify_flags_an_unrepaired_torn_journal_tail(tmp_path):
     with (day / JOURNAL).open("ab") as f:
         f.write(b'{"torn')
     assert any("torn" in p for p in verify(tmp_path))
+
+
+# -- the seal watermark -------------------------------------------------------------------------
+
+def read_watermark(root):
+    from raw_recorder.archive import WATERMARK
+    return json.loads((root / WATERMARK).read_text())["sealed_through_ms"]
+
+
+def test_the_watermark_stops_at_the_earliest_unsealed_frame(tmp_path):
+    clock = Clock(T0)
+    w = writer(tmp_path, clock, segment_max_s=10)
+    a, b = w.stream("novig", "a"), w.stream("kalshi", "b")
+    a.write("in", "a", "x")                                     # received T0
+    clock.t = T0 + 4_000
+    b.write("in", "b", "y", recv_ts_ms=T0 + 3_000)              # received before it was written
+    clock.t = T0 + 8_000
+    assert w.sealed_through() == T0                             # a's active segment still holds T0
+    clock.t = T0 + 10_000                                       # a's segment is due; b's is not
+    w.tick()
+    w.drain()
+    assert w.sealed_through() == T0 + 3_000                     # sealed through a; b still active
+    w.write_watermark()
+    assert read_watermark(tmp_path) == T0 + 3_000
+    clock.t = T0 + 20_000
+    w.close()
+    assert read_watermark(tmp_path) == T0 + 20_000              # all sealed: the present
+
+
+def test_a_failed_seal_pins_the_watermark(tmp_path, monkeypatch):
+    from raw_recorder import archive
+
+    def fail(part, **kw):
+        raise OSError("disk full")
+    clock = Clock(T0)
+    w = writer(tmp_path, clock, segment_max_s=10)
+    w.stream("novig", "a").write("in", "a", "x")
+    monkeypatch.setattr(archive, "seal_part", fail)
+    clock.t = T0 + 60_000
+    with pytest.raises(OSError):
+        w.close()
+    assert read_watermark(tmp_path) == T0                       # the unsealed part is never vouched for
+    assert find_parts(tmp_path)
+
+
+def test_the_watermark_is_rewritten_on_its_interval(tmp_path, monkeypatch):
+    from raw_recorder import archive
+    monkeypatch.setattr(archive, "WATERMARK_INTERVAL_S", 0)
+    clock = Clock(T0)
+    w = writer(tmp_path, clock)
+    w.tick()
+    assert read_watermark(tmp_path) == T0
+    clock.t = T0 + 5_000
+    w.tick()
+    assert read_watermark(tmp_path) == T0 + 5_000               # nothing active: the present
+    w.close()

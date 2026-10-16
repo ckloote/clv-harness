@@ -671,8 +671,6 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | `odds.quota_target_utilization` | 0.65 of monthly credits | provisional | A4 |
 | `odds.quota_degrade_at` | 0.85 used, or projected exhaustion before reset | provisional | A4 |
 | `poll.liveness_max_s` | 30 since the subject's last successful poll, changed or unchanged | provisional | A4: 3× the R0 Kalshi and Novig public-book poll intervals; a missed or failed poll is also a `collection_gap` |
-| **Ingest** | | | |
-| `ingest.window_settle_s` | 5,400 after a league event's capture window ends before it is ingested, and only once no active segment overlaps the window | provisional | A1: `r0.segment_max_s` plus the Pi-to-workstation mirror interval, with margin |
 | **Off resolution** | | | |
 | `off.max_source_disagreement_s` | 120; beyond it, `off_disagreement` | provisional | A2 agreement report |
 | `off.scheduled_only` | Unscoreable: `no_trusted_off` | fixed | — |

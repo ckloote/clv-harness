@@ -184,13 +184,6 @@ value = 30                      # since the subject's last successful poll, chan
 status = "provisional"
 revised_by = "A4: 3× the R0 Kalshi and Novig public-book poll intervals; a missed or failed poll is also a `collection_gap`"
 
-# --- Ingest -------------------------------------------------------------------
-
-[ingest.window_settle_s]
-value = 5400
-status = "provisional"
-revised_by = "A1: `r0.segment_max_s` plus the Pi-to-workstation mirror interval, with margin"
-
 # --- Off resolution ---------------------------------------------------------------
 
 [off.max_source_disagreement_s]

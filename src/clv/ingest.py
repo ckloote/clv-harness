@@ -8,8 +8,9 @@ A league event (A1, `ingest_league_event`) is ingested from the venue side only:
 its Novig instruments, books, liveness evidence and collection gaps, with no
 event, outcome, mapping or off observation, since which league game it is is
 decided in A2. A `venue_ingest` row (migrations/0006_a1.sql) records it, and it
-is ingested only once its window has settled: `ingest.window_settle_s` after
-it ends, with no active segment overlapping it.
+is ingested only once its window has settled: the archive's seal watermark
+(raw_recorder.archive) is past the window's end, so every frame of the window is
+in a sealed segment here, the workstation mirror included.
 
 What goes where (migrations/0001_v0.sql):
 
@@ -628,22 +629,16 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
 
 # -- league events (A1): the venue side only ----------------------------------------------------
 
-def unsettled(root: Path, e: dict, now_ms: int) -> str | None:
-    """Why a league event cannot be ingested yet, or None once its window has settled: ended
-    `ingest.window_settle_s` ago (so its last segment is sealed and mirrored), with no active
-    Novig segment that began by its end."""
+def unsettled(root: Path, e: dict) -> str | None:
+    """Why a league event cannot be ingested yet, or None once its window has settled: the
+    archive's seal watermark is past the window's end. Elapsed time is not evidence: a mirror
+    can lag or stall, and an event once recorded as loaded is never loaded again."""
     _, hi = league_window(e)
-    ready = hi + param("ingest.window_settle_s") * 1000
-    if now_ms < ready:
-        return f"its window ends {ms_iso(hi)}; it can be ingested from {ms_iso(ready)}"
-    for part in sorted(Path(root, "novig").glob("*/*.part")):
-        try:
-            with open(part, "rb") as f:
-                first = json.loads(f.readline())
-        except (OSError, ValueError):
-            continue
-        if first.get("recv_ts_ms", hi + 1) <= hi:
-            return f"{part.relative_to(root)} overlaps its window and is still being written"
+    wm = archive.sealed_through(root)
+    if wm is None:
+        return f"the archive has no seal watermark ({archive.WATERMARK}) to show its window is complete"
+    if wm <= hi:
+        return f"the archive is sealed through {ms_iso(wm)}, not past its window's end {ms_iso(hi)}"
     return None
 
 
@@ -660,7 +655,7 @@ def ingest_league_event(conn: sqlite3.Connection, root: Path, event_id: str, now
     e = event if event is not None else load_league_event(event_id, root)
     if loaded(conn, event_id):
         raise IngestError(f"league event {event_id} is already ingested; ingest into a clean database")
-    if (why := unsettled(Path(root), e, now)) is not None:
+    if (why := unsettled(Path(root), e)) is not None:
         raise IngestError(f"league event {event_id} is not settled: {why}")
     lo, hi = league_window(e)
     markets = list(e["novig_markets"])
@@ -704,7 +699,7 @@ def ingest_league_events(conn: sqlite3.Connection, root: Path, now_ms: int | Non
     now = int(time.time() * 1000) if now_ms is None else now_ms
     out = []
     for e in league_events(root):
-        if loaded(conn, e["event_id"]) or unsettled(Path(root), e, now) is not None:
+        if loaded(conn, e["event_id"]) or unsettled(Path(root), e) is not None:
             continue
         try:
             out.append((e, ingest_league_event(conn, root, e["event_id"], now, event=e)))

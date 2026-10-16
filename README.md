@@ -141,7 +141,7 @@ uv run clv ingest --game-pk 849832
 uv run clv ingest --league-events
 ```
 
-This loads every event in `archive/events.discovered.toml` that is not loaded yet and whose window has settled: ended `ingest.window_settle_s` (90 min) ago, with no segment still being written over it. Events not yet settled are left for a later run, so it is safe to run on a timer. A `venue_ingest` row records each one, and `--league-event <Novig event ID>` loads a single one.
+This loads every event in `archive/events.discovered.toml` that is not loaded yet and whose window has settled, meaning the archive's seal watermark (`archive/sealed_through.json`, written by the recorder and published by the mirror last) is past the window's end. Elapsed time alone never settles a window, since a mirror can lag. Events not yet settled are left for a later run, so it is safe to run on a timer. A `venue_ingest` row records each one, and `--league-event <Novig event ID>` loads a single one.
 
 ## Scoring a recorded game
 

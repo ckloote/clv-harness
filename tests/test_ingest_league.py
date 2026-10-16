@@ -1,11 +1,13 @@
 """League events (A1) ingested from the venue side: Novig instruments, books, liveness and
 collection gaps from a recorded window, with no event, outcome, mapping or off observation;
-only once the window has settled; once; and reproducibly.
+only once the archive's seal watermark is past the window (a stale mirror never settles it);
+once; and reproducibly.
 
 The synthetic archive has two NBA events whose markets share one WebSocket connection, as
 they do live. The connection is lost and replaced in the middle of the first event's window,
 and its market goes live before the window ends."""
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -13,7 +15,7 @@ import pytest
 from raw_recorder.archive import ArchiveWriter
 
 from clv import db
-from clv.config import param
+from clv.archive import WATERMARK
 from clv.ingest import IngestError, ingest_league_event, ingest_league_events, unsettled
 
 S = 1_792_202_400_000            # e1's scheduled start
@@ -21,7 +23,7 @@ H = 3_600_000
 E1, E2 = "nev1", "nev2"
 M1, M2 = "nm1", "nm2"
 LAL, DEN, BOS, NYK = "o-lal", "o-den", "o-bos", "o-nyk"
-SETTLED = S + 2 * H + param("ingest.window_settle_s") * 1000
+NOW = S + 5 * H                  # when the tests ingest; the windows end by S + 3 h
 
 
 class Clock:
@@ -97,6 +99,7 @@ def write_archive(root: Path) -> None:
 
     connection("c1", S - 2 * H + 1_000, 10, lose_at=S - H)
     connection("c2", S - H + 30_000, 50, golive_at=S + 10 * 60_000, end_at=S + 2 * H - 1_000)
+    clock.t = S + 4 * H             # the recorder idled on: everything before this is sealed
     w.close()
     (root / "events.discovered.toml").write_text(f'''discovered_at_utc = "2026-10-17T00:00:00Z"
 last_notes = []
@@ -144,7 +147,7 @@ def test_the_fixture_start_is_the_listed_one():
 
 def test_a_league_event_ingests_its_venue_side_only(recorded):
     c = fresh()
-    rep = ingest_league_event(c, recorded, E1, now_ms=SETTLED)
+    rep = ingest_league_event(c, recorded, E1, now_ms=NOW)
     assert rep.game_pk is None and rep.event_id is None and rep.native_event_id == E1
     # Instruments for this event's market only; no identity, mapping or off observation (A2's).
     assert q(c, "SELECT venue, native_id, native_event_id, side0_label, side1_label FROM venue_instrument") == [
@@ -166,45 +169,83 @@ def test_a_league_event_ingests_its_venue_side_only(recorded):
     assert ("lifecycle_reset", S + 10 * 60_000) in opens
     (row,) = q(c, "SELECT venue, league, native_event_id, scheduled_start_ms, window_start_ms, window_end_ms,"
                   " markets_json, ingested_ts_ms FROM venue_ingest")
-    assert row == ("novig", "NBA", E1, S, S - 2 * H, S + 2 * H, json.dumps([M1]), SETTLED)
+    assert row == ("novig", "NBA", E1, S, S - 2 * H, S + 2 * H, json.dumps([M1]), NOW)
 
 
-def test_a_window_that_has_not_settled_is_refused(recorded, tmp_path):
-    c = fresh()
-    with pytest.raises(IngestError, match="not settled: its window ends"):
-        ingest_league_event(c, recorded, E1, now_ms=SETTLED - 1)
-    # A segment still being written that began by the window's end: not settled either.
+def watermark(root: Path, ms: int | None) -> None:
+    path = root / WATERMARK
+    if ms is None:
+        path.unlink()
+    else:
+        path.write_text(json.dumps({"sealed_through_ms": ms, "session_id": "s1", "written_ts_ms": ms}))
+
+
+def test_the_writer_seals_through_its_close(recorded):
+    assert json.loads((recorded / WATERMARK).read_text())["sealed_through_ms"] == S + 4 * H
+
+
+def test_a_window_the_watermark_does_not_cover_is_refused(tmp_path):
     root = tmp_path / "archive"
     write_archive(root)
-    day = next((root / "novig").iterdir())
-    (day / "c3.0001.jsonl.part").write_text(json.dumps({"recv_ts_ms": S + H, "conn_id": "c3", "dir": "event",
-                                                         "frame": "{}"}) + "\n")
-    with pytest.raises(IngestError, match="still being written"):
-        ingest_league_event(c, root, E1, now_ms=SETTLED)
+    c = fresh()
+    watermark(root, S + 2 * H)                      # E1's window ends at S + 2 h: not past it
+    with pytest.raises(IngestError, match="not settled: the archive is sealed through"):
+        ingest_league_event(c, root, E1, now_ms=NOW)
+    watermark(root, None)
+    with pytest.raises(IngestError, match="no seal watermark"):
+        ingest_league_event(c, root, E1, now_ms=NOW)
     assert q(c, "SELECT count(*) FROM venue_ingest") == [(0,)]
+
+
+def test_a_stale_mirror_never_settles_a_window(recorded, tmp_path):
+    # PR #26 review: a mirror holding only the catalog segments, long after the window, was ingested
+    # with no ticks and then skipped for good. Without the watermark the mirror publishes last, it
+    # is refused; once complete, the event loads whole.
+    mirror = tmp_path / "mirror"
+    for seg in recorded.rglob("*.jsonl.gz"):
+        if seg.name.startswith(("discovery-", "rest-")):
+            (mirror / seg.parent.relative_to(recorded)).mkdir(parents=True, exist_ok=True)
+            shutil.copy2(seg, mirror / seg.relative_to(recorded))
+    for journal in recorded.rglob("manifest.jsonl"):      # an earlier snapshot: it lists only what it holds
+        held = [line for line in journal.read_text().splitlines()
+                if (mirror / journal.parent.relative_to(recorded) / json.loads(line)["file"]).exists()]
+        if held:
+            (mirror / journal.relative_to(recorded)).write_text("".join(f"{line}\n" for line in held))
+    shutil.copy2(recorded / "events.discovered.toml", mirror / "events.discovered.toml")
+    c = fresh()
+    with pytest.raises(IngestError, match="no seal watermark"):
+        ingest_league_event(c, mirror, E1, now_ms=NOW)
+    assert ingest_league_events(c, mirror, now_ms=NOW) == []
+    shutil.rmtree(mirror)
+    shutil.copytree(recorded, mirror)
+    ingest_league_event(c, mirror, E1, now_ms=NOW)
+    assert q(c, "SELECT count(*) FROM tick") == [(4,)]
 
 
 def test_a_league_event_is_ingested_once(recorded):
     c = fresh()
-    ingest_league_event(c, recorded, E1, now_ms=SETTLED)
+    ingest_league_event(c, recorded, E1, now_ms=NOW)
     with pytest.raises(IngestError, match="already ingested"):
-        ingest_league_event(c, recorded, E1, now_ms=SETTLED)
+        ingest_league_event(c, recorded, E1, now_ms=NOW)
 
 
-def test_every_settled_event_is_ingested_and_a_rerun_adds_nothing(recorded):
+def test_every_settled_event_is_ingested_and_a_rerun_adds_nothing(tmp_path):
+    root = tmp_path / "archive"
+    write_archive(root)
     c = fresh()
-    e2_settled = S + 3 * H + param("ingest.window_settle_s") * 1000
-    done = ingest_league_events(c, recorded, now_ms=SETTLED)
-    assert [e["event_id"] for e, _ in done] == [E1]          # E2's window has not settled yet
-    done = ingest_league_events(c, recorded, now_ms=e2_settled)
+    watermark(root, S + 2 * H + 1)                  # past E1's window, not E2's (it ends at S + 3 h)
+    done = ingest_league_events(c, root, now_ms=NOW)
+    assert [e["event_id"] for e, _ in done] == [E1]
+    watermark(root, S + 4 * H)
+    done = ingest_league_events(c, root, now_ms=NOW)
     assert [e["event_id"] for e, _ in done] == [E2]
-    assert ingest_league_events(c, recorded, now_ms=e2_settled) == []
+    assert ingest_league_events(c, root, now_ms=NOW) == []
     assert q(c, "SELECT native_id, native_event_id FROM venue_instrument ORDER BY 1") == [(M1, E1), (M2, E2)]
     # Each event's gaps name its own market only; the shared connection's loss is a gap for both.
     scopes = {s for (s,) in q(c, "SELECT DISTINCT scope FROM collection_gap")}
     assert scopes == {f"novig:market:{M1}/book", f"novig:market:{M2}/book"}
-    assert unsettled(recorded, {"scheduled_start_utc": "2026-10-17T03:00:00Z", "capture_lead_s": 10800,
-                                "capture_tail_s": 7200}, e2_settled) is None
+    assert unsettled(root, {"scheduled_start_utc": "2026-10-17T03:00:00Z", "capture_lead_s": 10800,
+                            "capture_tail_s": 7200}) is None
 
 
 def test_a_market_of_another_event_is_refused(recorded, tmp_path):
@@ -214,7 +255,7 @@ def test_a_market_of_another_event_is_refused(recorded, tmp_path):
     path.write_text(path.read_text().replace(f'novig_markets = ["{M1}"]', f'novig_markets = ["{M2}"]', 1))
     c = fresh()
     with pytest.raises(IngestError, match=f"belongs to event {E2}"):
-        ingest_league_event(c, root, E1, now_ms=SETTLED)
+        ingest_league_event(c, root, E1, now_ms=NOW)
     assert q(c, "SELECT count(*) FROM venue_instrument") == [(0,)]          # rolled back whole
 
 
@@ -227,5 +268,5 @@ def dump(c: sqlite3.Connection) -> dict:
 def test_a_clean_database_reproduces_the_ingest_exactly(recorded):
     a, b = fresh(), fresh()
     for c in (a, b):
-        ingest_league_events(c, recorded, now_ms=S + 3 * H + param("ingest.window_settle_s") * 1000)
+        ingest_league_events(c, recorded, now_ms=NOW)
     assert dump(a) == dump(b) and dump(a)["tick"]
