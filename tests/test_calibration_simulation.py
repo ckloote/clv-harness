@@ -21,6 +21,8 @@ from clv.score.controls import (
     random_side_residual,
     two_way_proportional_devig,
 )
+from clv.score.simulation import OFFSETS
+from clv.score.simulation import simulate as generate
 
 # Mirror of the §10 defaults. If §10 changes, change these and rerun.
 MARGIN_INTERCEPT = 0.005   # controls.martingale_margin_intercept_pp = 0.5 pp
@@ -36,76 +38,13 @@ N_EVENTS = 1_500           # controls.sample_events
 OC_REPLICATES = 1_000      # replicates behind every operating-characteristic assertion
 MIN_CLUSTERS_SPEC = 30     # controls.min_clusters (fixed in code as MIN_CLUSTERS)
 
-# Planning assumptions about the reference series (replace with B1/A1 measurements).
-OFFSETS = ("24h", "6h", "1h", "15m")
-INCREMENT_SD = (0.03, 0.02, 0.01, 0.01)   # 24h->6h, 6h->1h, 1h->15m, 15m->close
-XVENUE_SD = 0.01                          # genuine entry-venue vs reference disagreement
-XVENUE_SLOPE = 0.03                       # plausible price-level cross-venue disagreement
-ENTRY_OVERROUND = 0.045                   # only to exercise the fixed proportional de-vig path
+# The reference-series generator and its planning assumptions live in clv.score.simulation, so
+# B2 can rerun item 12 with measured dispersion; this file stays the authority on what it shows.
 
 
-def simulate(
-    rng,
-    n=N_EVENTS,
-    p_range=(0.30, 0.70),
-    level_drift=0.0,
-    price_drift=0.0,
-    curvature_drift=0.0,
-    band_drift=None,          # (price_lo, price_hi, size): drift only inside a price band
-    close_flip=False,
-    ref_flip=False,
-    entry_flip=False,
-):
-    """One sample of events as the pipeline would observe them.
-
-    True reference prices follow a martingale between offsets. Drift, if any,
-    is injected on the final step into the close, so every offset sees it.
-    `curvature_drift` is the centered symmetric quadratic departure at
-    p = 0.5 +/- CURVATURE_RADIUS relative to p = 0.5. Faults are applied to what
-    the pipeline OBSERVES, not to the truth. Entry IDs are strings, so nothing
-    downstream can confuse them with array positions.
-    """
-    events = np.arange(n)
-    entry_ids = np.array([f"E{i:06d}" for i in range(n)])
-    cur = rng.uniform(*p_range, n)
-    path = [cur]
-    for sd in INCREMENT_SD[:-1]:
-        cur = np.clip(cur + rng.normal(0, sd, n), 0.02, 0.98)
-        path.append(cur)
-    last = path[-1]
-
-    q_curve = ((last - 0.5) / CURVATURE_RADIUS) ** 2
-    q_curve -= np.mean(q_curve)
-    drift = level_drift + price_drift * (last - 0.5) + curvature_drift * q_curve
-    if band_drift is not None:
-        lo, hi, size = band_drift
-        drift = drift + np.where((last >= lo) & (last < hi), size, 0.0)
-    close = np.clip(last + rng.normal(0, INCREMENT_SD[-1], n) + drift, 0.02, 0.98)
-
-    obs = lambda x: 1 - x if ref_flip else x          # reference-instrument mapping
-    close_obs = 1 - obs(close) if close_flip else obs(close)
-
-    # Check 1 input: fixed canonical side (home) at every offset.
-    by_offset = {lab: (obs(path[i]), close_obs, events) for i, lab in enumerate(OFFSETS)}
-
-    # Check 2 input: entry venue's own probability at the 1h offset, through the
-    # fixed two-way proportional de-vig convention of §9.2.
-    p1h = path[2]
-    fair_q = np.clip(p1h + XVENUE_SLOPE * (p1h - 0.5) + rng.normal(0, XVENUE_SD, n), 0.01, 0.99)
-    overround = 1.0 + ENTRY_OVERROUND
-    q = two_way_proportional_devig(fair_q * overround, (1 - fair_q) * overround)
-    q_obs = 1 - q if entry_flip else q
-
-    # Summary input: random side at the 6h offset, same-reference pricing (d = 1/p_e).
-    home = rng.random(n) < 0.5
-    pe_side = np.where(home, obs(path[1]), 1 - obs(path[1]))
-    pc_side = np.where(home, close_obs, 1 - close_obs)
-
-    return dict(
-        by_offset=by_offset,
-        agreement=(q_obs, obs(p1h), events, entry_ids),
-        residual=(pe_side, pc_side, 1 / pe_side, events),
-    )
+def simulate(rng, n=N_EVENTS, **kw):
+    """One sample of events as the pipeline would observe them (clv.score.simulation.simulate)."""
+    return generate(rng, n, curvature_radius=CURVATURE_RADIUS, **kw)
 
 
 def run_check1(sim):

@@ -85,6 +85,21 @@ WHEN (NEW.book_tick_id IS NOT NULL
       AND (SELECT family FROM close_def WHERE close_def_id = NEW.close_def_id) <> 'close_hist')
 BEGIN SELECT RAISE(ABORT, 'close lineage: a tick for close_live, a candle or trade window for close_hist'); END;
 
+-- A 0 s buffer (close.buffer_sweep_s, DESIGN.md §9.3) puts the cutoff at the earliest plausible
+-- start. A historical close may sit there: a candle's interval and a trade window exclude their
+-- end, so everything it uses is still strictly before the start. A live close keeps 0002's
+-- strict rule, since a tick is an instant that could fall at the cutoff itself.
+DROP TRIGGER close_price_before_start;
+CREATE TRIGGER close_price_before_start BEFORE INSERT ON close_price
+WHEN NEW.p_close_num IS NOT NULL AND (
+    (SELECT earliest_plausible_start_ts_ms FROM off_resolution WHERE off_resolution_id = NEW.off_resolution_id) IS NULL
+    OR NEW.cutoff_ts_ms > (SELECT earliest_plausible_start_ts_ms FROM off_resolution
+                           WHERE off_resolution_id = NEW.off_resolution_id)
+    OR (NEW.cutoff_ts_ms = (SELECT earliest_plausible_start_ts_ms FROM off_resolution
+                            WHERE off_resolution_id = NEW.off_resolution_id)
+        AND (SELECT family FROM close_def WHERE close_def_id = NEW.close_def_id) <> 'close_hist'))
+BEGIN SELECT RAISE(ABORT, 'close cutoff is not before the earliest plausible start'); END;
+
 CREATE TRIGGER close_price_candle_before_cutoff BEFORE INSERT ON close_price
 WHEN NEW.candle_id IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM historical_candle h JOIN venue_instrument v ON v.venue_instrument_id = h.venue_instrument_id
@@ -174,11 +189,12 @@ BEGIN SELECT RAISE(ABORT, 'calibration candle is not a reference-venue candle en
 -- (`check1`, component intercept|slope|curvature), a binned-diagnostic bin (`bin`, component
 -- bin:<i>), an oracle mean (`oracle`, component all:b<buffer>|matched:b<buffer>), or a measured
 -- dispersion (`dispersion`). Values are in probability units, as controls.py returns them.
+-- `offset_s` 0 is the whole run: the operating characteristics a dispersion run simulates.
 CREATE TABLE calibration_result (
     calibration_result_id INTEGER PRIMARY KEY,
     calibration_run_id  INTEGER NOT NULL REFERENCES calibration_run,
     kind                TEXT NOT NULL CHECK (kind IN ('check1', 'bin', 'oracle', 'dispersion')),
-    offset_s            INTEGER NOT NULL CHECK (offset_s > 0),
+    offset_s            INTEGER NOT NULL CHECK (offset_s > 0 OR (offset_s = 0 AND kind = 'dispersion')),
     component           TEXT NOT NULL,
     buffer_s            INTEGER CHECK (buffer_s >= 0),
     n_events            INTEGER NOT NULL CHECK (n_events >= 0),

@@ -799,3 +799,15 @@ def test_calibration_results_fit_their_run(conn):
         ins(conn, "calibration_result", kind="check1", component="slope", lo=-0.1, hi=0.1, **row)
     ins(conn, "calibration_result", kind="check1", component="curvature", outcome="insufficient_data",
         **dict(row, estimate=None))
+
+
+def test_a_historical_close_may_cut_off_at_the_start_and_a_live_one_may_not(conn):
+    # A 0 s buffer (DESIGN.md §9.3) puts the cutoff at the earliest plausible start, T + 484.996 s.
+    ids = seed(conn)
+    hist_close(conn, ids, outcome_id=ids["cws"], cutoff_ts_ms=T + 484_996)
+    with pytest.raises(sqlite3.IntegrityError, match="not before the earliest plausible start"):
+        hist_close(conn, ids, outcome_id=ids["cws"], cutoff_ts_ms=T + 484_997, close_def_id=ins(
+            conn, "close_def", name="h2", family="close_hist", params_json="{}", params_sha256="d" * 64,
+            created_ts_ms=T))
+    with pytest.raises(sqlite3.IntegrityError, match="not before the earliest plausible start"):
+        close(conn, ids, "novig", ids["tick"], cutoff_ts_ms=T + 484_996, close_def_id=new_def(conn))

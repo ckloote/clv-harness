@@ -12,6 +12,8 @@
     clv backfill import              B1: load archive-hist/ (games, instruments, then linked markets' data)
     clv backfill link                B1: tie historical markets to games; write links for review (data/b1/)
     clv backfill coverage            B1: the per-game coverage table and waterfall (data/b1/)
+    clv calibrate                    B2: check 1 and the oracle sweep per historical close family (data/b2/)
+    clv calibrate --dispersion       B2: the measured spread and item-12 rates only; nothing fitted
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -33,6 +35,7 @@ from clv.backfill import coverage
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
 from clv.off import sources
+from clv.score import calibration
 from clv.score import clv as scoring
 from clv.scoring import odds_api
 from clv.timeutil import ms_iso
@@ -263,6 +266,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--hist-archive", type=Path, default=REPO / "archive-hist")
     p.add_argument("--archive", type=Path, default=REPO / "archive", help="the R0 archive, for Novig stream trades")
     p.add_argument("--out", type=Path, default=REPO / "data" / "b1", help="where `link` and `coverage` write")
+    p = sub.add_parser("calibrate", help="B2: calibration runs for the historical close families")
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--dispersion", action="store_true", help="measure the spread of price moves only; fit nothing")
+    p.add_argument("--fact-snapshot", type=int, help="recompute over the facts of an earlier snapshot, as new runs")
+    p.add_argument("--replicates", type=int, default=1_000, help="item-12 replicates in a dispersion run")
+    p.add_argument("--out", type=Path, default=REPO / "data" / "b2", help="where the report is written")
     args = ap.parse_args(argv)
     now = int(time.time() * 1000)
     if args.cmd == "inspect":
@@ -314,6 +323,17 @@ def main(argv: list[str] | None = None) -> None:
             _, rep = backfill.link(conn, args.hist_archive, args.out, now)
             print(", ".join(f"{k} {v}" for k, v in sorted(rep.items())))
             print(f"review {args.out / 'links.review.md'}; approve from {args.out / 'links.proposed.toml'}")
+    elif args.cmd == "calibrate":
+        conn = db.connect(args.db)
+        db.migrate(conn)
+        snap, runs = calibration.run(conn, now, "dispersion" if args.dispersion else "check", args.fact_snapshot,
+                                     replicates=args.replicates)
+        for r in runs:
+            print(f"run {r.calibration_run_id} {r.venue} {r.method} ({r.mode}): {r.verdict or 'no verdict'}"
+                  + (f"; {r.verdict_reason}" if r.verdict_reason else "")
+                  + "; events per offset " + ", ".join(f"{calibration.label(k)} {n}" for k, n in r.n_by_offset.items()))
+        for path in calibration.report(conn, snap, args.out):
+            print(f"wrote {path}")
     elif args.cmd == "trace":
         if sum(x is not None for x in (args.run, args.execution, args.close)) != 1:
             raise SystemExit("clv trace: give one of --run, --execution or --close")

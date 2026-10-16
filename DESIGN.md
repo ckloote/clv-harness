@@ -443,7 +443,7 @@ historical candle interval_start < interval_end
 signal.emitted_ts <= entry.decision_ts
 entry outcome == approved instrument mapping outcome at entry time
 reference observation time <= close cutoff
-close cutoff < earliest plausible actual start
+close cutoff < earliest plausible actual start   (<= for a historical close: its candle and trade window exclude their end)
 ```
 
 Some are multi-table/time-dependent validations and belong in transactional application logic plus tests rather than naive SQLite `CHECK` clauses. Add relevant indexes on `(instrument_id, observed_ts)`, `(instrument_id, venue_ts)`, `(event_id, source, observed_ts)`, gap scope/time, and source alias IDs. Document all uniqueness keys and avoid nullable values in SQLite unique keys where duplicates must be impossible.
@@ -617,7 +617,7 @@ Synthetic event-book fixtures should include:
 21. Binned intervals account for the full-sample curve fit and events spanning bins: over 1,000 fixed-design correlated-error replicates, each nominal 90% interval has coverage between 86.5% and 93.5% (Monte Carlo tolerance). A bin with fewer than `controls.min_clusters` events refuses an interval.
 22. Random-side EV residuals under asymmetric prices do not generally cancel level drift. A paired-side calculation reproduces `mean(Δp * (d_home - d_away) / 2)` exactly; the randomized sample is consistent with it and clearly nonzero.
 
-Items 1, 2 and 11–22 are implemented in `tests/test_calibration_simulation.py` against `src/clv/score/controls.py`. Both ship with this design and must keep passing; the simulation's reference-series assumptions are replaced with B1 and A1 measurements when those exist.
+Items 1, 2 and 11–22 are implemented in `tests/test_calibration_simulation.py` against `src/clv/score/controls.py`, drawing samples from `src/clv/score/simulation.py`. Both ship with this design and must keep passing. The simulation's reference-series assumptions are replaced with B1 and A1 measurements when those exist: a dispersion run (`clv calibrate --dispersion`) reruns item 12 with the measured spread of price moves, entry prices and per-offset counts.
 
 Tests should assert not only that scores differ, but that the **expected exclusion or diagnostic reason** is emitted. Establish an audited “golden game” containing raw messages, transformations, start resolution, entry, close and score; replay it byte-for-byte in CI.
 
@@ -925,6 +925,8 @@ clv-harness/
     close/{definitions,depth,vwap,candles}.py
     fee/{registry,estimate}.py
     score/{clv,controls}.py     # controls: martingale test, agreement, residual summary, oracle
+    score/simulation.py         # the calibration simulation's reference-series generator
+    score/calibration.py        # calibration runs: check 1 and the oracle sweep per close family
     dashboard/app.py
   tests/
     fixtures/                   # golden games (the first from V0) and synthetic fault streams

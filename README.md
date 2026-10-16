@@ -22,6 +22,8 @@ config/params.toml          every threshold the harness uses, from DESIGN.md §1
 migrations/0001_v0.sql      the V0 schema: facts and derived tables, constraints, append-only triggers
 migrations/0002_v0_scoring.sql  V0 changes forced by scoring: a close with no cutoff, null EV lineage
 migrations/0003_v0_agreement.sql  V0 check 2 per entry: the opposite quote, q_e and the outlier flag
+migrations/0004_b1.sql      B1: executions and their sightings, historical candles
+migrations/0005_b2.sql      B2: settlements, historical close lineage, calibration runs
 migrations/CHANGELOG.md     schema changes forced by real data, against DESIGN.md §8
 src/clv/
   config.py                 loads params.toml; an unknown key is an error, never a default
@@ -40,12 +42,18 @@ src/clv/
   off/sources.py            off observations: first pitch, status changes, Novig GOLIVE
   off/resolver.py           the trusted start interval from those observations
   close/depth.py            benchmarks: top-of-book and depth-walk midpoints, exact
-  close/definitions.py      the versioned close function and its unscoreable reasons
+  close/definitions.py      the versioned close functions, live and historical, and their unscoreable reasons
+  close/candles.py          the historical candle close: the last candle wholly before the cutoff
+  close/vwap.py             trade VWAP over unique executions, timed by the stream where it saw them
+  backfill/                 B1 historical import: games, markets, links, candles, trades, settlements, coverage
   score/clv.py              scoring runs: mapping and off resolution, closes, CLV, null EV, exclusions
   trace.py                  a scoring run traced to the raw frames behind every number
   gaps.py                   collection gaps from polls and streams
-  cli.py                    `clv inspect`, `migrate`, `ingest`, `record`, `correct`, `score`, `trace`
-  score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2)
+  cli.py                    `clv inspect`, `migrate`, `ingest`, `record`, `correct`, `score`, `trace`, `backfill`,
+                            `calibrate`
+  score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2) and the oracle mean
+  score/simulation.py       the calibration simulation's reference-series generator and item-12 rerun
+  score/calibration.py      B2 calibration runs: closes at every buffer, offset prices, check 1, oracle, report
 tests/                      parameters, schema invariants, polarity, archive reader, parsers, gaps, ingest,
                             off resolution, depth, scoring; calibration simulation and research-bound fixtures
   golden.py                 golden games: the synthetic generator and the end-to-end replay
@@ -71,7 +79,7 @@ deploy/raw-recorder.service systemd user unit
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
-The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage, and `0002` and `0003` are the changes scoring and check 2 forced.
+The layout the harness grows into is in [DESIGN.md §14](DESIGN.md). Tables appear stage by stage (§8.5): `0001_v0.sql` is the V0 stage, `0002` and `0003` are the changes scoring and check 2 forced, and `0004` and `0005` are the B1 and B2 stages.
 
 ## Install
 
@@ -336,6 +344,22 @@ uv run clv backfill coverage
 5. `coverage` writes the per-game table and its waterfall to `data/b1/`.
 
 `clv trace --execution N` shows one trade and every record of it. `clv trace --close N` shows one historical close (B2) with its candle, or every execution in its trade window, each cited to its frame. The method is in `docs/decisions/2026-10-14-b1-reference-import.md`.
+
+## Historical closes and check 1 (B2)
+
+```bash
+uv run clv calibrate --dispersion
+```
+
+```bash
+uv run clv calibrate
+```
+
+`clv calibrate` prices each historical close family (Kalshi candle, Kalshi VWAP, Novig VWAP) at every buffer in the §9.3 sweep and at each check-1 offset, over a new fact snapshot.
+- **`--dispersion`:** measures the spread of price moves and reruns the §9.4 item-12 operating characteristics under it, fitting nothing. Run it first, after the prespecification is committed.
+- **Without the flag:** runs check 1, its binned diagnostic and the oracle sweep, and records a verdict per family.
+
+Both write `data/b2/calibration.md` (aggregates) and `calibration_games.csv` (per-game prices: vendor-derived, never committed).
 
 ## Working rules
 
