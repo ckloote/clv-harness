@@ -102,7 +102,9 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
     """
     end_reason: dict[str, str] = {}
     lost: dict[tuple[str, str], list[int]] = defaultdict(list)    # (conn, market) -> subscription_lost times
-    # (conn, market) -> the recorder's subscribe/unsubscribe commands, as (send time, kind), in order.
+    # (conn, market) -> the recorder's subscribe/unsubscribe commands, as (send time, kind), in the
+    # order sent: an unsubscribe and a resubscribe sent together share a millisecond, so only the
+    # order says which subscription the unsubscribe ended.
     commands: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
     for f in frames:
         if f.dir == "event":
@@ -130,10 +132,10 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
         at the first unsubscribe before the next subscribe.
         """
         cmds = commands[(span.conn_id, span.market)]
-        subs = [t for t, kind in cmds if kind == "subscribe" and t <= span.first_ts]
-        start = subs[-1] if subs else float("-inf")
-        resub = min((t for t, kind in cmds if kind == "subscribe" and t > start), default=float("inf"))
-        return any(kind == "unsubscribe" and start <= t < resub and (by is None or t <= by) for t, kind in cmds)
+        subs = [i for i, (t, kind) in enumerate(cmds) if kind == "subscribe" and t <= span.first_ts]
+        start = subs[-1] if subs else -1
+        resub = next((i for i in range(start + 1, len(cmds)) if cmds[i][1] == "subscribe"), len(cmds))
+        return any(cmds[i][1] == "unsubscribe" and (by is None or cmds[i][0] <= by) for i in range(start + 1, resub))
 
     # (conn, market) -> the first evidence times of its subscriptions: a resubscribe starts a new span.
     span_starts: dict[tuple[str, str], list[int]] = defaultdict(list)
