@@ -28,6 +28,14 @@ an old one (DESIGN.md §10). Checks, in order, each an unscoreable reason:
     no_quotes / insufficient_depth /    the benchmark cannot be computed (clv.close.depth)
       truncated_ladder
 
+The historical family (`HistCloseDef`, DESIGN.md §5.6) prices the same reference
+from a candle (clv.close.candles) or a trade window (clv.close.vwap) instead of a
+tick, through `hist_price_as_of`:
+
+    close_hist_candle_mid_top   the last candle wholly before the as-of time
+    close_hist_vwap             unique executions in [as_of - window, as_of); few_trades
+                                below close.hist_vwap_min_executions or _min_notional_usd
+
 Cohort eligibility (mapping status, settlement equivalence) is not a close
 precondition here: a close is priced whenever the book permits, and clv_score
 lists the cohort exclusions beside it (clv.score.clv).
@@ -42,6 +50,8 @@ from fractions import Fraction
 
 from clv import lineage
 from clv.close import depth
+from clv.close.candles import candle_close
+from clv.close.vwap import Executions
 from clv.config import param
 from clv.gaps import QUARANTINE_REASONS
 from clv.identity import Mapping, canonical_ladder
@@ -49,6 +59,7 @@ from clv.off.resolver import RESOLVER_VERSION
 from clv.venues.protocol import PRICE_SCALE, BinaryBook, Level
 
 CLOSE_VERSION = "close-v0.1"
+HIST_CLOSE_VERSION = "close-hist-v0.1"
 # The venue status in which a book is tradeable (docs/vendor-capabilities.md).
 OPEN_STATUS = {"novig": "OPEN", "kalshi": "active"}
 # Reference sources per venue. Novig was polled before its stream was available.
@@ -72,11 +83,52 @@ class CloseDef:
     version: str = CLOSE_VERSION
     off_resolver: str = RESOLVER_VERSION
 
+    family = "close_live"
+
     def params(self) -> dict:
         return asdict(self)
 
     def params_json(self) -> str:
         return lineage.canonical_json(self.params())
+
+
+@dataclass(frozen=True)
+class HistCloseDef:
+    """A historical close (DESIGN.md §5.6): a weaker proxy than a book close, never pooled with one.
+    It carries only the values its method uses, so changing another method's value never makes
+    a new definition of this one."""
+    name: str
+    method: str                         # "candle_mid_top" | "trade_vwap"
+    buffer_s: int
+    max_quote_age_s: int
+    candle_rule: str | None = None
+    vwap_window_s: int | None = None
+    vwap_min_executions: int | None = None
+    vwap_min_notional_usd: int | None = None
+    version: str = HIST_CLOSE_VERSION
+    off_resolver: str = RESOLVER_VERSION
+
+    family = "close_hist"
+
+    def params(self) -> dict:
+        return asdict(self)
+
+    def params_json(self) -> str:
+        return lineage.canonical_json(self.params())
+
+
+def hist_defs(buffers: list[int] | None = None) -> list[HistCloseDef]:
+    """The historical family at each buffer (default close.buffer_s): the candle and the VWAP close."""
+    out = []
+    for b in [param("close.buffer_s")] if buffers is None else buffers:
+        age = param("close.max_quote_age_s")
+        out.append(HistCloseDef("close_hist_candle_mid_top", "candle_mid_top", b, age,
+                                candle_rule=param("close.hist_candle_rule")))
+        out.append(HistCloseDef("close_hist_vwap", "trade_vwap", b, age,
+                                vwap_window_s=param("close.hist_vwap_window_s"),
+                                vwap_min_executions=param("close.hist_vwap_min_executions"),
+                                vwap_min_notional_usd=param("close.hist_vwap_min_notional_usd")))
+    return out
 
 
 def live_defs() -> list[CloseDef]:
@@ -94,14 +146,14 @@ def live_defs() -> list[CloseDef]:
     return defs
 
 
-def ensure_def(conn: sqlite3.Connection, d: CloseDef, now_ms: int) -> int:
+def ensure_def(conn: sqlite3.Connection, d: CloseDef | HistCloseDef, now_ms: int) -> int:
     text = d.params_json()
     sha = hashlib.sha256(text.encode()).hexdigest()
     row = conn.execute("SELECT close_def_id FROM close_def WHERE params_sha256 = ?", (sha,)).fetchone()
     if row:
         return row[0]
     return conn.execute("INSERT INTO close_def (name, family, params_json, params_sha256, created_ts_ms)"
-                        " VALUES (?, 'close_live', ?, ?, ?)", (d.name, text, sha, now_ms)).lastrowid
+                        " VALUES (?, ?, ?, ?, ?)", (d.name, d.family, text, sha, now_ms)).lastrowid
 
 
 # -- the reference instrument ----------------------------------------------------------------------
@@ -150,6 +202,13 @@ class Price:
     liveness_age_ms: int | None = None
     spread_e4: int | None = None
     bench: depth.Benchmark | None = None
+    # A historical close's lineage instead of a tick: a candle, or a trade window and its counts.
+    candle_id: int | None = None
+    cutoff_candle_active: bool | None = None
+    vwap_lo_ms: int | None = None
+    vwap_hi_ms: int | None = None
+    vwap_executions: int | None = None
+    vwap_payout_cents: int | None = None
 
 
 def book_of(conn: sqlite3.Connection, tick_id: int, venue: str, native_id: str) -> BinaryBook:
@@ -220,3 +279,37 @@ def price_as_of(conn: sqlite3.Connection, ref: Reference, as_of_ms: int, d: Clos
         bench = benchmark(d, bids, asks, bool(truncated) or not complete)
         return Price(bench.p, bench.reason, spread_e4=spread, bench=bench, **seen)
     return Price(None, reason, spread_e4=spread, **seen)
+
+
+def write_close(conn: sqlite3.Connection, snapshot_id: int, def_id: int, off_id: int, venue: str, outcome_id: int,
+                mapping_resolution_id: int | None, cutoff_ms: int | None, p: Price, now_ms: int) -> int:
+    """One close_price row: the price or the reason, with its tick, candle or trade window."""
+    num, den = (None, None) if p.p is None else (p.p.numerator, p.p.denominator)
+    return conn.execute(
+        "INSERT INTO close_price (fact_snapshot_id, close_def_id, off_resolution_id, ref_venue, outcome_id,"
+        " mapping_resolution_id, cutoff_ts_ms, book_tick_id, book_observed_ts_ms, quote_age_ms, liveness_age_ms,"
+        " p_close_num, p_close_den, spread_e4, unscoreable_reason, candle_id, cutoff_candle_active, vwap_lo_ms,"
+        " vwap_hi_ms, vwap_executions, vwap_payout_cents, computed_ts_ms)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (snapshot_id, def_id, off_id, venue, outcome_id, mapping_resolution_id, cutoff_ms, p.tick_id, p.observed_ms,
+         p.quote_age_ms, p.liveness_age_ms, num, den, p.spread_e4, p.reason, p.candle_id,
+         None if p.cutoff_candle_active is None else int(p.cutoff_candle_active), p.vwap_lo_ms, p.vwap_hi_ms,
+         p.vwap_executions, p.vwap_payout_cents, now_ms)).lastrowid
+
+
+def hist_price_as_of(conn: sqlite3.Connection, ref: Reference, as_of_ms: int, d: HistCloseDef,
+                     executions: Executions) -> Price:
+    """The reference's historical close as of `as_of_ms`, from the current fact snapshot
+    (`lineage.use`; `executions` must read the same snapshot), or why there is none."""
+    if d.method == "candle_mid_top":
+        c = candle_close(conn, ref.venue_instrument_id, ref.side, as_of_ms, d.max_quote_age_s)
+        return Price(c.p, c.reason, quote_age_ms=c.quote_age_ms, spread_e4=c.spread_e4, candle_id=c.candle_id,
+                     cutoff_candle_active=c.cutoff_candle_active)
+    if d.method == "trade_vwap":
+        lo = as_of_ms - d.vwap_window_s * 1000
+        v = executions.vwap(ref.venue_instrument_id, ref.side, lo, as_of_ms)
+        enough = v.executions >= d.vwap_min_executions and v.payout_cents >= d.vwap_min_notional_usd * 100
+        return Price(v.p if enough else None, None if enough else "few_trades",
+                     quote_age_ms=None if v.last_ms is None else as_of_ms - v.last_ms, vwap_lo_ms=lo,
+                     vwap_hi_ms=as_of_ms, vwap_executions=v.executions, vwap_payout_cents=v.payout_cents)
+    raise ValueError(f"unknown historical close method {d.method!r}")

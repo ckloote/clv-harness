@@ -8,6 +8,7 @@
     clv score                        a scoring run over a new fact snapshot, or --fact-snapshot N
     clv trace --run N                a scoring run's numbers, traced to raw frames, as JSON
     clv trace --execution N          one trade execution and every record of it, as JSON
+    clv trace --close N              one historical close and its candle or trade window, as JSON
     clv backfill import              B1: load archive-hist/ (games, instruments, then linked markets' data)
     clv backfill link                B1: tie historical markets to games; write links for review (data/b1/)
     clv backfill coverage            B1: the per-game coverage table and waterfall (data/b1/)
@@ -247,9 +248,11 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("score", help="closes, CLV and null EV for every entry, as a new run")
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--fact-snapshot", type=int, help="recompute over the facts of an earlier snapshot, as a new run")
-    p = sub.add_parser("trace", help="print a scoring run, or one trade execution, traced to raw frames, as JSON")
+    p = sub.add_parser("trace", help="print a scoring run, one trade execution or one historical close, traced to"
+                                     " raw frames, as JSON")
     p.add_argument("--run", type=int)
     p.add_argument("--execution", type=int, help="a trade_execution: every record of it, cited to frame and item")
+    p.add_argument("--close", type=int, help="a historical close_price: its candle or trade window, cited")
     p.add_argument("--hist-archive", type=Path, default=REPO / "archive-hist")
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--archive", type=Path, default=REPO / "archive")
@@ -312,9 +315,11 @@ def main(argv: list[str] | None = None) -> None:
             print(", ".join(f"{k} {v}" for k, v in sorted(rep.items())))
             print(f"review {args.out / 'links.review.md'}; approve from {args.out / 'links.proposed.toml'}")
     elif args.cmd == "trace":
-        if (args.run is None) == (args.execution is None):
-            raise SystemExit("clv trace: give --run or --execution")
-        if args.execution is not None:
+        if sum(x is not None for x in (args.run, args.execution, args.close)) != 1:
+            raise SystemExit("clv trace: give one of --run, --execution or --close")
+        if args.close is not None:
+            doc = trace.trace_close(db.connect(args.db), args.close, args.archive, args.hist_archive)
+        elif args.execution is not None:
             doc = trace.trace_execution(db.connect(args.db), args.execution, args.archive, args.hist_archive)
         else:
             doc = trace.trace(db.connect(args.db), args.run, args.archive, not args.no_levels, args.hist_archive)

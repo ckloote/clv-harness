@@ -335,7 +335,7 @@ uv run clv backfill coverage
 4. The second `import` loads candles and trades for the linked markets, up to each game's first pitch.
 5. `coverage` writes the per-game table and its waterfall to `data/b1/`.
 
-`clv trace --execution N` shows one trade and every record of it. The method is in `docs/decisions/2026-10-14-b1-reference-import.md`.
+`clv trace --execution N` shows one trade and every record of it. `clv trace --close N` shows one historical close (B2) with its candle, or every execution in its trade window, each cited to its frame. The method is in `docs/decisions/2026-10-14-b1-reference-import.md`.
 
 ## Working rules
 
