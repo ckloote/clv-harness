@@ -117,6 +117,37 @@ def test_subscription_lost_stays_open_though_the_connection_closed_on_purpose():
     assert got == [("subscription_lost", "a/book", 150, None)]
 
 
+def probe_reply(t, conn, market, seq):
+    return fr(t, conn, "in", {"ts": t, "nonce": 2, "snapshot": {market: {"eventId": "ev", "book": {
+        "seq": seq, "orders": ORDERS}}}})
+
+
+def test_probe_after_a_subscription_loss_cannot_erase_it():
+    # PR #24 review: status and a probe are sent in one maintenance tick, so the probe's reply
+    # (answered for an unsubscribed channel) can land after the loss and extend the span.
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a"), delta(150, "c1", "a", 2),
+                      subscription_lost(200, "c1", "a"), probe_reply(201, "c1", "a", 2),
+                      disconnected(400, "c1", "recorder_stop"))
+    # The confirmed probe proves the book unchanged to 201, so the gap opens there and stays open.
+    assert got == [("subscription_lost", "a/book", 201, None)]
+
+
+def test_probe_after_a_subscription_loss_keeps_the_resubscribe_gap_labelled():
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a"), delta(150, "c1", "a", 2),
+                      subscription_lost(200, "c1", "a"), probe_reply(201, "c1", "a", 2),
+                      subscribe(220, "c1", "a", seq=5), delta(250, "c1", "a", 6),
+                      disconnected(400, "c1", "recorder_stop"))
+    assert got == [("subscription_lost", "a/book", 201, 220)]
+
+
+def test_loss_on_an_earlier_subscription_does_not_follow_the_resubscribe():
+    got = stream_gaps(connect(99, "c1", ["a"]), subscribe(100, "c1", "a"), delta(150, "c1", "a", 2),
+                      subscription_lost(200, "c1", "a"), subscribe(220, "c1", "a", seq=5),
+                      delta(250, "c1", "a", 6), unsubscribe(300, "c1", "a"),
+                      disconnected(400, "c1", "recorder_stop"))
+    assert got == [("subscription_lost", "a/book", 150, 220)]
+
+
 def test_planned_close_is_not_a_gap():
     for reason in ("recorder_stop", "no_active_markets"):
         assert stream_gaps(one_connection("c1", 100, 200, reason)) == []

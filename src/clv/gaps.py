@@ -23,7 +23,11 @@ What the archive can prove in V0:
   open gap from that market's last trustworthy observation. A subscription the
   venue dropped (the recorder's `status` check archived `subscription_lost`) is
   never a deliberate end, even on a connection closed on purpose; its gap is
-  labelled `subscription_lost`.
+  labelled `subscription_lost`. The loss belongs to the subscription that was
+  live when it was reported, until that connection resubscribes the market, so
+  evidence arriving after it (a probe already in flight, which the venue answers
+  for an unsubscribed channel) cannot erase it; that evidence only moves the
+  gap's start, which is still the last trustworthy observation.
 
 Before a subject's first observation there is no coverage, and no gap either:
 the close function requires coverage, so a missing start is never mistaken for
@@ -131,9 +135,17 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
         resub = min((t for t, kind in cmds if kind == "subscribe" and t > start), default=float("inf"))
         return any(kind == "unsubscribe" and start <= t < resub and (by is None or t <= by) for t, kind in cmds)
 
-    def lost_after(span: Span, until: int | None = None) -> bool:
-        """The venue dropped this span's subscription after its last evidence (by `until`)."""
-        return any(span.last_ts < t and (until is None or t <= until) for t in lost[(span.conn_id, span.market)])
+    # (conn, market) -> the first evidence times of its subscriptions: a resubscribe starts a new span.
+    span_starts: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for sp in replay.spans:
+        span_starts[(sp.conn_id, sp.market)].append(sp.first_ts)
+
+    def lost_during(span: Span, until: int | None = None) -> bool:
+        """The venue dropped this span's subscription (reported by `until`, if given): a loss
+        reported after the span opened and before its connection resubscribed the market."""
+        key = (span.conn_id, span.market)
+        resub = min((t for t in span_starts[key] if t > span.first_ts), default=float("inf"))
+        return any(span.first_ts <= t < resub and (until is None or t <= until) for t in lost[key])
 
     gaps = []
     by_scope: dict[str, list[Span]] = defaultdict(list)
@@ -144,14 +156,14 @@ def stream_gaps(source: str, frames: Iterable[Frame], replay: StreamReplay) -> l
         reach = spans[0]                    # the span whose coverage reaches furthest so far
         for nxt in spans[1:]:
             if nxt.first_ts > reach.last_ts and not ended_on_purpose(reach, by=nxt.first_ts):
-                reason = "subscription_lost" if lost_after(reach, nxt.first_ts) else "reconnect"
+                reason = "subscription_lost" if lost_during(reach, nxt.first_ts) else "reconnect"
                 gaps.append(Gap(source, scope, reason, reach.last_ts, nxt.first_ts, reach.last_ref,
                                 nxt.first_ref))
             if nxt.last_ts >= reach.last_ts:
                 reach = nxt
         if ended_on_purpose(reach):
             continue
-        if lost_after(reach):
+        if lost_during(reach):
             gaps.append(Gap(source, scope, "subscription_lost", reach.last_ts, None, reach.last_ref, None))
         elif end_reason.get(reach.conn_id) not in PLANNED_CLOSES:
             # Lost, or no end recorded (a killed process, or a segment not yet sealed):
