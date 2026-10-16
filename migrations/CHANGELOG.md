@@ -84,3 +84,14 @@ The B2 row of DESIGN.md §8.5: check 1 and the oracle sweep need historical clos
 Two amendments were made in B2's PR 3, before 0005 was applied to any kept database: `calibration_result.offset_s` may be 0 for a dispersion run's whole-run rows (the simulated operating characteristics), and the cutoff rule above.
 
 **Rows are not copied.** Unlike 0002, nothing is rebuilt: the new `close_price` columns are nullable, and every existing row is a `close_live` row that keeps its tick.
+
+## 0006_a1 (A1, 2026-10-16)
+
+A1 records leagues other than MLB (`docs/decisions/2026-10-16-a1-league.md`). Their games are found from Novig's catalog, keyed by Novig event, and ingested from the venue side before A2 links them to a league game (`docs/decisions/2026-10-16-a1-scope.md`).
+
+| Change | Against | Why |
+|---|---|---|
+| **`venue_ingest`** (new). One row per league event ingested: venue, league, Novig event, the recorder's label and the venue's start, the capture window, the markets and the parser version. `(venue, native_event_id, parser_version)` is unique | DESIGN.md §8.5 had no A1 table besides the trade tables B1 already added | A league event's instruments, ticks, snapshots, liveness evidence and gaps reference `venue_instrument` only, so they need no `event` row, and A2 can link them without rewriting anything. Without an `event` row, nothing else records that an event was loaded, so the second ingest that a clean rebuild must never need would go unrefused |
+
+Not in 0006: no change to `event`'s league CHECK and no off observations for league events. A Novig lifecycle transition is the venue's perception, kept in the raw archive; A2 writes it once the event exists.
+

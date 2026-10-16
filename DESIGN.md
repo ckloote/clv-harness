@@ -475,6 +475,7 @@ The schema grows with the build. A table exists from the stage that first writes
 | A2 | `event_schedule_observation` | — | Schedule revisions once many games flow |
 | A4 | `poll_attempt`, `poll_result` | — | Soft-book polling |
 | B1 | `historical_candle`, if Kalshi supplies candles | — | Historical reference import |
+| A1 | `venue_ingest` | — | A league event is loaded from the venue side before A2 links it to a league game; the record keeps it from being loaded twice |
 | B2 or G2, whichever first | `settlement_observation` | `calibration_run`, `calibration_observation`, `calibration_result` | Oracle controls need outcomes; check 1 and the oracle sweep are recorded runs |
 | G1 or B3, whichever first | `control_outlier_review` | — | Check 2 cannot pass with undocumented outlier disposition |
 | When contract rules must be tracked per provider over time | `contract_rule_observation` | — | Until then, v1 moneyline rules live in `docs/measurement-contract.md` and each mapping carries its `settlement_equivalence` verdict |
@@ -670,6 +671,8 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | `odds.quota_target_utilization` | 0.65 of monthly credits | provisional | A4 |
 | `odds.quota_degrade_at` | 0.85 used, or projected exhaustion before reset | provisional | A4 |
 | `poll.liveness_max_s` | 30 since the subject's last successful poll, changed or unchanged | provisional | A4: 3× the R0 Kalshi and Novig public-book poll intervals; a missed or failed poll is also a `collection_gap` |
+| **Ingest** | | | |
+| `ingest.window_settle_s` | 5,400 after a league event's capture window ends before it is ingested, and only once no active segment overlaps the window | provisional | A1: `r0.segment_max_s` plus the Pi-to-workstation mirror interval, with margin |
 | **Off resolution** | | | |
 | `off.max_source_disagreement_s` | 120; beyond it, `off_disagreement` | provisional | A2 agreement report |
 | `off.scheduled_only` | Unscoreable: `no_trusted_off` | fixed | — |

@@ -3,6 +3,7 @@
     clv inspect --game-pk 849832     parse one recorded game from the raw archive and summarize it
     clv migrate                      create or upgrade the database (data/clv.sqlite by default)
     clv ingest --game-pk 849832      load one recorded game's facts into the database
+    clv ingest --league-events       load every settled league event's venue side (A1)
     clv record --spec entries.toml   record signals and entries (clv.entries)
     clv correct --spec fixes.toml    append mapping corrections (clv.identity.apply_corrections)
     clv score                        a scoring run over a new fact snapshot, or --fact-snapshot N
@@ -226,6 +227,16 @@ def inspect(root: Path, game_pk: int, games_path: Path) -> None:
         print("- none")
 
 
+def print_ingest_report(rep: ingest.IngestReport) -> None:
+    for table, n in sorted(rep.rows.items()):
+        print(f"  {table}: {n}")
+    for vendor_id, why in sorted(rep.unmatched.items()):
+        print(f"  not this game: The Odds API event {vendor_id} ({why})")
+    for reason, n in sorted(rep.quarantined.items()):
+        first_ref, last_ref, first_ms, last_ms = rep.quarantine_span[reason]
+        print(f"  quarantined {reason}: {n}, {ms_iso(first_ms)} .. {ms_iso(last_ms)} ({first_ref} .. {last_ref})")
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="clv", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -235,8 +246,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--games", type=Path, default=GAMES, help="recorder game list (default: %(default)s)")
     p = sub.add_parser("migrate", help="create or upgrade the database")
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
-    p = sub.add_parser("ingest", help="load one recorded game's facts into the database")
-    p.add_argument("--game-pk", type=int, required=True)
+    p = sub.add_parser("ingest", help="load one recorded game's facts, or league events' venue side, into the database")
+    which = p.add_mutually_exclusive_group(required=True)
+    which.add_argument("--game-pk", type=int)
+    which.add_argument("--league-event", metavar="NOVIG_EVENT_ID", help="one league event (A1), once its window settled")
+    which.add_argument("--league-events", action="store_true",
+                       help="every discovered league event whose window has settled and that is not loaded yet")
     p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
     p.add_argument("--archive", type=Path, default=REPO / "archive")
     p.add_argument("--games", type=Path, default=GAMES, help="recorder game list (default: %(default)s)")
@@ -282,18 +297,30 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "ingest":
         conn = db.connect(args.db)
         db.migrate(conn)
+        if args.league_events:
+            done = ingest.ingest_league_events(conn, args.archive, now)
+            print(f"{len(done)} league event(s) ingested or refused into {args.db}")
+            for e, result in done:
+                if isinstance(result, ingest.IngestError):
+                    print(f"- {e['league']} {e['event_id']} {e.get('label', '')}: refused: {result}")
+                else:
+                    print(f"- {e['league']} {e['event_id']} {e.get('label', '')}")
+                    print_ingest_report(result)
+            if any(isinstance(r, ingest.IngestError) for _, r in done):
+                raise SystemExit(1)
+            return
         try:
-            rep = ingest.ingest_game(conn, args.archive, args.game_pk, args.games)
+            if args.league_event:
+                rep = ingest.ingest_league_event(conn, args.archive, args.league_event, now)
+            else:
+                rep = ingest.ingest_game(conn, args.archive, args.game_pk, args.games)
         except ingest.IngestError as exc:
             raise SystemExit(f"clv ingest: {exc}") from None
-        print(f"gamePk {rep.game_pk} -> event {rep.event_id} in {args.db}")
-        for table, n in sorted(rep.rows.items()):
-            print(f"  {table}: {n}")
-        for vendor_id, why in sorted(rep.unmatched.items()):
-            print(f"  not this game: The Odds API event {vendor_id} ({why})")
-        for reason, n in sorted(rep.quarantined.items()):
-            first_ref, last_ref, first_ms, last_ms = rep.quarantine_span[reason]
-            print(f"  quarantined {reason}: {n}, {ms_iso(first_ms)} .. {ms_iso(last_ms)} ({first_ref} .. {last_ref})")
+        if rep.game_pk is not None:
+            print(f"gamePk {rep.game_pk} -> event {rep.event_id} in {args.db}")
+        else:
+            print(f"league event {rep.native_event_id} (venue side) in {args.db}")
+        print_ingest_report(rep)
 
     elif args.cmd == "record":
         try:
