@@ -2,7 +2,7 @@
 
 Date: 2026-10-08
 
-Status: accepted for R0; revisit when the A1 host is chosen
+Status: accepted for R0. For the A1 host, see `2026-10-16-a1-host.md`: the recorder moves to its own host, which receives only the read key
 
 ## Context
 

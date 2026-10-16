@@ -95,6 +95,18 @@ value = 10
 status = "provisional"
 revised_by = "R0; the public response is cached 5 s"
 
+# --- A1 collector -------------------------------------------------------------
+
+[a1.capture_lead_s]
+value = 90000
+status = "provisional"
+revised_by = "A1 storage pilot: 24 h reachability and volume"
+
+[a1.capture_tail_s]
+value = 14400
+status = "provisional"
+revised_by = "A1: captures the venue's end-of-game and grading transitions"
+
 # --- Streams and books ------------------------------------------------------------
 
 [stream.liveness_max_s]

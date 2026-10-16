@@ -16,6 +16,7 @@ See the implementation plan in [DESIGN.md §13](DESIGN.md).
 | [DESIGN.md](DESIGN.md) | The design: measurement contract, venues, archive format, schema, calibration, parameters (§10), plan (§13) |
 | [docs/vendor-capabilities.md](docs/vendor-capabilities.md) | Vendor facts with verification status and dates, plus a discrepancy log |
 | [docs/measurement-contract.md](docs/measurement-contract.md) | The v1 measurement contract: settlement states, venue equivalence, population |
+| [docs/measurement-contract-nba.md](docs/measurement-contract-nba.md) | The NBA version of the contract's §2–§3 (draft), for Track A |
 | [docs/feasibility.md](docs/feasibility.md) | The P0 feasibility verdict and the B0 historical sample |
 | [docs/v0-data-shapes.md](docs/v0-data-shapes.md) | What the recorded golden-game candidate looks like when parsed, and what that means for the V0 schema |
 | [docs/RESEARCH_PROTOCOL.md](docs/RESEARCH_PROTOCOL.md) | The model-evaluation protocol; inactive until a signal model exists |

@@ -651,6 +651,9 @@ Every threshold, interval, notional and tolerance the harness uses is listed her
 | `r0.min_free_disk_mb` | 5,000: below this, an alert event; recording never stops silently | provisional | R0/A1 measured volume |
 | `r0.stream_probe_reserve_fraction` | 0.5 of the `stream` bucket kept for subscribes and reconnects | provisional | R0/A1 measured probe demand |
 | `r0.novig_public_book_poll_interval_s` | 10: unsigned public book poll, only without a read key | provisional | R0; the public response is cached 5 s |
+| **A1 collector** (copied into `tools/raw_recorder/config.toml` when the collector reads them) | | | |
+| `a1.capture_lead_s` | 90,000 (25 h) before scheduled start, or from listing if later: the 24 h offset plus margin | provisional | A1 storage pilot: 24 h reachability and volume |
+| `a1.capture_tail_s` | 14,400 (4 h) after scheduled start; per-game override for delays | provisional | A1: captures the venue's end-of-game and grading transitions |
 | **Streams and books** | | | |
 | `stream.liveness_max_s` | 30 since admissible subject/channel evidence, including a successful unchanged snapshot probe | provisional | R0/A1: subject-level evidence and probe latency |
 | `stream.transport_liveness_max_s` | 45 since received traffic, including received control Ping/Pong; local sends do not refresh it | provisional | R0: 3× documented Novig 15 s Ping interval; independent of channel liveness |
