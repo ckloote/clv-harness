@@ -605,9 +605,9 @@ def test_the_same_trade_via_stream_and_csv_twice_changes_neither_count_nor_vwap(
             again()
     assert (conn.execute("SELECT count(*) FROM trade_execution").fetchone()[0],
             trade_vwap(conn, ids["novig"], 1, T - 600_000, T)) == once
-    assert once[1] == TradeVwap(Fraction(17, 25), 1, 15625)
+    assert once[1] == TradeVwap(Fraction(17, 25), 1, 15625, T - 125_000)
     # The stream's time, 5 s before the file's, decides the window.
-    assert trade_vwap(conn, ids["novig"], 0, T - 125_000, T - 120_000) == TradeVwap(Fraction(8, 25), 1, 15625)
+    assert trade_vwap(conn, ids["novig"], 0, T - 125_000, T - 120_000) == TradeVwap(Fraction(8, 25), 1, 15625, T - 125_000)
 
 
 @pytest.mark.parametrize("over", [

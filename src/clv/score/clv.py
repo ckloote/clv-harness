@@ -94,7 +94,7 @@ def _run(conn, now_ms, analysis_spec, snapshot_id) -> RunResult:
                     else:
                         price = close.price_as_of(conn, ref, cutoff, d)
                     mres = None if isinstance(ref, str) else resolution_ids[(ref.venue_instrument_id, ref.side)]
-                    cid = _insert_close(conn, snap, def_id, off_id, venue, outcome_id, mres, cutoff, price, now_ms)
+                    cid = close.write_close(conn, snap, def_id, off_id, venue, outcome_id, mres, cutoff, price, now_ms)
                     closes[(def_id, venue, outcome_id)] = (cid, price)
 
     run_id = conn.execute(
@@ -172,17 +172,6 @@ def _unique(xs: list[str]) -> list[str]:
 
 def _nd(x: Fraction | None) -> tuple[int | None, int | None]:
     return (None, None) if x is None else (x.numerator, x.denominator)
-
-
-def _insert_close(conn, snap, def_id, off_id, venue, outcome_id, mres, cutoff, p: close.Price, now_ms) -> int:
-    num, den = _nd(p.p)
-    return conn.execute(
-        "INSERT INTO close_price (fact_snapshot_id, close_def_id, off_resolution_id, ref_venue, outcome_id,"
-        " mapping_resolution_id, cutoff_ts_ms, book_tick_id, book_observed_ts_ms, quote_age_ms, liveness_age_ms,"
-        " p_close_num, p_close_den, spread_e4, unscoreable_reason, computed_ts_ms)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (snap, def_id, off_id, venue, outcome_id, mres, cutoff, p.tick_id, p.observed_ms, p.quote_age_ms,
-         p.liveness_age_ms, num, den, p.spread_e4, p.reason, now_ms)).lastrowid
 
 
 def _insert_score(conn, run_id, entry_id, venue, def_id, close_id, quote_id, d: Fraction, p_close: Fraction | None,

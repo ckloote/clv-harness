@@ -1,18 +1,22 @@
 """Trade VWAP over unique executions (DESIGN.md §5.6, §7.4), in exact arithmetic.
 
 An execution is counted once however many records describe it: the VWAP reads
-trade_execution, never its sightings. Its time is the earliest time its records
-give, preferring the venue's own stream time: the Novig daily file stamps a trade
-14 ms to 68 s after the stream does (docs/vendor-capabilities.md), so a file time
-alone can only move a trade later, never into a pre-cutoff window it was not in.
+trade_execution, never its sightings, so a Novig TAKER row (a sighting of a
+dual-side group, never an execution) cannot enter it. Its time is the earliest
+time its records give, preferring the venue's own stream time: the Novig daily
+file stamps a trade 14 ms to 68 s after the stream does
+(docs/vendor-capabilities.md), so a file time alone can only move a trade later,
+never into a pre-cutoff window it was not in.
 
     vwap(side) = sum(price_side_j * payout_j) / sum(payout_j)
 
 where price_side is the execution's price if it was quoted for `side`, else
-1 - price. B2 builds the historical close family on this (`close_hist_vwap_*`).
+1 - price. The historical close family `close_hist_vwap` is built on this
+(clv.close.definitions).
 """
 from __future__ import annotations
 
+import bisect
 import sqlite3
 from dataclasses import dataclass
 from fractions import Fraction
@@ -23,6 +27,7 @@ class TradeVwap:
     p: Fraction | None
     executions: int
     payout_cents: int
+    last_ms: int | None = None              # the latest execution time in the window
 
 
 def execution_times(conn: sqlite3.Connection, instrument_id: int, prefix: str = "") -> dict[int, int]:
@@ -34,19 +39,51 @@ def execution_times(conn: sqlite3.Connection, instrument_id: int, prefix: str = 
     return dict(rows.fetchall())
 
 
+def timing_sighting(conn: sqlite3.Connection, execution_id: int, prefix: str = "") -> tuple:
+    """The sighting that gives an execution its time under `execution_times`' rule: its earliest
+    stream sighting if any, else its earliest sighting. (trade_obs_id, source, role, venue_ts_ms,
+    raw_artifact_id, raw_line, raw_item)."""
+    return conn.execute(f"""
+        SELECT trade_obs_id, source, role, venue_ts_ms, raw_artifact_id, raw_line, raw_item
+        FROM {prefix}trade_source_observation WHERE execution_id = ?
+        ORDER BY role = 'stream' DESC, venue_ts_ms, trade_obs_id LIMIT 1""", (execution_id,)).fetchone()
+
+
+class Executions:
+    """Each instrument's executions in time order, read once: a run prices many windows of the
+    same instrument (every buffer and offset). Read through one fact snapshot (`prefix`)."""
+
+    def __init__(self, conn: sqlite3.Connection, prefix: str = ""):
+        self.conn, self.prefix = conn, prefix
+        self._by_instrument: dict[int, tuple[list[int], list[tuple]]] = {}
+
+    def of(self, instrument_id: int) -> tuple[list[int], list[tuple]]:
+        """(times, rows) sorted by (time, execution id); a row is (time, id, side, price, payout cents)."""
+        if instrument_id not in self._by_instrument:
+            times = execution_times(self.conn, instrument_id, self.prefix)
+            rows = sorted((times[eid], eid, s, Fraction(pnum, pden), cents) for eid, s, pnum, pden, cents in
+                          self.conn.execute(f"SELECT execution_id, side, price_num, price_den, payout_cents"
+                                            f" FROM {self.prefix}trade_execution WHERE venue_instrument_id = ?",
+                                            (instrument_id,)) if eid in times)
+            self._by_instrument[instrument_id] = ([r[0] for r in rows], rows)
+        return self._by_instrument[instrument_id]
+
+    def window(self, instrument_id: int, lo_ms: int, hi_ms: int) -> list[tuple]:
+        """The executions timed in [lo_ms, hi_ms)."""
+        times, rows = self.of(instrument_id)
+        return rows[bisect.bisect_left(times, lo_ms):bisect.bisect_left(times, hi_ms)]
+
+    def vwap(self, instrument_id: int, side: int, lo_ms: int, hi_ms: int) -> TradeVwap:
+        num, payout, last = Fraction(0), 0, None
+        rows = self.window(instrument_id, lo_ms, hi_ms)
+        for t, _, s, price, cents in rows:
+            num += (price if s == side else 1 - price) * cents
+            payout += cents
+            last = t
+        return TradeVwap(num / payout if payout else None, len(rows), payout, last)
+
+
 def trade_vwap(conn: sqlite3.Connection, instrument_id: int, side: int, lo_ms: int, hi_ms: int,
                prefix: str = "") -> TradeVwap:
     """VWAP for `side` over the unique executions timed in [lo_ms, hi_ms)."""
-    times = execution_times(conn, instrument_id, prefix)
-    num, payout, n = Fraction(0), 0, 0
-    for eid, s, pnum, pden, cents in conn.execute(
-            f"SELECT execution_id, side, price_num, price_den, payout_cents FROM {prefix}trade_execution"
-            f" WHERE venue_instrument_id = ? ORDER BY execution_id", (instrument_id,)):
-        t = times.get(eid)
-        if t is None or not lo_ms <= t < hi_ms:
-            continue
-        price = Fraction(pnum, pden)
-        num += (price if s == side else 1 - price) * cents
-        payout += cents
-        n += 1
-    return TradeVwap(num / payout if payout else None, n, payout)
+    return Executions(conn, prefix).vwap(instrument_id, side, lo_ms, hi_ms)

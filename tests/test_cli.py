@@ -1,8 +1,10 @@
-"""`clv inspect` keeps only the requested game's outputs from a shared Novig replay."""
+"""`clv inspect` keeps only the requested game's outputs from a shared Novig replay; `clv trace` takes one subject."""
 import json
 
+import pytest
+
 from clv.archive import Frame, Segment
-from clv.cli import game_subject, novig_summary
+from clv.cli import game_subject, main, novig_summary
 
 SEG = Segment("novig", "2026-10-08", "c.0001.jsonl.gz", "c", "0001", "0" * 64, 0, 0, None, None, "s1",
               "0.1.0", "r0-v1", False)
@@ -47,3 +49,10 @@ def test_gap_scopes_are_kept_only_for_this_game():
     assert game_subject(f"novig:market:{OURS}/book", g) and not game_subject(f"novig:market:{OTHER}/book", g)
     assert game_subject("kalshi:market:KX-CLE", g) and not game_subject("kalshi:market:KX-NYY", g)
     assert game_subject("odds_api:sport:baseball_mlb", g)
+
+
+@pytest.mark.parametrize("argv", [["trace"], ["trace", "--run", "1", "--close", "2"],
+                                  ["trace", "--execution", "1", "--close", "2"]])
+def test_trace_takes_exactly_one_subject(argv, tmp_path):
+    with pytest.raises(SystemExit, match="one of --run, --execution or --close"):
+        main(argv + ["--db", str(tmp_path / "x.sqlite")])

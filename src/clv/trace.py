@@ -15,6 +15,10 @@ sha256 is checked against `raw_artifact` before any line is read.
                cohort exclusions and check 2's per-entry comparison (q_e, p_e, the
                entry market's overround and the outlier flag)
 
+`trace_close` traces one historical close instead: its candle, or the executions in its
+trade window, each cited to the record that fixes its price and size and to the sighting
+that fixes its time (for a reconciled Novig trade, the stream's), by frame and item.
+
 Rationals are written exactly ("21/10") and as 6-place decimals for reading.
 """
 from __future__ import annotations
@@ -28,6 +32,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from clv import lineage
+from clv.close.vwap import Executions, timing_sighting
 from clv.timeutil import ms_iso
 
 
@@ -70,7 +75,10 @@ class _Frames:
         if artifact_id not in self.lines:
             relpath, sha = self.conn.execute("SELECT relpath, sha256 FROM raw_artifact WHERE raw_artifact_id = ?",
                                              (artifact_id,)).fetchone()
-            data = (self._root(relpath) / relpath).read_bytes()
+            path = self._root(relpath) / relpath
+            if not path.exists():
+                raise TraceError(f"{relpath}: not in the archive root {self._root(relpath)}")
+            data = path.read_bytes()
             if hashlib.sha256(data).hexdigest() != sha:
                 raise TraceError(f"{relpath}: bytes do not match the sha256 recorded at ingest")
             self.lines[artifact_id] = (relpath, gzip.decompress(data).split(b"\n"))
@@ -130,6 +138,77 @@ def trace_execution(conn: sqlite3.Connection, execution_id: int, root: Path, his
                           "price_native": x[5], "price": _q(Fraction(x[6], x[7])), "qty_native": x[8],
                           "payout_cents": x[9]},
             "sightings": sightings, "dual_side_takers": takers}
+
+
+def trace_close(conn: sqlite3.Connection, close_price_id: int, root: Path, hist_root: Path | None) -> dict:
+    """One historical close (DESIGN.md §5.6) and its evidence: the definition, the off resolution,
+    the reference mapping and either its candle, cited to frame and item, or every execution in
+    its trade window, cited likewise. The window is recomputed over the close's fact snapshot and
+    must reproduce the stored price and counts. A live close is traced with its scoring run."""
+    row = conn.execute("""SELECT c.fact_snapshot_id, d.name, d.family, d.params_json, c.ref_venue, o.team_abbreviation,
+                                 e.league_game_id, c.cutoff_ts_ms, c.p_close_num, c.p_close_den, c.unscoreable_reason,
+                                 c.quote_age_ms, c.spread_e4, c.candle_id, c.cutoff_candle_active, c.vwap_lo_ms,
+                                 c.vwap_hi_ms, c.vwap_executions, c.vwap_payout_cents, c.mapping_resolution_id,
+                                 r.earliest_plausible_start_ts_ms, r.selected_start_ts_ms, r.latest_plausible_start_ts_ms,
+                                 r.reason, r.resolver_version
+                          FROM close_price c JOIN close_def d USING (close_def_id) JOIN outcome o USING (outcome_id)
+                          JOIN event e ON e.event_id = o.event_id
+                          JOIN off_resolution r ON r.off_resolution_id = c.off_resolution_id
+                          WHERE c.close_price_id = ?""", (close_price_id,)).fetchone()
+    if row is None:
+        raise TraceError(f"no close_price {close_price_id}")
+    (snap, name, family, params, venue, team, game_pk, cutoff, pnum, pden, reason, age, spread, candle_id, active,
+     lo, hi, n, cents, resolution, earliest, selected, latest, off_reason, resolver) = row
+    if family != "close_hist":
+        raise TraceError(f"close_price {close_price_id} is a live close: trace it with its scoring run (--run)")
+    lineage.use(conn, snap)
+    frames = _Frames(conn, root, hist_root)
+    p = _frac(pnum, pden)
+    doc = {"close": {"definition": name, "family": family, "params": json.loads(params), "venue": venue,
+                     "game_pk": int(game_pk), "outcome": team, "cutoff": _iso(cutoff), "p_close": _q(p),
+                     "reason": reason, "quote_age_ms": age, "spread_e4": spread,
+                     "cutoff_candle_active": None if active is None else bool(active)},
+           "off": {"resolver": resolver, "earliest": _iso(earliest), "selected": _iso(selected),
+                   "latest": _iso(latest), "reason": off_reason}}
+    ref = conn.execute("""SELECT r.venue_instrument_id, r.side, v.native_id, m.polarity, m.mapping_status, m.method,
+                                 m.raw_artifact_id, m.raw_line
+                          FROM mapping_resolution r JOIN instrument_mapping_observation m USING (mapping_obs_id)
+                          JOIN venue_instrument v ON v.venue_instrument_id = r.venue_instrument_id
+                          WHERE r.mapping_resolution_id = ?""", (resolution,)).fetchone() if resolution else None
+    if ref is not None:
+        doc["reference"] = {"instrument": f"{venue}:{ref[2]}", "side": ref[1], "polarity": ref[3], "status": ref[4],
+                            "method": ref[5], "frame": frames.frame(ref[6], ref[7])}
+    if candle_id is not None:
+        k = conn.execute("""SELECT tier, resolution_s, interval_start_ms, interval_end_ms, side, bid_close_e4,
+                                   ask_close_e4, raw_artifact_id, raw_line, raw_item
+                            FROM historical_candle WHERE candle_id = ?""", (candle_id,)).fetchone()
+        doc["candle"] = {"tier": k[0], "resolution_s": k[1], "start": _iso(k[2]), "end": _iso(k[3]), "side": k[4],
+                         "bid_close_e4": k[5], "ask_close_e4": k[6], "frame": frames.frame(k[7], k[8]),
+                         "item": k[9], "record": frames.item(k[7], k[8], k[9])}
+    if hi is not None:
+        if ref is None:
+            raise TraceError(f"close_price {close_price_id} has a trade window but no reference mapping")
+        ex = Executions(conn, "f_")
+        executions = []
+        for t, eid, side, price, payout in ex.window(ref[0], lo, hi):
+            key, aid, line, item = conn.execute("SELECT execution_key, raw_artifact_id, raw_line, raw_item"
+                                                " FROM f_trade_execution WHERE execution_id = ?", (eid,)).fetchone()
+            # The record that fixes the price and size, and the one that fixes the time: for a
+            # reconciled Novig trade, the CSV row and the earlier stream sighting (PR #21 review).
+            _, source, role, ts, taid, tline, titem = timing_sighting(conn, eid, "f_")
+            if ts != t:
+                raise TraceError(f"execution {key}: its timing sighting says {_iso(ts)}, the window used {_iso(t)}")
+            executions.append({"key": key, "time": _iso(t), "side": side, "price": _q(price), "payout_cents": payout,
+                               "frame": frames.frame(aid, line), "item": item,
+                               "timed_by": {"source": source, "role": role, "venue_ts": _iso(ts),
+                                            "frame": frames.frame(taid, tline), "item": titem,
+                                            "record": frames.item(taid, tline, titem)}})
+        v = ex.vwap(ref[0], ref[1], lo, hi)
+        if (v.executions, v.payout_cents) != (n, cents) or (p is not None and v.p != p):
+            raise TraceError(f"close_price {close_price_id}: its trade window recomputes to {v}, not the stored close")
+        doc["window"] = {"from": _iso(lo), "to": _iso(hi), "executions": executions, "vwap": _q(v.p),
+                         "payout_cents": v.payout_cents}
+    return doc
 
 
 def trace(conn: sqlite3.Connection, run_id: int, root: Path, levels: bool = True,

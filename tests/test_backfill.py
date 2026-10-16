@@ -657,3 +657,114 @@ def test_a_history_stored_out_of_order_is_refused_not_repaired(archives):
     with pytest.raises(settlements.SettlementHistoryError, match="rebuild it from a clean database"):
         backfill.import_identity(c, hist, NOW + 1)
     assert counts(c) == before                        # the failed import left nothing behind
+
+
+# -- B2: historical closes, written and traced -----------------------------------------------------------
+
+def hist_closes(c):
+    """Both historical closes of 901's BOS outcome on both venues, written through the 0005 triggers.
+    The windows are widened so the small fixture prices something: the candle's age limit to 2 h,
+    the VWAP window to 3 h."""
+    from clv import lineage
+    from clv.close import definitions as close
+    from clv.close.vwap import Executions
+    from clv.off import resolver
+    snap = lineage.take(c, NOW)
+    lineage.use(c, snap)
+    heads = identity.current_mappings(c)
+    res = identity.write_resolutions(c, snap, heads, NOW)
+    (event,) = q(c, "SELECT event_id FROM event WHERE league_game_id = '901'")[0]
+    (bos,) = q(c, "SELECT outcome_id FROM outcome WHERE event_id = ? AND team_abbreviation = 'BOS'", event)[0]
+    off = resolver.resolve(c, event)
+    off_id = resolver.write(c, snap, off, NOW)
+    candle_def, vwap_def = close.hist_defs()
+    defs = (dataclasses.replace(candle_def, max_quote_age_s=7200), dataclasses.replace(vwap_def, vwap_window_s=3 * 3600))
+    ex, out = Executions(c, "f_"), {}
+    for d in defs:
+        def_id = close.ensure_def(c, d, NOW)
+        for venue in ("kalshi", "novig"):
+            ref = close.reference(c, heads, venue, bos)
+            cutoff = off.earliest_ms - d.buffer_s * 1000
+            p = close.hist_price_as_of(c, ref, cutoff, d, ex)
+            out[(d.method, venue)] = (close.write_close(c, snap, def_id, off_id, venue, bos,
+                                                        res[(ref.venue_instrument_id, ref.side)], cutoff, p, NOW), p)
+    return out
+
+
+def test_historical_closes_trace_to_their_candle_and_window(archives, tmp_path):
+    from clv import trace
+    hist, live = archives
+    c, _, _ = loaded(archives, tmp_path)
+    closes = hist_closes(c)
+    # Kalshi: the 23:11-23:12 candle starts at the 23:11 cutoff (first pitch 23:12), so it is wholly
+    # after it and contains nothing before it; the 22:00 one is the close. Novig has no candles.
+    cid, p = closes[("candle_mid_top", "kalshi")]
+    assert (p.p, p.cutoff_candle_active, p.quote_age_ms) == (Fraction(62, 100), False, 71 * 60_000)
+    assert closes[("candle_mid_top", "novig")][1].reason == "no_quotes"
+    doc = trace.trace_close(c, cid, live, hist)
+    assert doc["close"]["p_close"]["exact"] == "31/50" and doc["close"]["cutoff_candle_active"] is False
+    assert doc["candle"]["end"] == "2026-08-04T22:00:00.000Z" and doc["candle"]["frame"]["ref"].startswith("kalshi_hist/")
+    assert json.loads(doc["candle"]["record"])["yes_bid"]["close"] == "0.6100"
+    assert doc["reference"]["instrument"] == f"kalshi:{BOS_T}" and doc["reference"]["polarity"] == "direct"
+    # Novig: every execution before the cutoff, each counted once, recomputed to the stored price:
+    # the file's seven MAKER fills (t1 among them) and the two stream trades no row matched (t2, t3).
+    cid, p = closes[("trade_vwap", "novig")]
+    doc = trace.trace_close(c, cid, live, hist)
+    assert p.reason is None and doc["window"]["vwap"] == doc["close"]["p_close"]
+    assert len(doc["window"]["executions"]) == p.vwap_executions == 9
+    refs = Counter(e["frame"]["ref"].split("/", 1)[0] for e in doc["window"]["executions"])
+    assert refs == {"novig_hist": 7, "novig": 2}
+    # Kalshi has one pregame trade in the window: too few, kept with its counts and traced.
+    cid, p = closes[("trade_vwap", "kalshi")]
+    assert (p.reason, p.vwap_executions, p.vwap_payout_cents) == ("few_trades", 1, 10_000)
+    assert len(trace.trace_close(c, cid, live, hist)["window"]["executions"]) == 1
+
+
+def test_a_live_close_is_traced_with_its_run(archives, tmp_path):
+    from clv import trace
+    hist, live = archives
+    c, _, _ = loaded(archives, tmp_path)
+    hist_closes(c)
+    live_def = c.execute("INSERT INTO close_def (name, family, params_json, params_sha256, created_ts_ms)"
+                         " VALUES ('l', 'close_live', '{}', ?, ?)", ("c" * 64, NOW)).lastrowid
+    row = c.execute("SELECT * FROM close_price LIMIT 1").fetchone()
+    cid = c.execute("""INSERT INTO close_price (fact_snapshot_id, close_def_id, off_resolution_id, ref_venue, outcome_id,
+                       cutoff_ts_ms, unscoreable_reason, computed_ts_ms) VALUES (?, ?, ?, ?, ?, ?, 'no_quotes', ?)""",
+                    (row["fact_snapshot_id"], live_def, row["off_resolution_id"], row["ref_venue"], row["outcome_id"],
+                     row["cutoff_ts_ms"], NOW)).lastrowid
+    with pytest.raises(trace.TraceError, match="scoring run"):
+        trace.trace_close(c, cid, live, hist)
+
+
+def test_a_reconciled_execution_is_cited_to_the_sighting_that_times_it(archives, tmp_path):
+    # PR #21 review: t1's CSV row says 21:00:00, its stream sighting 20:59:55. A window ending at
+    # 21:00 holds it only by the stream time, so the trace must cite the stream sighting too.
+    from clv import lineage, trace
+    from clv.close import definitions as close
+    from clv.close.vwap import Executions
+    from clv.off import resolver
+    hist, live = archives
+    c, _, _ = loaded(archives, tmp_path)
+    snap = lineage.take(c, NOW)
+    lineage.use(c, snap)
+    heads = identity.current_mappings(c)
+    res = identity.write_resolutions(c, snap, heads, NOW)
+    (event,) = q(c, "SELECT event_id FROM event WHERE league_game_id = '901'")[0]
+    (nyy,) = q(c, "SELECT outcome_id FROM outcome WHERE event_id = ? AND team_abbreviation = 'NYY'", event)[0]
+    off_id = resolver.write(c, snap, resolver.resolve(c, event), NOW)
+    d = dataclasses.replace([d for d in close.hist_defs() if d.method == "trade_vwap"][0],
+                            vwap_min_executions=1, vwap_min_notional_usd=1)
+    ref = close.reference(c, heads, "novig", nyy)
+    as_of = iso_ms("2026-08-04T21:00:00Z")
+    p = close.hist_price_as_of(c, ref, as_of, d, Executions(c, "f_"))
+    assert (p.p, p.vwap_executions) == (Fraction(17, 25), 1)
+    cid = close.write_close(c, snap, close.ensure_def(c, d, NOW), off_id, "novig", nyy,
+                            res[(ref.venue_instrument_id, ref.side)], as_of, p, NOW)
+    (x,) = trace.trace_close(c, cid, live, hist)["window"]["executions"]
+    assert x["time"] == "2026-08-04T20:59:55.000Z"
+    assert x["frame"]["ref"].startswith("novig_hist/")                        # price and size: the CSV row
+    assert x["timed_by"]["role"] == "stream" and x["timed_by"]["frame"]["ref"].startswith("novig/")
+    assert x["timed_by"]["venue_ts"] == x["time"] and json.loads(x["timed_by"]["record"])["tradeId"] == "t1"
+    # Without the archive holding the timing sighting, the trace cannot verify the window.
+    with pytest.raises(trace.TraceError, match="not in the archive root"):
+        trace.trace_close(c, cid, tmp_path / "no-live-archive", hist)
