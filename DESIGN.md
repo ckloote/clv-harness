@@ -942,6 +942,7 @@ clv-harness/
     score/simulation.py         # the calibration simulation's reference-series generator
     score/calibration.py        # calibration runs: check 1 and the oracle sweep per close family
     gate/a1.py                  # Gate A1: injected faults against their gaps; storage and depth report
+    pilot.py                    # A1 storage pilot: storage, probes, quiet intervals, cutoffs, depth, listing lead
     dashboard/app.py
   tests/
     fixtures/                   # golden games (the first from V0) and synthetic fault streams

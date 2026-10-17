@@ -16,6 +16,8 @@
     clv calibrate                    B2: check 1 and the oracle sweep per historical close family (data/b2/)
     clv calibrate --dispersion       B2: the measured spread and item-12 rates only; nothing fitted
     clv gate a1 --from T --to T      Gate A1: every injected fault's gap, storage and depth (clv.gate.a1)
+    clv pilot --from T --to T        the A1 storage pilot: storage, probes, quiet intervals, cutoffs, depth,
+                                     listing lead (clv.pilot)
 
 `inspect` reads only sealed segments, runs every V0 parser over the game's
 capture window and prints what each source shows: book reconstruction and its
@@ -32,7 +34,18 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
-from clv import archive, backfill, db, entries, gaps, identity, ingest, mlb, trace
+from clv import (
+    archive,
+    backfill,
+    db,
+    entries,
+    gaps,
+    identity,
+    ingest,
+    mlb,
+    pilot,
+    trace,
+)
 from clv.backfill import coverage
 from clv.config import param
 from clv.games import GAMES, capture_window, load_game
@@ -289,6 +302,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--fact-snapshot", type=int, help="recompute over the facts of an earlier snapshot, as new runs")
     p.add_argument("--replicates", type=int, default=1_000, help="item-12 replicates in a dispersion run")
     p.add_argument("--out", type=Path, default=REPO / "data" / "b2", help="where the report is written")
+    p = sub.add_parser("pilot", help="the A1 storage pilot's numbers over a period (read-only)")
+    p.add_argument("--from", dest="lo", required=True, help="the period's start, ISO 8601 UTC")
+    p.add_argument("--to", dest="hi", required=True, help="the period's end, ISO 8601 UTC")
+    p.add_argument("--out", type=Path, help="also write the report (Markdown) here")
+    p.add_argument("--db", type=Path, default=db.DEFAULT_DB)
+    p.add_argument("--archive", type=Path, default=REPO / "archive")
     p = sub.add_parser("gate", help="a gate's checks over a run: A1, the fault-injected live collector")
     p.add_argument("gate", choices=["a1"])
     p.add_argument("--from", dest="lo", required=True, help="the run's start, ISO 8601 UTC")
@@ -371,6 +390,18 @@ def main(argv: list[str] | None = None) -> None:
                   + "; events per offset " + ", ".join(f"{calibration.label(k)} {n}" for k, n in r.n_by_offset.items()))
         for path in calibration.report(conn, snap, args.out):
             print(f"wrote {path}")
+    elif args.cmd == "pilot":
+        try:
+            rep = pilot.run(db.connect(args.db), args.archive, iso_ms(args.lo), iso_ms(args.hi))
+        except pilot.PilotError as exc:
+            raise SystemExit(f"clv pilot: {exc}") from None
+        text = pilot.render(rep)
+        sys.stdout.write(text)
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(text)
+        if not rep.complete():
+            raise SystemExit(f"clv pilot: incomplete, {len(rep.missing)} overlapping league event(s) not ingested")
     elif args.cmd == "gate":
         try:
             rep = gate_a1.run(db.connect(args.db), args.archive, iso_ms(args.lo), iso_ms(args.hi), args.min_per_kind)

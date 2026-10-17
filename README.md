@@ -58,6 +58,7 @@ src/clv/
   trace.py                  a scoring run traced to the raw frames behind every number
   gaps.py                   collection gaps from polls and streams
   gate/a1.py                Gate A1: each injected fault's gap checked against the facts; storage and depth
+  pilot.py                  the A1 storage pilot report: storage, probes, quiet intervals, cutoffs, depth, listing lead
   cli.py                    `clv inspect`, `migrate`, `ingest`, `record`, `correct`, `score`, `trace`, `backfill`,
                             `calibrate`, `gate`
   score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2) and the oracle mean
@@ -351,6 +352,24 @@ It checks, for each fault and each market and channel it touched, that:
 - the gap closes at a snapshot received after the fault.
 
 A resubscribe must instead show a fresh subscribe snapshot and no gap. Every closed stream gap in the run must close at a snapshot. It lists the gaps no fault explains, and reports storage per day and source and book depth against `close.depth_notionals_usd`. It prints PASS only if every check passes and each fault kind was applied `--min-per-kind` times (default 2). Otherwise it exits 1.
+
+## The A1 storage pilot
+
+The week after the cutover measures what the probe policy left provisional (`docs/decisions/2026-10-17-a1-probe-policy.md`). Once that week's league events are ingested from an archive sealed past its end, run:
+
+```bash
+uv run clv pilot --from 2026-11-03T00:00Z --to 2026-11-10T00:00Z --out data/pilot.md
+```
+
+It is read-only, and records nothing in the database. Sealing the archive past `--to` doesn't settle every event the period touched. An event starting after the period is recorded during it, but loads only once its own window has closed. So the report first lists any discovered event overlapping the period that isn't ingested yet, and exits 1 until there are none. It reports:
+- **storage:** per day and source;
+- **probes:** markets probed and skipped for budget per channel, inside and outside a dense window, with their token spend against the refill;
+- **quiet intervals:** each book's time between venue activity, by time to the scheduled start (an interval a gap overlaps counts as missing);
+- **cutoffs:** the live close function's verdict at every check-1 offset and close cutoff: live on recent evidence, live on a bracketing observation, or why not;
+- **depth:** book snapshots cut at the level cap, and how often both sides reach each depth notional;
+- **listing lead:** how long before its start each market first appeared in a catalog listing, which says whether the 24 h offset is reachable.
+
+The follow-up record sets the probe intervals and `book.full_snapshot_interval_s` from these numbers.
 
 ## The historical reference import (B1)
 
