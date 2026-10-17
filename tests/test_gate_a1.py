@@ -166,6 +166,9 @@ stream_probe_reserve_fraction = 0.5
 novig_public_book_poll_interval_s = 10
 [stream]
 channel_probe_interval_s = 1
+quiet_probe_interval_s = 1
+dense_probe_lead_s = 900
+dense_probe_tail_s = 1800
 transport_liveness_max_s = 45
 probe_timeout_s = 1
 subscription_check_interval_s = 60

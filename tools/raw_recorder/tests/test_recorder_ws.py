@@ -16,7 +16,7 @@ from aiohttp.test_utils import TestServer
 from raw_recorder.archive import ArchiveWriter, iter_archive, verify
 from raw_recorder.config import Params
 from raw_recorder.novig.signing import NovigSigner
-from raw_recorder.novig.stream import NovigStream, TokenBudget
+from raw_recorder.novig.stream import NovigStream, TokenBudget, alert_books
 from raw_recorder.replay import ws_evidence
 
 SPEC = json.loads((Path(__file__).parent / "fixtures" / "novig_signature_vectors.json").read_text())
@@ -29,7 +29,8 @@ def params(**overrides):
                 capture_lead_s=10800, capture_tail_s=5400, odds_window_lead_s=10800,
                 segment_max_s=3600, fsync_interval_s=5, rest_timeout_s=2, min_free_disk_mb=1,
                 stream_probe_reserve_fraction=0.5, novig_public_book_poll_interval_s=10,
-                channel_probe_interval_s=1, transport_liveness_max_s=5, probe_timeout_s=1,
+                channel_probe_interval_s=1, quiet_probe_interval_s=1, dense_probe_lead_s=900,
+                dense_probe_tail_s=1800, transport_liveness_max_s=5, probe_timeout_s=1,
                 subscription_check_interval_s=60,
                 reconnect_backoff_initial_s=0.05, reconnect_backoff_max_s=0.2,
                 a1_capture_lead_s=90000, a1_capture_tail_s=14400)
@@ -37,12 +38,12 @@ def params(**overrides):
     return Params(**base)
 
 
-def snapshot_reply(nonce, markets, channel, subscribed=False, seq=7):
+def snapshot_reply(nonce, markets, channel, subscribed=False, seq=7, lc_seq=1):
     """A snapshot reply; a subscribe's also lists what it subscribed, as Production does."""
     msg = {"ts": 1, "nonce": nonce}
     if subscribed:
         msg["subscribed"] = {"markets": {m: channel for m in markets}, "events": {}, "private": []}
-    msg["snapshot"] = {m: {"eventId": "e1", channel: {"seq": seq, "orders": {}}, "lifecycle": {"seq": 1, "status": "OPEN"}}
+    msg["snapshot"] = {m: {"eventId": "e1", channel: {"seq": seq, "orders": {}}, "lifecycle": {"seq": lc_seq, "status": "OPEN"}}
                        for m in markets}
     return json.dumps(msg)
 
@@ -106,7 +107,8 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None, busy_feed=Fal
                     if "snapshot" in req:
                         sel = req["snapshot"]["markets"]
                         await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values())),
-                                                         seq=7 if state["stale_replies"] else state.get("seq", 7)))
+                                                         seq=7 if state["stale_replies"] else state.get("seq", 7),
+                                                         lc_seq=state["probe_lifecycle_seq"]))
                     if "unsubscribe" in req:
                         for subject in req["unsubscribe"]:
                             subs.pop(subject.removeprefix("market:"), None)
@@ -137,11 +139,11 @@ def new_state(**venue):
     that asks for them, and `forget` markets are dropped before the next status reply."""
     return {"upgrades": [], "requests": [], "pongs": [], "pings_sent": 0,
             "on_subscribe": None, "unlisted_once": set(), "forget": set(), "skip": set(),
-            "stale_replies": False, **venue}
+            "stale_replies": False, "probe_lifecycle_seq": 1, **venue}
 
 
 async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=False, golive_at_s=None,
-                 markets=frozenset({MARKET}), busy_feed=False, **param_overrides):
+                 markets=frozenset({MARKET}), busy_feed=False, dense=None, **param_overrides):
     srv = TestServer(make_app(state, close_after_subscribe, golive_at_s, busy_feed))
     await srv.start_server()
     archive = ArchiveWriter(tmp_path, session_id="w" * 32, segment_max_s=3600, fsync_interval_s=5)
@@ -150,7 +152,8 @@ async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=Fa
             ws_url = str(srv.make_url("/v3/ws")).replace("http://", "ws://")
             rec = NovigStream(http=http, archive=archive, signer=SIGNER, ws_url=ws_url,
                               channel="book", markets_fn=lambda: frozenset(markets),
-                              params=params(**param_overrides), budget=budget or TokenBudget())
+                              params=params(**param_overrides), budget=budget or TokenBudget(),
+                              dense_fn=None if dense is None else (lambda: frozenset(dense)))
             task = asyncio.create_task(rec.run())
             await asyncio.sleep(seconds)
             task.cancel()
@@ -239,6 +242,69 @@ async def test_an_unanswered_resync_is_asked_again(tmp_path):
     assert len(events(frames, "sequence_gap_seen")) == 1
     (conn,) = ws_evidence(frames).values()
     assert len([e for e in conn.events if e["type"] == "probe_sent"]) >= 2
+
+
+async def test_a_quiet_market_outside_its_dense_window_is_probed_at_the_slow_interval(tmp_path):
+    # Probe policy (docs/decisions/2026-10-17-a1-probe-policy.md): near its start a quiet market is
+    # probed every stream.channel_probe_interval_s, elsewhere every stream.quiet_probe_interval_s.
+    other = "02b20979-c85a-7773-a716-87ee393b1156"
+    state = new_state()
+    frames = await record(tmp_path, state, seconds=3.2, markets=frozenset({MARKET, other}), dense={MARKET},
+                          channel_probe_interval_s=0.5, quiet_probe_interval_s=60)
+    probed = [m for e in events(frames, "probe_sent") for m in e["markets"]]
+    assert probed.count(MARKET) >= 2 and other not in probed
+    assert all(e["outside_dense"] == [] for e in events(frames, "probe_sent"))
+
+
+async def test_a_short_bucket_probes_dense_markets_before_quiet_ones(tmp_path):
+    # One probe affordable per tick, both markets due every tick: the dense one always goes first.
+    other = "02b20979-c85a-7773-a716-87ee393b1156"
+    state = new_state()
+    frames = await record(tmp_path, state, seconds=3.5, markets=frozenset({MARKET, other}), dense={MARKET},
+                          budget=TokenBudget(capacity=56, refill_per_s=40),
+                          channel_probe_interval_s=0.5, quiet_probe_interval_s=0.5)
+    sent = events(frames, "probe_sent")
+    assert sent and all(e["markets"] == [MARKET] for e in sent)
+    skipped = events(frames, "probe_skipped")            # the first tick, just after subscribing, affords none
+    assert sum(e["markets"] == [other] for e in skipped) >= 2
+    assert all(e["outside_dense"] == [m for m in e["markets"] if m == other] for e in skipped)
+
+
+async def test_a_transition_missed_on_the_trades_connection_gets_the_book_probed(tmp_path):
+    # Review of #28: a trades probe reply shows a lifecycle seq the connection never received. The
+    # book, streaming on another connection and probed only every 60 s here, is probed at once.
+    state = new_state(probe_lifecycle_seq=2)
+    srv = TestServer(make_app(state))
+    await srv.start_server()
+    archive = ArchiveWriter(tmp_path, session_id="w" * 32, segment_max_s=3600, fsync_interval_s=5)
+    streams = []
+    try:
+        async with aiohttp.ClientSession() as http:
+            ws_url = str(srv.make_url("/v3/ws")).replace("http://", "ws://")
+            budget = TokenBudget()
+            for channel, interval in (("book", 60), ("trades", 0.5)):
+                streams.append(NovigStream(http=http, archive=archive, signer=SIGNER, ws_url=ws_url, channel=channel,
+                                           markets_fn=lambda: frozenset({MARKET}),
+                                           params=params(channel_probe_interval_s=interval), budget=budget,
+                                           on_lifecycle=lambda m: alert_books(streams, m)))
+            tasks = [asyncio.create_task(s.run()) for s in streams]
+            await asyncio.sleep(3.0)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        archive.close()
+        await srv.close()
+    frames = list(iter_archive(tmp_path))
+    seen = events(frames, "lifecycle_missed_seen")
+    assert any(e["channel"] == "trades" and (e["last_seq"], e["got_seq"]) == (1, 2) for e in seen)
+    first = min(f["recv_ts_ms"] for f in frames if f["dir"] == "event"
+                and json.loads(f["frame"])["type"] == "lifecycle_missed_seen")
+    book_probes = [e for e in events(frames, "probe_sent") if e["channel"] == "book"]
+    assert book_probes
+    sent = [f["recv_ts_ms"] for f in frames if f["dir"] == "event" and json.loads(f["frame"])["type"] == "probe_sent"
+            and json.loads(f["frame"])["channel"] == "book"]
+    assert 0 < min(sent) - first <= 1_500
 
 
 async def test_disconnect_reconnects_with_new_conn_id_and_resubscribes(tmp_path):

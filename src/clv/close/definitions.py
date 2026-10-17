@@ -21,7 +21,8 @@ an old one (DESIGN.md §10). Checks, in order, each an unscoreable reason:
     collection_gap / crossed_book       a gap on the book's scope overlaps (tick, cutoff]; a quarantine
                                         gap (a later state replaced the book and was quarantined) is
                                         reported by its own reason
-    feed_stalled                        liveness evidence older than the source's limit
+    feed_stalled                        liveness evidence older than the source's limit, and (a stream
+                                        book) no later observation continuing the same state
     halted                              the book's venue status is not open
     venue_lag                           received more than stream.max_venue_lag_ms after venue time
     stale_book                          the book is older than close.max_quote_age_s
@@ -35,6 +36,15 @@ tick, through `hist_price_as_of`:
     close_hist_candle_mid_top   the last candle wholly before the as-of time
     close_hist_vwap             unique executions in [as_of - window, as_of); few_trades
                                 below close.hist_vwap_min_executions or _min_notional_usd
+
+A stream book with no evidence within its limit is still live when it is bracketed: the first
+channel observation after the as-of time continues the same state (a contiguous delta that left
+it unchanged or changed it on the same snapshot chain, or a confirmed probe), with no gap between
+(docs/decisions/2026-10-17-a1-probe-policy.md). An unchanged sequence proves the venue changed
+nothing in between, and every break (a sequence gap, a lifecycle transition, a reconnect) is a
+gap; a fresh snapshot (a subscription or resync) never brackets. The later observation decides
+only that the book chosen at or before the as-of time was still live, never which book or its
+price.
 
 Cohort eligibility (mapping status, settlement equivalence) is not a close
 precondition here: a close is priced whenever the book permits, and clv_score
@@ -58,7 +68,7 @@ from clv.identity import Mapping, canonical_ladder
 from clv.off.resolver import RESOLVER_VERSION
 from clv.venues.protocol import PRICE_SCALE, BinaryBook, Level
 
-CLOSE_VERSION = "close-v0.1"
+CLOSE_VERSION = "close-v0.2"           # v0.2: a stream book's liveness may come from a bracketing observation
 HIST_CLOSE_VERSION = "close-hist-v0.1"
 # The venue status in which a book is tradeable (docs/vendor-capabilities.md).
 OPEN_STATUS = {"novig": "OPEN", "kalshi": "active"}
@@ -214,6 +224,7 @@ class Price:
     source: str | None = None
     quote_age_ms: int | None = None
     liveness_age_ms: int | None = None
+    bracket_ms: int | None = None       # the later observation that vouched for a quiet book, if one did
     spread_e4: int | None = None
     bench: depth.Benchmark | None = None
     # A historical close's lineage instead of a tick: a candle, or a trade window and its counts.
@@ -268,20 +279,26 @@ def price_as_of(conn: sqlite3.Connection, ref: Reference, as_of_ms: int, d: Clos
                 liveness_age_ms=as_of_ms - last)
 
     scope = f"{ref.venue}:market:{ref.native_id}" + ("/book" if source == "stream" else "")
+    limit_s = d.stream_liveness_max_s if source == "stream" else d.poll_liveness_max_s
+    vouched = None
+    if seen["liveness_age_ms"] > limit_s * 1000 and source == "stream":
+        vouched = bracket(conn, ref.venue_instrument_id, tick_id, as_of_ms)
+    # No gap may overlap the stored book's interval up to the as-of time, or up to the bracket.
     gap = conn.execute("""
         SELECT o.reason FROM f_collection_gap o
         LEFT JOIN f_collection_gap c ON c.opens_gap_id = o.collection_gap_id
         WHERE o.kind = 'open' AND o.scope = ? AND o.boundary_ts_ms < ?
           AND (c.boundary_ts_ms IS NULL OR c.boundary_ts_ms > ?)
-        ORDER BY o.boundary_ts_ms, o.collection_gap_id LIMIT 1""", (scope, as_of_ms, observed)).fetchone()
-    limit_s = d.stream_liveness_max_s if source == "stream" else d.poll_liveness_max_s
+        ORDER BY o.boundary_ts_ms, o.collection_gap_id LIMIT 1""",
+                       (scope, as_of_ms if vouched is None else vouched, observed)).fetchone()
+    seen["bracket_ms"] = vouched
     book = book_of(conn, tick_id, ref.venue, ref.native_id)
     bids, asks = canonical_ladder(book, ref.side, "direct")
     spread = (round((Fraction(asks[0].price) - Fraction(bids[0].price)) * PRICE_SCALE)
               if bids and asks else None)
     if gap:
         reason = gap[0] if gap[0] in QUARANTINE_REASONS else "collection_gap"
-    elif seen["liveness_age_ms"] > limit_s * 1000:
+    elif seen["liveness_age_ms"] > limit_s * 1000 and vouched is None:
         reason = "feed_stalled"
     elif status != d.open_status[ref.venue]:
         reason = "halted"
@@ -293,6 +310,31 @@ def price_as_of(conn: sqlite3.Connection, ref: Reference, as_of_ms: int, d: Clos
         bench = benchmark(d, bids, asks, bool(truncated) or not complete)
         return Price(bench.p, bench.reason, spread_e4=spread, bench=bench, **seen)
     return Price(None, reason, spread_e4=spread, **seen)
+
+
+def bracket(conn: sqlite3.Connection, instrument_id: int, tick_id: int, as_of_ms: int) -> int | None:
+    """When the first stream observation after `as_of_ms` continues the state of `tick_id` (the
+    latest stream tick at or before it), that observation's time; otherwise None.
+
+    It continues the state when it is liveness evidence (a delta that left the book unchanged, or
+    a confirmed probe) before any later tick, since the ingest writes evidence only while the
+    stored state is current; or when it is a later tick resting on the same snapshot, a
+    contiguous delta that changed the book. A tick on a new snapshot (a subscription or resync)
+    starts new state and never brackets."""
+    snap = conn.execute("SELECT snapshot_raw_artifact_id, snapshot_raw_line FROM f_tick WHERE tick_id = ?",
+                        (tick_id,)).fetchone()
+    nxt = conn.execute(
+        "SELECT observed_ts_ms, snapshot_raw_artifact_id, snapshot_raw_line FROM f_tick"
+        " WHERE venue_instrument_id = ? AND source = 'stream' AND observed_ts_ms > ?"
+        " ORDER BY observed_ts_ms, tick_id LIMIT 1", (instrument_id, as_of_ms)).fetchone()
+    evidence = conn.execute(
+        "SELECT min(observed_ts_ms) FROM f_liveness_evidence WHERE venue_instrument_id = ? AND source = 'stream'"
+        " AND observed_ts_ms > ?", (instrument_id, as_of_ms)).fetchone()[0]
+    if evidence is not None and (nxt is None or evidence < nxt[0]):
+        return evidence
+    if nxt is not None and snap[0] is not None and tuple(nxt[1:]) == tuple(snap):
+        return nxt[0]
+    return None
 
 
 def write_close(conn: sqlite3.Connection, snapshot_id: int, def_id: int, off_id: int, venue: str, outcome_id: int,

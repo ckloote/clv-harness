@@ -57,7 +57,7 @@ class Gap:
     source: str
     scope: str                  # a subject ("kalshi:market:<ticker>") or "<subject>/<channel>" for streams
     reason: str                 # request_failed | recorder_restart | sequence_gap | lifecycle_reset
-                                # | reconnect | connection_lost | connection_end_unrecorded
+                                # | lifecycle_missed | reconnect | connection_lost | connection_end_unrecorded
     start_ms: int               # last trustworthy observation
     end_ms: int | None          # first trustworthy observation after; None while open
     start_ref: str | None

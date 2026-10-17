@@ -23,6 +23,9 @@ novig_public_book_poll_interval_s = 10      # r0.novig_public_book_poll_interval
 
 [stream]
 channel_probe_interval_s = 15               # stream.channel_probe_interval_s
+quiet_probe_interval_s = 300                # stream.quiet_probe_interval_s: outside a dense window
+dense_probe_lead_s = 900                    # stream.dense_probe_lead_s: dense window from start - this
+dense_probe_tail_s = 1800                   # stream.dense_probe_tail_s: to start + this
 transport_liveness_max_s = 45               # stream.transport_liveness_max_s
 probe_timeout_s = 5                         # stream.probe_timeout_s: a probe or subscribe unanswered this long is retried
 subscription_check_interval_s = 60          # stream.subscription_check_interval_s

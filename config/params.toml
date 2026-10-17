@@ -134,6 +134,21 @@ value = 15
 status = "provisional"
 revised_by = "R0/A1: subscription semantics and actual quota"
 
+[stream.quiet_probe_interval_s]
+value = 300
+status = "provisional"
+revised_by = "A1 storage pilot: quiet intervals and probe spend (`docs/decisions/2026-10-17-a1-probe-policy.md`)"
+
+[stream.dense_probe_lead_s]
+value = 900
+status = "provisional"
+revised_by = "A1 storage pilot"
+
+[stream.dense_probe_tail_s]
+value = 1800
+status = "provisional"
+revised_by = "A1 storage pilot: start delays"
+
 [stream.probe_timeout_s]
 value = 5
 status = "provisional"

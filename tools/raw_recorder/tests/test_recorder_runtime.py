@@ -57,6 +57,17 @@ def test_committed_config_matches_design_values():
     assert cfg.novig["channels"] == ["book", "trades"]
 
 
+def test_dense_probe_windows_surround_each_scheduled_start():
+    p = params(dense_probe_lead_s=900, dense_probe_tail_s=1800)
+    s = Schedule([game(1, 10 * H), game(2, 12 * H)], p)
+    assert s.dense_markets(10 * H - 900_001) == frozenset()                 # recorded, not yet dense
+    assert s.novig_markets(10 * H - 900_001) == {"m1", "m2"}
+    assert s.dense_markets(10 * H - 900_000) == {"m1"}
+    assert s.dense_markets(10 * H + 1_799_999) == {"m1"}
+    assert s.dense_markets(10 * H + 1_800_000) == frozenset()
+    assert s.dense_markets(12 * H) == {"m2"}
+
+
 def test_games_file_parses(tmp_path):
     path = tmp_path / "games.toml"
     path.write_text('[[game]]\ngame_pk = 1\nscheduled_start_utc = "2026-10-07T22:00:00Z"\n'

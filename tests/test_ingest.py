@@ -146,7 +146,9 @@ def write_archive(root: Path, games: Path, crossed_resync: str | None = None, la
                 CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
                       {"orderId": "w8", "price": "0.40", "qty": 1}],
                 CLE: [{"orderId": "l0", "price": "0.51", "qty": 500}]}}, "lifecycle": {"seq": 0, "status": "OPEN"}}}})
-        # A halt: a confirmed probe reports CLOSED with the book unchanged (review finding 2); GOLIVE reopens.
+        # A halt seen only in a probe: CLOSED with the book unchanged, at a lifecycle seq no delta brought
+        # (review finding 2). Under the probe policy that is a missed transition: the book is untrusted
+        # from its last observation and the reply re-establishes it, now CLOSED. GOLIVE reopens.
         send(T - 400_000, "in", {"ts": T - 400_001, "nonce": 3, "snapshot": {
             M: {"eventId": "ev1", "book": {"seq": 12, "orders": {
                 CWS: [{"orderId": "w9", "price": "0.485", "qty": 200}, {"orderId": "w0", "price": "0.48", "qty": 1000},
@@ -290,18 +292,19 @@ def test_books_ticks_evidence_and_snapshots(recorded):
                  GROUP BY 1, 2 ORDER BY 1, 2""")
     # Kalshi: 4 good polls per ticker, each a tick: changed, or re-established after a failed poll
     # or a restart even when unchanged. Novig poll: 2, the second unchanged. Novig stream: the
-    # snapshot, two deltas, a status change with the book unchanged (CLOSED), and the resync after
+    # snapshot, two deltas, the resync at a missed transition (CLOSED, book unchanged), and the resync after
     # GOLIVE (no tick at GOLIVE itself: the book is untrusted there); the crossed state is quarantined.
     assert by == [("kalshi", "poll", 8), ("novig", "poll", 1), ("novig", "stream", 5)]
-    # Probes: the first, and the CLOSED one. The probe confirming the quarantined crossed state adds none.
+    # Probes: the first only. The CLOSED one showed a missed transition, so it resynced rather than
+    # confirmed; the probe confirming the quarantined crossed state adds none.
     assert q(c, "SELECT source, kind, count(*) FROM liveness_evidence GROUP BY 1, 2 ORDER BY 1, 2") == [
-        ("poll", "poll_unchanged", 1), ("stream", "probe_confirmed", 2)]
+        ("poll", "poll_unchanged", 1), ("stream", "probe_confirmed", 1)]
     assert rep.quarantined == {"crossed_book": 1}
     # Complete ladders: each recorder session's first poll, the recovery after the failed polls, the
     # subscription, and every book.full_snapshot_interval_s (the fixture's events are minutes apart).
     assert q(c, "SELECT reason, source, count(*) FROM book_snapshot GROUP BY 1, 2 ORDER BY 1, 2") == [
-        ("first_poll", "poll", 5), ("periodic", "poll", 2), ("periodic", "stream", 2), ("resync", "poll", 2),
-        ("resync", "stream", 1), ("subscribe", "stream", 1)]
+        ("first_poll", "poll", 5), ("periodic", "poll", 2), ("periodic", "stream", 1), ("resync", "poll", 2),
+        ("resync", "stream", 2), ("subscribe", "stream", 1)]
     snap = q(c, """SELECT bid0_e4, bid1_e4, seq, venue_status, levels0, levels1 FROM tick
                    WHERE source = 'stream' ORDER BY observed_ts_ms""")
     assert snap == [(4800, 5100, 10, "OPEN", 1, 1), (4850, 5100, 11, "OPEN", 2, 1), (4850, 5100, 12, "OPEN", 3, 1),
@@ -328,7 +331,11 @@ def test_off_observations_and_gaps(recorded):
     # GOLIVE makes the book untrusted until the snapshot after it. The crossed delta then replaces
     # that stored book: a quarantine gap opens there and never closes, since the book stays crossed
     # (review of PR #8).
+    # The halt seen only in a probe is a missed transition: from the last trustworthy observation
+    # (the previous probe) to that reply.
     expected = [("open", f"novig:market:{M}/book", "crossed_book", T + 504_050),
+                ("open", f"novig:market:{M}/book", "lifecycle_missed", T - 499_950),
+                ("close", f"novig:market:{M}/book", "lifecycle_missed", T - 400_000),
                 ("open", f"novig:market:{M}/book", "lifecycle_reset", T + 503_244),
                 ("close", f"novig:market:{M}/book", "lifecycle_reset", T + 504_050)]
     for ticker in TICKERS:
@@ -355,7 +362,7 @@ def test_rejected_snapshot_cannot_restate_the_old_book_as_open(recorded_crossed_
     # Review regression: CLOSED at seq 12, then a snapshot reporting OPEN with a crossed book,
     # at seq 14 (a gap) or at seq 12 (a mismatch). The crossed book is quarantined, and the old
     # seq 12 book is never restated as OPEN: no tick, and no evidence, after the halt.
-    root, games, kind = recorded_crossed_resync
+    root, games, _ = recorded_crossed_resync
     c, rep = ingested((root, games))
     stream = q(c, "SELECT seq, venue_status, observed_ts_ms FROM tick WHERE source = 'stream' ORDER BY observed_ts_ms")
     assert stream[-1] == (12, "CLOSED", T - 400_000)
@@ -363,27 +370,28 @@ def test_rejected_snapshot_cannot_restate_the_old_book_as_open(recorded_crossed_
     assert q(c, "SELECT count(*) FROM liveness_evidence WHERE source = 'stream' AND observed_ts_ms > ?",
              T - 400_000) == [(0,)]
     assert rep.quarantined == {"crossed_book": 1}
-    # On a gap the feed itself resynced, so the sequence gap closes there, and the close function
-    # finds only the CLOSED seq 12 tick before the gap, which it rejects. On a mismatch the crossed
-    # replacement quarantines the CLOSED book, so a quarantine gap opens at it and stays open.
+    # Both replies show a lifecycle seq no delta brought, so each is a missed transition: the first
+    # resyncs the book as CLOSED, the second untrusts it from there and resyncs to the crossed
+    # (quarantined) book, whether at seq 14 or seq 12. The close function finds only the CLOSED
+    # seq 12 tick before the second gap, which it rejects.
     novig_gaps = q(c, "SELECT kind, reason, boundary_ts_ms FROM collection_gap WHERE scope LIKE 'novig:%' "
                       "ORDER BY collection_gap_id")
-    assert novig_gaps == ([("open", "sequence_gap", T - 400_000), ("close", "sequence_gap", T - 300_000)]
-                          if kind == "gap" else [("open", "crossed_book", T - 400_000)])
+    assert novig_gaps == [("open", "lifecycle_missed", T - 499_950), ("close", "lifecycle_missed", T - 400_000),
+                          ("open", "lifecycle_missed", T - 400_000), ("close", "lifecycle_missed", T - 300_000)]
 
 
 def test_lifecycle_freshness_does_not_follow_the_book_sequence(recorded_late_snapshot):
     # Review finding: a delayed snapshot whose book (seq 11) is behind the replay (seq 12) carries
-    # a newer lifecycle status (CLOSED, lifecycle seq 1). The book is rejected, the CLOSED is not:
-    # the stored seq 12 book is restated as CLOSED, citing the snapshot. A second delayed reply
-    # whose OPEN is behind lifecycle seq 1 changes nothing.
+    # a newer lifecycle status (CLOSED, lifecycle seq 1). No delta brought that transition, so under
+    # the probe policy it was missed: the seq 12 book is untrusted from its last observation, and
+    # the reply, being behind it, cannot re-establish it. The CLOSED is still never priced as OPEN:
+    # the gap stays open, so no close reads the seq 12 book after it. A second delayed reply whose
+    # OPEN is behind lifecycle seq 1 changes nothing.
     c, _ = ingested(recorded_late_snapshot)
     stream = q(c, "SELECT seq, venue_status, observed_ts_ms FROM tick WHERE source = 'stream' ORDER BY observed_ts_ms")
-    assert stream == [(10, "OPEN", T - 1_999_990), (11, "OPEN", T - 1_000_000), (12, "OPEN", T - 999_000),
-                      (12, "CLOSED", T - 998_950)]
-    levels = q(c, """SELECT side, rank, price_native FROM tick_level WHERE tick_id = (SELECT max(tick_id) FROM tick
-                     WHERE source = 'stream') ORDER BY side, rank""")
-    assert levels == [(0, 0, "0.485"), (0, 1, "0.48"), (0, 2, "0.40"), (1, 0, "0.51")]   # the seq 12 book
+    assert stream == [(10, "OPEN", T - 1_999_990), (11, "OPEN", T - 1_000_000), (12, "OPEN", T - 999_000)]
+    assert q(c, "SELECT kind, reason, boundary_ts_ms FROM collection_gap WHERE scope LIKE 'novig:%'") == [
+        ("open", "lifecycle_missed", T - 999_000)]
     assert q(c, "SELECT count(*) FROM liveness_evidence WHERE source = 'stream'") == [(0,)]
 
 

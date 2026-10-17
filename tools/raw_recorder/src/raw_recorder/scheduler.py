@@ -8,6 +8,11 @@ entry quotes are pregame, and credits are scarce.
 A league event (A1) has a window too, by default `a1.capture_lead_s` before its
 scheduled start, so the 24 h offset is captured, to `a1.capture_tail_s` after.
 It has no odds window and no StatsAPI feeds: those are MLB's.
+
+Every entry's markets are in a dense probe window from `stream.dense_probe_lead_s`
+before its scheduled start to `stream.dense_probe_tail_s` after it: every close cutoff
+falls there, so quiet channels are probed every `stream.channel_probe_interval_s`, and
+every `stream.quiet_probe_interval_s` elsewhere (docs/decisions/2026-10-17-a1-probe-policy.md).
 """
 from __future__ import annotations
 
@@ -54,6 +59,7 @@ class Schedule:
     def __init__(self, games: list[Game], params: Params, events: list[LeagueEvent] = ()):
         self.capture = capture_windows([*games, *events], params)
         self.odds = odds_windows(games, params)
+        self.dense_lead_ms, self.dense_tail_ms = params.dense_probe_lead_s * 1000, params.dense_probe_tail_s * 1000
 
     def active(self, t_ms: int) -> list[Window]:
         return [w for w in self.capture if w.contains(t_ms)]
@@ -63,6 +69,12 @@ class Schedule:
 
     def novig_markets(self, t_ms: int) -> frozenset[str]:
         return frozenset(m for w in self.active(t_ms) for m in w.game.novig_markets)
+
+    def dense_markets(self, t_ms: int) -> frozenset[str]:
+        """The recorded Novig markets inside their dense probe window."""
+        return frozenset(m for w in self.active(t_ms)
+                         if w.game.scheduled_start_ms - self.dense_lead_ms <= t_ms < w.game.scheduled_start_ms + self.dense_tail_ms
+                         for m in w.game.novig_markets)
 
     def kalshi_tickers(self, t_ms: int) -> tuple[str, ...]:
         return tuple(dict.fromkeys(t for w in self.active(t_ms) for t in w.game.kalshi_tickers))
