@@ -385,14 +385,21 @@ def _poll_reasons(poll_gaps: list[gaps.Gap]):
 
 
 def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: Path = GAMES,
-                now_ms: int | None = None) -> IngestReport:
-    """Ingest one game in a single transaction. Refuses a game whose recording is already ingested.
+                now_ms: int | None = None, require_sealed: bool = True) -> IngestReport:
+    """Ingest one game in a single transaction. Refuses a game whose recording is already ingested,
+    or whose capture window the archive is not sealed past: a game is loaded once, so loading
+    part of its window would leave the rest out for good.
+
+    `require_sealed=False` is for golden replays only (tests/golden.py), whose whole output is
+    compared with a reviewed trace, so an incomplete archive fails them anyway.
 
     The game's identity rows may already exist, from the historical import (clv.backfill):
     they are shared, not duplicated (clv.identity.ensure_*)."""
     now = int(time.time() * 1000) if now_ms is None else now_ms
     g = load_game(game_pk, games_path, root)
     lo, hi = capture_window(g)
+    if require_sealed and (why := unsealed(Path(root), hi)) is not None:
+        raise IngestError(f"gamePk {game_pk} is not settled: {why}")
     if conn.execute("""SELECT 1 FROM event e JOIN event_alias a USING (event_id) JOIN raw_artifact r USING (raw_artifact_id)
                        WHERE e.league = 'MLB' AND e.league_game_id = ? AND r.source = 'mlb_statsapi'""",
                     (str(game_pk),)).fetchone():
@@ -630,10 +637,14 @@ def _ingest(w: Writer, root: Path, g: dict, lo: int, hi: int) -> IngestReport:
 # -- league events (A1): the venue side only ----------------------------------------------------
 
 def unsettled(root: Path, e: dict) -> str | None:
-    """Why a league event cannot be ingested yet, or None once its window has settled: the
-    archive's seal watermark is past the window's end. Elapsed time is not evidence: a mirror
-    can lag or stall, and an event once recorded as loaded is never loaded again."""
-    _, hi = league_window(e)
+    """Why a league event cannot be ingested yet, or None once its window has settled."""
+    return unsealed(root, league_window(e)[1])
+
+
+def unsealed(root: Path, hi: int) -> str | None:
+    """Why a capture window ending at `hi` is not settled yet, or None once the archive's seal
+    watermark is past it. Elapsed time is not evidence: a mirror can lag or stall, and a game or
+    event once recorded as loaded is never loaded again."""
     wm = archive.sealed_through(root)
     if wm is None:
         return f"the archive has no seal watermark ({archive.WATERMARK}) to show its window is complete"

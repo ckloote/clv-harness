@@ -202,6 +202,7 @@ def generate_synthetic(root: Path, crossed_before_cutoff: bool = False) -> None:
     o = w.stream("odds_api", "odds-syn")
     for i, (t, dk_cle) in enumerate(((S - 7000 * SEC, -118), (S - 3700 * SEC, -118), (S - 1800 * SEC, -120))):
         rest(o, f"o{i}", t, "/v4/sports/baseball_mlb/odds", "odds", odds(dk_cle), ["odds_api:sport:baseball_mlb"])
+    clock.t = S + 9_100 * SEC                   # idle past the window's end (capture_tail_s): sealed past it
     w.close()
     (root / "games.toml").write_text(f'''# Synthetic V0 golden game (tests/golden.py). Not a real game.
 [[game]]
@@ -221,7 +222,9 @@ def replay(archive_root: Path, games: Path, spec_dir: Path, game_pk: int, levels
     """Run a golden game end to end on a clean in-memory database. Returns the three traces."""
     conn = db.connect(":memory:")
     db.migrate(conn)
-    ingest.ingest_game(conn, archive_root, game_pk, games, now_ms=NOW)
+    # 849832's local archive predates the seal watermark (the restore test replays it from a sealed
+    # mirror), and a golden replay's whole output is compared with a reviewed trace anyway.
+    ingest.ingest_game(conn, archive_root, game_pk, games, now_ms=NOW, require_sealed=game_pk != 849832)
     entries.record(conn, archive_root, spec_dir / "entries.toml", NOW, games)
     run1 = scoring.run(conn, NOW)
     identity.apply_corrections(conn, spec_dir / "corrections.toml", NOW)
