@@ -270,10 +270,13 @@ class Relay:
             self.drops.remove(d)
             if not d.done.done():
                 d.done.cancel()
-        rep = {"ok": stall or bool(d.dropped), "start_ts_ms": start, "end_ts_ms": now_ms(),
+        # A stall that dropped nothing touched no market, so it is not applied, like a skip that
+        # found no delta: clv gate a1 lists it and does not count it, and it can be repeated.
+        rep = {"ok": bool(d.dropped), "start_ts_ms": start, "end_ts_ms": now_ms(),
                "market": market, "channel": channel, "dropped": d.dropped, "spared": d.spared}
         if not rep["ok"]:
-            rep["error"] = f"no delta for {market} {channel} within {seconds:g} s"
+            rep["error"] = (f"no delta for {market} {channel} during the {seconds:g} s stall" if stall
+                            else f"no delta for {market} {channel} within {seconds:g} s")
         return web.json_response(rep)
 
 

@@ -73,6 +73,7 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
   games.toml                hand-checked games, Novig markets and Kalshi tickers; override discovery
   config.paper.toml         Novig Paper (play money) test configuration: own archive, Novig only
   config.paper-rehearsal.toml   Paper with the Gate A1 fault harness on: the A1 rehearsal on the Pi
+  config.gate.toml          Production with the Gate A1 fault harness on: the gate run
   src/raw_recorder/
     archive.py              §7.1 archive: append, rotate, seal, journal, read, verify
     rest.py                 REST envelope: every request, body and failure under its request_id
@@ -90,8 +91,9 @@ tools/b0/                   P0 B0 research scripts that reproduce docs/feasibili
 deploy/raw-recorder.service systemd user unit (the workstation, R0)
 deploy/raw-recorder-pi.service, raw-recorder-relay.service   the A1 host's recorder and Gate A1 relay (system units)
 deploy/raw-recorder-paper.service, raw-recorder-paper-relay.service   the same on Paper, for the A1 rehearsal
+deploy/raw-recorder-gate.conf   drop-in: the A1 host's recorder on config.gate.toml, for the gate run
 deploy/archive-mirror.*     the workstation's mirror of the recorder host's sealed archive: script, service, timer
-deploy/pi-host.md           runbook: setting up the Pi, the mirror, the cutover and the Paper rehearsal
+deploy/pi-host.md           runbook: setting up the Pi, the mirror, the cutover, the Paper rehearsal, the gate run
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
@@ -338,7 +340,7 @@ uv run raw-recorder relay
 uv run raw-recorder fault sequence-skip --market <id> --channel book
 ```
 
-The other faults are `channel-stall --market <id> --channel book --seconds 30`, `socket-kill [--channel book]`, `process-kill` and `resubscribe --market <id>`. Each prints its report and exits 1 if the fault did not happen. The report names every market the fault touched, a dropped frame's other markets included. It also gives the time the last of their capture windows closes: the gate needs each of those markets ingested, so keep recording until then. A process kill needs a service manager to restart the recorder within `--restart-wait` seconds.
+The other faults are `channel-stall --market <id> --channel book --seconds 30`, `socket-kill [--channel book]`, `process-kill` and `resubscribe --market <id>`. Each prints its report and exits 1 if the fault did not happen, including a skip that found no delta and a stall that dropped nothing: those are listed by the gate and not counted. The report names every market the fault touched, a dropped frame's other markets included. It also gives the time the last of their capture windows closes: the gate needs each of those markets ingested, so keep recording until then. A process kill needs a service manager to restart the recorder within `--restart-wait` seconds.
 
 Once the run's events are ingested (`clv ingest --league-events`) from an archive sealed past the run, the gate reads the labels and the facts:
 

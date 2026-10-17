@@ -4,7 +4,7 @@ This is the runbook for `docs/decisions/2026-10-16-a1-host.md`:
 - **The Pi** (a Raspberry Pi 5 with a Samsung T5 SSD) runs the recorder and nothing else.
 - **The workstation** mirrors its sealed archive every 15 minutes and does all derived work from that mirror.
 
-Section 9 rehearses all of it on Novig Paper before the cutover, without touching the Production key or archive.
+Section 9 rehearses all of it on Novig Paper before the cutover, without touching the Production key or archive. Section 10 runs Gate A1 itself.
 
 Commands marked **(Pi, root)** run as the Pi's administrator with `sudo`. Commands marked **(Pi, recorder)** run as the `recorder` account (`sudo -iu recorder`). Unmarked commands run on the workstation.
 
@@ -275,7 +275,7 @@ R0 records the postseason on the workstation until the last game's window closes
    cd ~/clv-harness && .venv/bin/raw-recorder verify
    ```
 
-5. **Enable NBA** with a commit to `config.toml` that sets `[[league]] enabled = true`, then `git pull` on the Pi as `recorder`. Doing this after step 2 keeps it out of the workstation recorder, which a crash restart would otherwise reload with NBA on.
+5. **Enable NBA** with a commit that sets `[[league]] enabled = true` in `config.toml` and in `config.gate.toml` (tests hold the two equal), then `git pull` on the Pi as `recorder`. Doing this after step 2 keeps it out of the workstation recorder, which a crash restart would otherwise reload with NBA on.
 6. **Start the Pi's recorder.** **(Pi, root):**
 
    ```bash
@@ -425,3 +425,45 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    - **`market not ingested`** names a market a fault touched whose window hadn't closed when the run ended. The fault's report gave the time to keep recording until (step 4). Rerun the rehearsal and stop after that time.
 
 The Paper archive can stay on the SSD; it is a separate root. To rehearse again, start from step 3.
+
+## 10. The gate run
+
+Gate A1 runs on Production after the storage pilot and its record. `docs/decisions/2026-10-17-a1-gate-plan.md` fixes when it runs, the fault schedule, when it ends and what passes. These are the host's steps.
+
+1. **Switch the recorder to the gate configuration**, away from any dense window. `config.gate.toml` is `config.toml` with the fault harness on and the stream through the relay. **(Pi, root):**
+
+   ```bash
+   sudo install -D -m 644 /home/recorder/clv-harness/deploy/raw-recorder-gate.conf /etc/systemd/system/raw-recorder.service.d/gate.conf
+   ```
+
+   ```bash
+   sudo cp /home/recorder/clv-harness/deploy/raw-recorder-relay.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart raw-recorder.service
+   ```
+
+   The drop-in pulls in the relay. Check that both units are active, then write down the time in UTC. It is `T0`, the gate's `--from`.
+2. **Inject the record's schedule.** **(Pi, recorder)**, with `C=tools/raw_recorder/config.gate.toml`, as in section 9, step 4: `.venv/bin/raw-recorder --config $C fault …`. Keep each report: the results need its time, target and outcome. The latest `keep_recording_until_utc` among them sets the end.
+3. **After the end**, switch back to Production, again away from a dense window. **(Pi, root):**
+
+   ```bash
+   sudo rm /etc/systemd/system/raw-recorder.service.d/gate.conf && sudo systemctl daemon-reload && sudo systemctl restart raw-recorder.service && sudo systemctl stop raw-recorder-relay.service
+   ```
+
+   Check with `systemctl cat raw-recorder` that no drop-in is left.
+4. **On the workstation,** once the mirror has caught up:
+
+   ```bash
+   uv run clv ingest --league-events
+   ```
+
+   ```bash
+   uv run clv gate a1 --from <T0> --to <end> --min-per-kind 2 --out data/gate-a1.md
+   ```
+
+   Then, once every overlapping event is ingested:
+
+   ```bash
+   uv run clv pilot --from <T0> --to <end> --out data/gate-a1-pilot.md
+   ```
+
+   The results go in the record's results section, without prices or raw frames.
+
