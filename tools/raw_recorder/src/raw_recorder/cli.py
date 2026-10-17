@@ -283,6 +283,10 @@ def cmd_games(args) -> int:
     return code
 
 
+def _utc_iso(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _et_time(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).astimezone(ET).strftime("%a %b %d %H:%M ET")
 
@@ -470,6 +474,18 @@ def cmd_fault(args) -> int:
     except (faults.FaultError, OSError) as exc:
         print(f"raw-recorder fault: {exc} (is the recorder running with [faults] enabled?)", file=sys.stderr)
         return 2
+    if rep.get("touched_markets"):
+        # The gate needs every touched market ingested, which waits for its window to close.
+        from .scheduler import capture_windows, last_window_end
+        windows = capture_windows([*load_all_games(cfg), *load_events(cfg.events_discovered_path)], cfg.params)
+        end, unknown = last_window_end(windows, rep["touched_markets"])
+        if end is not None:
+            rep["keep_recording_until_utc"] = _utc_iso(end)
+            print(f"raw-recorder fault: touched {len(rep['touched_markets'])} market(s); the last of their windows"
+                  f" closes {_utc_iso(end)} ({_et_time(end)}). Keep recording until then, or clv gate a1 fails"
+                  " with `market not ingested`", file=sys.stderr)
+        if unknown:
+            print(f"raw-recorder fault: touched market(s) in no capture window: {', '.join(unknown)}", file=sys.stderr)
     print(json.dumps(rep, indent=2))
     return 0 if rep.get("ok") else 1
 

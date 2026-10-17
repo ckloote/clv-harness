@@ -337,7 +337,7 @@ uv run raw-recorder relay
 uv run raw-recorder fault sequence-skip --market <id> --channel book
 ```
 
-The other faults are `channel-stall --market <id> --channel book --seconds 30`, `socket-kill [--channel book]`, `process-kill` and `resubscribe --market <id>`. Each prints its report and exits 1 if the fault did not happen. A process kill needs a service manager to restart the recorder within `--restart-wait` seconds.
+The other faults are `channel-stall --market <id> --channel book --seconds 30`, `socket-kill [--channel book]`, `process-kill` and `resubscribe --market <id>`. Each prints its report and exits 1 if the fault did not happen. The report names every market the fault touched, a dropped frame's other markets included. It also gives the time the last of their capture windows closes: the gate needs each of those markets ingested, so keep recording until then. A process kill needs a service manager to restart the recorder within `--restart-wait` seconds.
 
 Once the run's events are ingested (`clv ingest --league-events`) from an archive sealed past the run, the gate reads the labels and the facts:
 
