@@ -53,6 +53,15 @@ def use(conn: sqlite3.Connection, snapshot_id: int) -> dict[str, int]:
     return marks
 
 
+def use_current(conn: sqlite3.Connection) -> None:
+    """Point the `f_<table>` views at every fact now stored, recording no snapshot: for a read-only
+    report that stores nothing derived (clv pilot). A derived run always goes through take() and
+    use(), so its inputs can be recovered."""
+    for t in FACT_TABLES:
+        conn.execute(f"DROP VIEW IF EXISTS temp.f_{t}")
+        conn.execute(f"CREATE TEMP VIEW f_{t} AS SELECT * FROM main.{t}")
+
+
 def replicate(conn: sqlite3.Connection, snapshot_id: int, now_ms: int) -> int:
     """A new snapshot of exactly an earlier one's facts: how a run is recomputed, since derived
     rows are immutable and keyed by their snapshot."""
