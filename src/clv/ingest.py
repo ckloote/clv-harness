@@ -390,8 +390,9 @@ def ingest_game(conn: sqlite3.Connection, root: Path, game_pk: int, games_path: 
     or whose capture window the archive is not sealed past: a game is loaded once, so loading
     part of its window would leave the rest out for good.
 
-    `require_sealed=False` is for golden replays only (tests/golden.py), whose whole output is
-    compared with a reviewed trace, so an incomplete archive fails them anyway.
+    `require_sealed=False` is for the tests that replay the recorded 849832 from its local archive,
+    which predates the watermark (tests/golden.py, tests/test_ingest.py). Each compares its output
+    exactly, so an incomplete archive fails them anyway.
 
     The game's identity rows may already exist, from the historical import (clv.backfill):
     they are shared, not duplicated (clv.identity.ensure_*)."""

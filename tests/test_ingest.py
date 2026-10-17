@@ -600,7 +600,9 @@ ARCHIVE = Path(__file__).resolve().parents[1] / "archive"
 def test_recorded_849832_ingests():
     c = db.connect(":memory:")
     db.migrate(c)
-    rep = ingest_game(c, ARCHIVE, PK, now_ms=NOW)
+    # Not required to be sealed: the local archive predates the seal watermark (as in tests/golden.py),
+    # and every count below is asserted exactly, so an incomplete archive fails here anyway.
+    rep = ingest_game(c, ARCHIVE, PK, now_ms=NOW, require_sealed=False)
     assert q(c, "PRAGMA foreign_key_check") == []
     assert rep.rows["venue_instrument"] == 12 and rep.rows["instrument_mapping_observation"] == 24
     assert rep.rows["off_observation"] == 14
