@@ -2,7 +2,9 @@
 # copying the recorder host's sealed archive into this checkout's archive/
 # (docs/decisions/2026-10-16-a1-host.md). Started by archive-mirror.timer.
 #
-# Install (deploy/pi-host.md, "The workstation mirror", sets up the ssh key first):
+# Install (deploy/pi-host.md, "The workstation mirror", sets up the ssh key first). Enable and
+# start it only at the cutover (deploy/pi-host.md step 8.7): until then this checkout's archive/
+# is R0's live archive, not a mirror.
 #   mkdir -p ~/.config/systemd/user ~/.config/archive-mirror
 #   cp deploy/archive-mirror.service deploy/archive-mirror.timer ~/.config/systemd/user/
 #   printf 'ARCHIVE_MIRROR_SRC=pi-archive:\nARCHIVE_MIRROR_DST=%s/code/clv-harness/archive\n' "$HOME" \

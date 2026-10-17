@@ -115,10 +115,18 @@ sudo install -d -o recorder -g recorder -m 750 /mnt/ssd/archive
 
 **Never on the Pi:** `clv` ingest and calibration, and `raw-recorder backfill`. The workstation does those from the mirror.
 
-**For a Paper rehearsal,** `config.paper.toml` writes to `archive-paper/`. Put that on the SSD the same way first:
+**The Pi's archive stays empty until the cutover seeds it** (step 8). Each day's journal, `manifest.jsonl`, is append-only on the host that writes it, and rsync replaces whole files. So anything written there first by the Pi would collide with the workstation's journal for the same UTC day: the seed would leave the Pi's own segments unjournaled, or the mirror would drop the workstation's. Every check below writes elsewhere.
+
+**For a Paper rehearsal,** `config.paper.toml` writes to `archive-paper/`, a separate root. Put that on the SSD too. **(Pi, root):**
 
 ```bash
-mkdir /mnt/ssd/archive-paper && ln -s /mnt/ssd/archive-paper ~/clv-harness/archive-paper
+sudo install -d -o recorder -g recorder -m 750 /mnt/ssd/archive-paper
+```
+
+Then, **(Pi, recorder):**
+
+```bash
+ln -s /mnt/ssd/archive-paper ~/clv-harness/archive-paper
 ```
 
 ## 5. The read key
@@ -129,10 +137,14 @@ mkdir /mnt/ssd/archive-paper && ln -s /mnt/ssd/archive-paper ~/clv-harness/archi
 scp ~/.config/raw-recorder/novig-read.pem <admin>@<pi>:/tmp/
 ```
 
-Then, **(Pi, root)**, move it into place with mode 0600:
+Then, **(Pi, root)**, create the configuration directory as `recorder`, so it and its parents are the account's own, and move the key into it with mode 0600:
 
 ```bash
-sudo install -D -o recorder -g recorder -m 600 /tmp/novig-read.pem /home/recorder/.config/raw-recorder/novig-read.pem && rm /tmp/novig-read.pem
+sudo -u recorder install -d -m 700 /home/recorder/.config/raw-recorder
+```
+
+```bash
+sudo install -o recorder -g recorder -m 600 /tmp/novig-read.pem /home/recorder/.config/raw-recorder/novig-read.pem && rm /tmp/novig-read.pem
 ```
 
 **(Pi, recorder):** write `~/.config/raw-recorder/env`, mode 0600. It has the same lines as the workstation's, except the key path:
@@ -144,10 +156,18 @@ NOVIG_READ_KEY_PATH=/home/recorder/.config/raw-recorder/novig-read.pem
 
 `ODDS_API_KEY` is used only for MLB odds; add it before the 2027 season.
 
-**Check the key.** The command below writes to the archive, so run it before the unit is enabled:
+**Check the key, against a throwaway archive.** `echo` archives what it does, and the Pi's archive must stay empty. So run it with a copy of the config whose archive root is a temporary directory, then delete both:
 
 ```bash
-cd ~/clv-harness && set -a && . ~/.config/raw-recorder/env && set +a && .venv/bin/raw-recorder echo
+cd ~/clv-harness && sed '0,/^root = /s|^root = .*|root = "/tmp/key-check"|' tools/raw_recorder/config.toml > /tmp/key-check.toml
+```
+
+```bash
+set -a && . ~/.config/raw-recorder/env && set +a && .venv/bin/raw-recorder --config /tmp/key-check.toml echo
+```
+
+```bash
+rm -rf /tmp/key-check /tmp/key-check.toml
 ```
 
 ## 6. The units
@@ -210,7 +230,10 @@ sudo systemctl daemon-reload
    rsync --list-only pi-archive:
    ```
 
-5. **Install the units:** follow the comments in `deploy/archive-mirror.service`, with `ARCHIVE_MIRROR_SRC=pi-archive:`. The timer runs while you are logged out only with lingering enabled (`loginctl enable-linger "$USER"`, already on for R0). A run missed while the workstation slept runs on wake.
+5. **Install the units, but don't enable or start them yet.** Copy the files and write the env file as `deploy/archive-mirror.service`'s comments say, with `ARCHIVE_MIRROR_SRC=pi-archive:`. Stop before its `enable` and `start` lines: those wait for the cutover (step 8.7).
+   - **Why wait:** until then the workstation's `archive/` is R0's live archive, not a mirror. A run would publish the Pi's watermark over an archive still being written, and could vouch for windows the workstation hasn't sealed.
+   - **The guard:** the mirror refuses, and copies nothing, if a Pi journal does not extend the workstation's for the same day.
+   - **Logged out:** the timer runs while you are logged out only with lingering enabled (`loginctl enable-linger "$USER"`, already on for R0). A run missed while the workstation slept runs on wake.
 
 **Check the mirror.** Each run's log is in `journalctl --user -u archive-mirror`. Its watermark shows how far it vouches:
 
@@ -224,7 +247,13 @@ cat ~/code/clv-harness/archive/sealed_through.json
 
 R0 records the postseason on the workstation until the last game's window closes and its 12-hour feed refetch (`[mlb] refetch_after_s`) has run. Then:
 
-1. **Seed the Pi's archive while R0 still runs.** This bulk copy takes the time. **(Workstation)**
+1. **Seed the Pi's archive while R0 still runs.** This bulk copy takes the time. First check that the Pi's archive is still empty. **(Pi, recorder):** this must print nothing:
+
+   ```bash
+   find /mnt/ssd/archive -mindepth 1 -print -quit
+   ```
+
+   Then, **(Workstation):**
 
    ```bash
    rsync -rt --rsync-path='sudo -u recorder rsync' --exclude '*.part' --exclude 'sealed_through.json' --exclude '.recorder.lock' --exclude '.recorder.control' --exclude '*.tmp' ~/code/clv-harness/archive/ <admin>@<pi>:/mnt/ssd/archive/
@@ -252,7 +281,11 @@ R0 records the postseason on the workstation until the last game's window closes
    ```
 
    Then, as `recorder`, run `.venv/bin/raw-recorder status` and `.venv/bin/raw-recorder games`. NBA events should be listed, and Novig connected.
-7. **Start the mirror** (step 7), then run it once:
+7. **Start the mirror** installed in step 7: enable its timer, then run it once.
+
+   ```bash
+   systemctl --user enable --now archive-mirror.timer
+   ```
 
    ```bash
    systemctl --user start archive-mirror.service
