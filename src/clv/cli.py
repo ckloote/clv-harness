@@ -400,6 +400,8 @@ def main(argv: list[str] | None = None) -> None:
         if args.out:
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_text(text)
+        if not rep.complete():
+            raise SystemExit(f"clv pilot: incomplete, {len(rep.missing)} overlapping league event(s) not ingested")
     elif args.cmd == "gate":
         try:
             rep = gate_a1.run(db.connect(args.db), args.archive, iso_ms(args.lo), iso_ms(args.hi), args.min_per_kind)

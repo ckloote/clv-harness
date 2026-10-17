@@ -361,7 +361,7 @@ The week after the cutover measures what the probe policy left provisional (`doc
 uv run clv pilot --from 2026-11-03T00:00Z --to 2026-11-10T00:00Z --out data/pilot.md
 ```
 
-It is read-only, and records nothing in the database. It reports:
+It is read-only, and records nothing in the database. Sealing the archive past `--to` doesn't settle every event the period touched. An event starting after the period is recorded during it, but loads only once its own window has closed. So the report first lists any discovered event overlapping the period that isn't ingested yet, and exits 1 until there are none. It reports:
 - **storage:** per day and source;
 - **probes:** markets probed and skipped for budget per channel, inside and outside a dense window, with their token spend against the refill;
 - **quiet intervals:** each book's time between venue activity, by time to the scheduled start (an interval a gap overlaps counts as missing);

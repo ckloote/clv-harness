@@ -6,7 +6,11 @@ stream.quiet_probe_interval_s, the dense window and book.full_snapshot_interval_
 
 Read-only: it writes nothing, not even a fact snapshot. It reads the archive (sealed past
 `--to`) and the facts `clv ingest --league-events` loaded from it, for every league event whose
-capture window overlaps the period:
+capture window overlaps the period. Sealing past `--to` does not settle them all: an event
+starting after the period is recorded during it (from a1.capture_lead_s before its start) but
+loads only once its own window has closed. Every overlapping event the recorder discovered and
+the database lacks is listed first, and the report is then incomplete: such events count in
+storage and probes but in no other section.
 
 - storage: sealed segments, bytes and frames per day and source, as Gate A1 reports them;
 - probes: per channel, the markets probed and the markets skipped for budget, inside and
@@ -44,8 +48,10 @@ from urllib.parse import parse_qs
 from clv import archive, lineage
 from clv.close.definitions import Reference, live_defs, price_as_of
 from clv.config import param
+from clv.games import league_events, league_window
 from clv.gate.a1 import depth, storage
-from clv.timeutil import ms_iso
+from clv.ingest import unsettled
+from clv.timeutil import iso_ms, ms_iso
 
 # Novig's per-market cost of a snapshot probe, and the `stream` bucket's refill
 # (docs/vendor-capabilities.md). The recorder spends by the same figures (raw_recorder.novig.stream
@@ -104,6 +110,10 @@ class Report:
     depth: dict = field(default_factory=dict)
     leads: dict[str, tuple[int, bool]] = field(default_factory=dict)  # market -> (lead ms, censored)
     unlisted: list[str] = field(default_factory=list)
+    missing: list[tuple[str, str, int, str]] = field(default_factory=list)   # (event, label, start, why)
+
+    def complete(self) -> bool:
+        return not self.missing
 
 
 def events_in(conn: sqlite3.Connection, lo: int, hi: int) -> list[Event]:
@@ -111,6 +121,17 @@ def events_in(conn: sqlite3.Connection, lo: int, hi: int) -> list[Event]:
         "SELECT native_event_id, league, label, scheduled_start_ms, window_start_ms, window_end_ms, markets_json"
         " FROM venue_ingest WHERE venue = 'novig' AND window_end_ms > ? AND window_start_ms < ?"
         " ORDER BY scheduled_start_ms, native_event_id", (lo, hi))]
+
+
+def missing(root: Path, lo: int, hi: int, ingested: set[str]) -> list[tuple[str, str, int, str]]:
+    """Discovered league events whose windows overlap the period and are not ingested, and why."""
+    out = []
+    for e in league_events(root):
+        a, b = league_window(e)
+        if b > lo and a < hi and e["event_id"] not in ingested:
+            why = unsettled(Path(root), e) or "settled, not ingested yet: run `clv ingest --league-events`"
+            out.append((e["event_id"], e.get("label", ""), iso_ms(e["scheduled_start_utc"]), why))
+    return sorted(out, key=lambda m: (m[2], m[0]))
 
 
 def probes(root: Path, lo: int, hi: int) -> Probes:
@@ -210,6 +231,7 @@ def run(conn: sqlite3.Connection, root: Path, lo: int, hi: int) -> Report:
                          f"run the report once it is sealed past {ms_iso(hi)}")
     lineage.use_current(conn)
     rep = Report(lo, hi, events_in(conn, lo, hi))
+    rep.missing = missing(root, lo, hi, {e.event_id for e in rep.events})
     rep.storage = storage(root, lo, hi)
     rep.probes = probes(root, lo, hi)
     rep.buckets = buckets()
@@ -232,6 +254,13 @@ def render(rep: Report) -> str:
     hours = (rep.hi - rep.lo) / 3_600_000
     lines = ["# A1 storage pilot", "", (f"Period {ms_iso(rep.lo)} .. {ms_iso(rep.hi)} ({hours:,.1f} h); "
              f"{len(rep.events)} league event(s), {sum(len(e.markets) for e in rep.events)} market(s) ingested."), ""]
+    if rep.missing:
+        lines += [(f"**Incomplete:** {len(rep.missing)} discovered league event(s) whose capture windows overlap the"
+                   " period are not ingested. Storage and probes include them; the other sections do not. Rerun"
+                   " once they are ingested."), ""]
+        lines += [f"- {e} {label} (starts {ms_iso(s)}): {why}" for e, label, s, why in rep.missing] + [""]
+    else:
+        lines += ["Every discovered league event whose window overlaps the period is ingested.", ""]
     lines += ["## Storage (sealed segments)", "", "| day | source | segments | MB | frames | unclean |",
               "|---|---|---:|---:|---:|---:|"]
     lines += [f"| {d} | {s} | {n} | {b / 1e6:.1f} | {fr} | {u} |" for d, s, n, b, fr, u in rep.storage]

@@ -187,3 +187,44 @@ def test_probes_from_a_recorder_older_than_the_policy_are_unclassified(tmp_path)
     w.close()
     p = pilot.probes(tmp_path / "archive", LO, HI)
     assert p.sent == {("book", "unclassified"): 2} and p.tokens() == 2 * pilot.PROBE_COST["book"]
+
+
+def discovered(root, *events):
+    from raw_recorder import leagues
+    from raw_recorder.config import LeagueEvent
+    (root / "events.discovered.toml").write_text(leagues.render(
+        [LeagueEvent("NBA", e, s, e, (f"m-{e}",), capture_lead_s=lead, capture_tail_s=300) for e, s, lead in events],
+        LO, []))
+
+
+def test_overlapping_events_not_yet_ingested_are_listed_and_the_report_is_incomplete(recorded):
+    # Review of #31: sealing past --to does not settle an event starting after the period, which
+    # was recorded during it. It must be named, never silently left out.
+    conn, root = recorded
+    discovered(root, (E, S, 3_700),
+               ("open", S + 3_600 * SEC, 3_700),            # overlaps; its window ends past the watermark
+               ("settled", S - 1_000 * SEC, 600),            # overlaps and settled, but not loaded
+               ("later", S + 10 * 3_600 * SEC, 3_700))       # recorded only after the period
+    rep = pilot.run(conn, root, LO, HI)
+    assert [(e, why) for e, _, _, why in rep.missing] == [
+        ("settled", "settled, not ingested yet: run `clv ingest --league-events`"),
+        ("open", (f"the archive is sealed through {ms_iso(HI + 200 * SEC)}, not past its window's end "
+                  f"{ms_iso(S + 3_900 * SEC)}"))]
+    assert not rep.complete()
+    text = pilot.render(rep)
+    assert "**Incomplete:** 2 discovered league event(s)" in text and "- open open (starts" in text
+
+
+def test_the_command_prints_an_incomplete_report_and_exits_1(recorded, tmp_path, capsys):
+    from clv import cli
+    conn, root = recorded
+    path = tmp_path / "clv.sqlite"
+    conn.execute("VACUUM INTO ?", (str(path),))
+    discovered(root, (E, S, 3_700), ("open", S + 3_600 * SEC, 3_700))
+    args = ["pilot", "--from", ms_iso(LO), "--to", ms_iso(HI), "--db", str(path), "--archive", str(root)]
+    with pytest.raises(SystemExit, match="incomplete, 1 overlapping league event"):
+        cli.main(args)
+    assert "**Incomplete:**" in capsys.readouterr().out
+    discovered(root, (E, S, 3_700))
+    cli.main(args)                                   # complete: no exit
+    assert "Every discovered league event whose window overlaps the period is ingested." in capsys.readouterr().out
