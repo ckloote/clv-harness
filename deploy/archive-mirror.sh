@@ -20,6 +20,6 @@ snapshot="$dst/.sealed_through.json.mirror"
 rsync -t "$src/sealed_through.json" "$snapshot"
 rsync -rt \
     --exclude '*.part' --exclude 'sealed_through.json' --exclude '.sealed_through.json.*' \
-    --exclude '.recorder.lock' --exclude '*.tmp' \
+    --exclude '.recorder.lock' --exclude '.recorder.control' --exclude '*.tmp' \
     "$src/" "$dst/"
 mv "$snapshot" "$dst/sealed_through.json"

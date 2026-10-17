@@ -37,23 +37,27 @@ def params(**overrides):
     return Params(**base)
 
 
-def snapshot_reply(nonce, markets, channel, subscribed=False):
+def snapshot_reply(nonce, markets, channel, subscribed=False, seq=7):
     """A snapshot reply; a subscribe's also lists what it subscribed, as Production does."""
     msg = {"ts": 1, "nonce": nonce}
     if subscribed:
         msg["subscribed"] = {"markets": {m: channel for m in markets}, "events": {}, "private": []}
-    msg["snapshot"] = {m: {"eventId": "e1", channel: {"seq": 7, "orders": {}}, "lifecycle": {"seq": 1, "status": "OPEN"}}
+    msg["snapshot"] = {m: {"eventId": "e1", channel: {"seq": seq, "orders": {}}, "lifecycle": {"seq": 1, "status": "OPEN"}}
                        for m in markets}
     return json.dumps(msg)
 
 
-def make_app(state, close_after_subscribe=False, golive_at_s=None):
+def make_app(state, close_after_subscribe=False, golive_at_s=None, busy_feed=False):
     async def busy(ws, market):
-        """A book delta every 0.1 s, so the channel is never quiet, and GOLIVE once."""
+        """A book delta every 0.1 s, so the channel is never quiet, and GOLIVE once. A seq in
+        state["skip"] is never sent, as if lost on the way."""
         seq, t0 = 7, asyncio.get_running_loop().time()
         while not ws.closed:
             await asyncio.sleep(0.1)
             seq += 1
+            state["seq"] = seq
+            if seq in state["skip"]:
+                continue
             await ws.send_str(json.dumps({"ts": seq, "delta": {market: {"eventId": "e1", "book": {"seq": seq, "deltas": []}}}}))
             if golive_at_s is not None and asyncio.get_running_loop().time() - t0 >= golive_at_s:
                 await ws.send_str(json.dumps({"ts": seq, "delta": {market: {"eventId": "e1", "lifecycle": {
@@ -101,7 +105,8 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None):
                                 "markets": {}, "events": {}, "private": []}, "snapshot": {}}))
                     if "snapshot" in req:
                         sel = req["snapshot"]["markets"]
-                        await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values()))))
+                        await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values())),
+                                                         seq=7 if state["stale_replies"] else state.get("seq", 7)))
                     if "unsubscribe" in req:
                         for subject in req["unsubscribe"]:
                             subs.pop(subject.removeprefix("market:"), None)
@@ -111,7 +116,7 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None):
                         state["forget"] = set()
                         await ws.send_str(json.dumps({"nonce": req["nonce"], "status": {"subscriptions": {
                             "markets": dict(subs), "events": {}, "private": []}}}))
-                    if golive_at_s is not None and "subscribe" in req:
+                    if (golive_at_s is not None or busy_feed) and "subscribe" in req:
                         feeder = asyncio.create_task(busy(ws, next(iter(req["subscribe"]["markets"]))))
                     if close_after_subscribe and "subscribe" in req:
                         await ws.close()
@@ -131,12 +136,13 @@ def new_state(**venue):
     subscribe (nothing is subscribed), `unlisted_once` markets are left out of the first reply
     that asks for them, and `forget` markets are dropped before the next status reply."""
     return {"upgrades": [], "requests": [], "pongs": [], "pings_sent": 0,
-            "on_subscribe": None, "unlisted_once": set(), "forget": set(), **venue}
+            "on_subscribe": None, "unlisted_once": set(), "forget": set(), "skip": set(),
+            "stale_replies": False, **venue}
 
 
 async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=False, golive_at_s=None,
-                 markets=frozenset({MARKET}), **param_overrides):
-    srv = TestServer(make_app(state, close_after_subscribe, golive_at_s))
+                 markets=frozenset({MARKET}), busy_feed=False, **param_overrides):
+    srv = TestServer(make_app(state, close_after_subscribe, golive_at_s, busy_feed))
     await srv.start_server()
     archive = ArchiveWriter(tmp_path, session_id="w" * 32, segment_max_s=3600, fsync_interval_s=5)
     try:
@@ -205,6 +211,34 @@ async def test_lifecycle_transition_gets_a_book_probe_on_a_busy_channel(tmp_path
     probe = conn.probes[sent[0]["nonce"]]
     golive = next(f for f in frames if f["dir"] == "in" and "GOLIVE" in f["frame"])
     assert probe.reply is not None and 0 < probe.sent_ts_ms - golive["recv_ts_ms"] <= 1500
+
+
+async def test_a_skipped_seq_gets_a_resync_probe_on_a_busy_channel(tmp_path):
+    # A busy channel is never quiet, so without a resync a lost delta would leave its book
+    # untrusted until the connection ended: the recorder asks for a snapshot at once.
+    state = new_state(skip={12})
+    frames = await record(tmp_path, state, seconds=2.0, busy_feed=True, channel_probe_interval_s=60)
+    (seen,) = events(frames, "sequence_gap_seen")
+    assert (seen["market"], seen["channel"], seen["last_seq"], seen["got_seq"]) == (MARKET, "book", 11, 13)
+    (conn,) = ws_evidence(frames).values()
+    sent = [e for e in conn.events if e["type"] == "probe_sent"]
+    assert len(sent) == 1 and sent[0]["markets"] == [MARKET]        # answered once: no repeat
+    probe = conn.probes[sent[0]["nonce"]]
+    skipped_to = next(f for f in frames if f["dir"] == "in"
+                      and json.loads(f["frame"]).get("delta", {}).get(MARKET, {}).get("book", {}).get("seq") == 13)
+    assert probe.reply is not None and 0 < probe.sent_ts_ms - skipped_to["recv_ts_ms"] <= 1500
+    assert json.loads(probe.reply)["snapshot"][MARKET]["book"]["seq"] >= 13
+
+
+async def test_an_unanswered_resync_is_asked_again(tmp_path):
+    # The probe reply never catches up (the fake answers seq 7 throughout): the recorder asks again
+    # every stream.probe_timeout_s rather than leaving the channel untrusted.
+    state = new_state(skip={12}, stale_replies=True)
+    frames = await record(tmp_path, state, seconds=2.6, busy_feed=True, channel_probe_interval_s=60,
+                          probe_timeout_s=0.5)
+    assert len(events(frames, "sequence_gap_seen")) == 1
+    (conn,) = ws_evidence(frames).values()
+    assert len([e for e in conn.events if e["type"] == "probe_sent"]) >= 2
 
 
 async def test_disconnect_reconnects_with_new_conn_id_and_resubscribes(tmp_path):

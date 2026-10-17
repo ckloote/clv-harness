@@ -107,6 +107,16 @@ value = 14400
 status = "provisional"
 revised_by = "A1: captures the venue's end-of-game and grading transitions"
 
+[gate_a1.receive_slack_ms]
+value = 1000
+status = "provisional"
+revised_by = "Gate A1 rehearsal: measured receive latency"
+
+[gate_a1.resubscribe_wait_s]
+value = 60
+status = "provisional"
+revised_by = "Gate A1 rehearsal"
+
 # --- Streams and books ------------------------------------------------------------
 
 [stream.liveness_max_s]

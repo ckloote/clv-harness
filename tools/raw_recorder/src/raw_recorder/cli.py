@@ -435,6 +435,45 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_relay(args) -> int:
+    from . import faults
+    cfg = load_config(args.config)
+    listen = args.listen or cfg.faults.get("relay_listen", "127.0.0.1:8765")
+    upstream = args.upstream or cfg.faults.get("relay_upstream")
+    if not upstream:
+        print(f"no upstream: set [faults] relay_upstream in {cfg.path} or pass --upstream", file=sys.stderr)
+        return 2
+    print(f"raw-recorder relay: ws://{listen} -> {upstream}; faults by POST {faults.FAULT_PATH}", file=sys.stderr)
+    try:
+        asyncio.run(faults.run_relay(listen, upstream))
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def cmd_fault(args) -> int:
+    from . import faults
+    cfg = load_config(args.config)
+    kind = args.kind.replace("-", "_")
+    need = {"channel_stall": ("market", "channel", "seconds"), "sequence_skip": ("market", "channel"),
+            "resubscribe": ("market",)}.get(kind, ())
+    missing = [f"--{n}" for n in need if getattr(args, n) is None]
+    if missing:
+        print(f"{args.kind} needs {', '.join(missing)}", file=sys.stderr)
+        return 2
+    target = {k: v for k, v in (("market", args.market), ("channel", args.channel), ("seconds", args.seconds),
+                                ("timeout_s", args.timeout if kind == "sequence_skip" else None)) if v is not None}
+    try:
+        rep = asyncio.run(faults.inject(kind, target, control_path=cfg.control_socket_path, relay_url=cfg.relay_url,
+                                        restart_wait_s=args.restart_wait,
+                                        log=lambda s: print(f"raw-recorder fault: {s}", file=sys.stderr)))
+    except (faults.FaultError, OSError) as exc:
+        print(f"raw-recorder fault: {exc} (is the recorder running with [faults] enabled?)", file=sys.stderr)
+        return 2
+    print(json.dumps(rep, indent=2))
+    return 0 if rep.get("ok") else 1
+
+
 def cmd_status(args) -> int:
     from . import status
     from .archive import now_ms
@@ -495,6 +534,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dates", action="append", metavar="FROM[:TO]",
                    help="only games and files on these dates, YYYY-MM-DD (repeatable; default: everything)")
     p.set_defaults(fn=cmd_backfill)
+    p = add("relay", help="Gate A1: the fault relay between the recorder and Novig (raw_recorder.faults)")
+    p.add_argument("--listen", help="host:port on loopback (default: [faults] relay_listen)")
+    p.add_argument("--upstream", help="the venue's WebSocket origin (default: [faults] relay_upstream)")
+    p.set_defaults(fn=cmd_relay)
+    p = add("fault", help="Gate A1: label, cause and record one fault in the running recorder")
+    p.add_argument("kind", choices=["socket-kill", "process-kill", "channel-stall", "sequence-skip", "resubscribe"])
+    p.add_argument("--market", help="the Novig market (channel-stall, sequence-skip, resubscribe)")
+    p.add_argument("--channel", choices=["book", "trades"], help="the channel (socket-kill: only its connection)")
+    p.add_argument("--seconds", type=float, help="how long a channel-stall lasts")
+    p.add_argument("--timeout", type=float, default=300, help="sequence-skip: how long to wait for a delta")
+    p.add_argument("--restart-wait", type=float, default=180,
+                   help="process-kill: how long to wait for the restarted recorder to take the result")
+    p.set_defaults(fn=cmd_fault)
     p = add("report", help="volume per source/day, Odds credit spend, Novig probe counts")
     p.add_argument("--day")
     p.set_defaults(fn=cmd_report)

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import aiohttp
 
-from . import RECORDER_VERSION, discovery, kalshi, leagues, mlb, redact
+from . import RECORDER_VERSION, discovery, faults, kalshi, leagues, mlb, redact
 from .archive import ArchiveWriter, Stream, find_parts, iter_file, now_ms, recover_orphans
 from .config import Config, Game, LeagueEvent, combine, load_events, load_games, shadowed
 from .novig import public as novig_public
@@ -91,6 +91,7 @@ class Recorder:
         # Known secret values, scrubbed from any free text we archive or print.
         self.secrets = {v for v in (cfg.env(cfg.odds_api, "key_env"),) if v}
         self.config_warnings: list[str] = []
+        self.novig: list[NovigStream] = []      # the live Novig streams, for the fault harness
 
     # ------------------------------------------------------------- helpers
 
@@ -250,7 +251,17 @@ class Recorder:
     async def _serve(self) -> None:
         async with aiohttp.ClientSession() as http:
             specs = [("housekeeping", self.housekeeping)] + self.source_specs(http)
+            if self.cfg.faults.get("enabled", False):        # off unless said: never by default
+                specs.append(("fault_control", self.fault_control))
             await self.supervise(specs)
+
+    async def fault_control(self) -> None:
+        """Gate A1's control socket (raw_recorder.faults). Announced loudly: it belongs to the
+        gate run and its rehearsals, never to an ordinary capture."""
+        path = self.cfg.control_socket_path
+        self.note("fault_control", socket=str(path), ws_url=self.cfg.novig.get("ws_url"))
+        warn(f"fault injection is on ([faults] in {self.cfg.path}): control socket {path}")
+        await faults.Control(self.rec, lambda: self.novig).serve(path)
 
     async def supervise(self, specs: list[tuple[str, Callable[[], Awaitable[None]]]]) -> None:
         """Run every task until stop. A task that ends early (a bug, an
@@ -479,11 +490,11 @@ class Recorder:
         async def diagnose() -> None:
             await n_rest.request("GET", host, "/v3/limits", signer=signer, purpose="ws_refusal_diagnostic")
 
-        streams = [NovigStream(http=http, archive=self.archive, signer=signer,
-                               ws_url=cfg.novig["ws_url"], channel=ch,
-                               markets_fn=lambda: self.schedule.novig_markets(now_ms()),
-                               params=self.p, budget=budget, on_handshake_failure=diagnose)
-                   for ch in cfg.novig["channels"]]
+        streams = self.novig = [NovigStream(http=http, archive=self.archive, signer=signer,
+                                            ws_url=cfg.novig["ws_url"], channel=ch,
+                                            markets_fn=lambda: self.schedule.novig_markets(now_ms()),
+                                            params=self.p, budget=budget, on_handshake_failure=diagnose)
+                                for ch in cfg.novig["channels"]]
         await asyncio.gather(*(s.run() for s in streams))
 
     async def housekeeping(self) -> None:

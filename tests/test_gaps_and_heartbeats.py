@@ -225,6 +225,15 @@ def test_snapshot_arriving_after_unsubscribe_is_still_a_deliberate_end():
     assert got == []
 
 
+def test_a_resubscribe_in_one_millisecond_ends_the_old_subscription_and_not_the_new():
+    # Gate A1's resubscribe fault sends both commands at once, so they share a stamp: the order
+    # they were sent in, not their stamps, says which subscription the unsubscribe ended.
+    unsub, resub = unsubscribe(200, "c1", "b"), fr(200, "c1", "out", {"nonce": 2, "subscribe": {"markets": {"b": "book"}}})
+    got = stream_gaps(connect(99, "c1", ["b"]), subscribe(100, "c1", "b"), unsub, resub,
+                      subscribe(205, "c1", "b", seq=5)[1], delta(250, "c1", "b", 6), disconnected(400, "c1", "io_error"))
+    assert got == [("connection_lost", "b/book", 250, None)]
+
+
 def test_resubscription_after_an_unsubscribe_is_not_covered_by_it():
     got = stream_gaps(connect(99, "c1", ["b"]), subscribe(100, "c1", "b"), unsubscribe(150, "c1", "b"),
                       subscribe(200, "c1", "b", seq=5), delta(250, "c1", "b", 6), disconnected(400, "c1", "io_error"))

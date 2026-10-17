@@ -89,3 +89,12 @@ min_interval_s = { mlb = 0.2, kalshi = 0.1, novig_data = 0.5, novig_history = 0.
 name = "NBA"                                # Novig's league code (docs/decisions/2026-10-16-a1-league.md)
 enabled = false
 days_ahead = 2                              # events starting within this many days are listed
+
+# Gate A1 fault injection (raw_recorder.faults): off except for the gate run and its
+# rehearsals. With it on, the recorder serves the fault harness's control socket, and
+# `raw-recorder relay` forwards the stream; point [novig] ws_url at ws://<relay_listen>/v3/ws.
+[faults]
+enabled = false
+control_socket = ".recorder.control"        # relative to the archive root; never mirrored
+relay_listen = "127.0.0.1:8765"             # loopback only
+relay_upstream = "wss://api.novig.com"

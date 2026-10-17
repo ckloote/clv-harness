@@ -57,8 +57,9 @@ src/clv/
   score/clv.py              scoring runs: mapping and off resolution, closes, CLV, null EV, exclusions
   trace.py                  a scoring run traced to the raw frames behind every number
   gaps.py                   collection gaps from polls and streams
+  gate/a1.py                Gate A1: each injected fault's gap checked against the facts; storage and depth
   cli.py                    `clv inspect`, `migrate`, `ingest`, `record`, `correct`, `score`, `trace`, `backfill`,
-                            `calibrate`
+                            `calibrate`, `gate`
   score/controls.py         statistical core of the calibration checks (DESIGN.md §9.2) and the oracle mean
   score/simulation.py       the calibration simulation's reference-series generator and item-12 rerun
   score/calibration.py      B2 calibration runs: closes at every buffer, offset prices, check 1, oracle, report
@@ -74,7 +75,8 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
     archive.py              §7.1 archive: append, rotate, seal, journal, read, verify
     rest.py                 REST envelope: every request, body and failure under its request_id
     novig/signing.py        NOVIG-V3 request signing (checked against Novig's 30 published vectors)
-    novig/stream.py         Novig WebSocket recorder: control frames, quiet-channel probes, reconnect
+    novig/stream.py         Novig WebSocket recorder: control frames, quiet-channel probes, resyncs, reconnect
+    faults.py               Gate A1 fault injection: the relay, the recorder's control socket, the harness
     novig/public.py         Novig unsigned catalog and public order book
     provision.py            `novig-provision`: management key -> trading::read key (never part of the recorder)
     kalshi.py, odds_api.py, mlb.py   pollers for Kalshi order books, The Odds API, MLB StatsAPI
@@ -84,6 +86,7 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
 tools/b0/                   P0 B0 research scripts that reproduce docs/feasibility.md (cache in b0-work/)
 deploy/raw-recorder.service systemd user unit
+deploy/archive-mirror.sh    the workstation's mirror of the recorder host's sealed archive
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
@@ -312,6 +315,38 @@ archive/<source>/<YYYY-MM-DD UTC>/manifest.jsonl                   append-only j
 ```
 
 Each line is `{"recv_ts_ms", "conn_id", "dir": "in"|"out"|"event", "frame"}`. `frame` is always a string holding exactly the received text. REST records use `conn_id = request_id`, so every response stays tied to its request. Sealed files never change, so `rsync -a archive/ <backup>/` is a complete incremental backup.
+
+## Gate A1: forced faults
+
+Gate A1 (DESIGN.md §13) needs every forced fault to produce the right collection gap. Three pieces do it (`tools/raw_recorder/src/raw_recorder/faults.py`), each in its own process:
+- **The relay** sits on loopback between the recorder and Novig. It forwards every frame unchanged and causes the faults Novig can't be made to cause: a socket kill, a channel stall (one market's channel loses its deltas for N seconds) and a sequence skip (one delta lost). It drops frames whole and never edits one. It never drops a frame carrying a lifecycle delta.
+- **The recorder's control socket** archives each fault as `fault_injected` with the markets every connection had confirmed, and its outcome as `fault_applied` or `fault_failed`.
+- **The harness** labels a fault, causes it and records the result. A process kill is a real SIGKILL; its result goes to the restarted recorder.
+
+To run with faults, set `[faults] enabled = true` and point `[novig] ws_url` at `ws://127.0.0.1:8765/v3/ws`, then:
+
+```bash
+uv run raw-recorder relay
+```
+
+```bash
+uv run raw-recorder fault sequence-skip --market <id> --channel book
+```
+
+The other faults are `channel-stall --market <id> --channel book --seconds 30`, `socket-kill [--channel book]`, `process-kill` and `resubscribe --market <id>`. Each prints its report and exits 1 if the fault did not happen. A process kill needs a service manager to restart the recorder within `--restart-wait` seconds.
+
+Once the run's events are ingested (`clv ingest --league-events`) from an archive sealed past the run, the gate reads the labels and the facts:
+
+```bash
+uv run clv gate a1 --from 2026-11-10T00:00Z --to 2026-11-12T00:00Z --out data/a1/gate.md
+```
+
+It checks, for each fault and each market and channel it touched, that:
+- a gap covers the fault, with a reason that fault can cause;
+- the gap opens at the last trustworthy observation (for a dropped delta, the last one before its seq);
+- the gap closes at a snapshot received after the fault.
+
+A resubscribe must instead show a fresh subscribe snapshot and no gap. Every closed stream gap in the run must close at a snapshot. It lists the gaps no fault explains, and reports storage per day and source and book depth against `close.depth_notionals_usd`. It prints PASS only if every check passes and each fault kind was applied `--min-per-kind` times (default 2). Otherwise it exits 1.
 
 ## The historical reference import (B1)
 
