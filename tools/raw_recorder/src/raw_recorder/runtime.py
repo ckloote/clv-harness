@@ -18,7 +18,7 @@ from .archive import ArchiveWriter, Stream, find_parts, iter_file, now_ms, recov
 from .config import Config, Game, LeagueEvent, combine, load_events, load_games, shadowed
 from .novig import public as novig_public
 from .novig.signing import NovigSigner
-from .novig.stream import NovigStream, TokenBudget
+from .novig.stream import NovigStream, TokenBudget, alert_books
 from .odds_api import OddsPoller
 from .rest import RestRecorder
 from .scheduler import Schedule
@@ -494,7 +494,8 @@ class Recorder:
                                             ws_url=cfg.novig["ws_url"], channel=ch,
                                             markets_fn=lambda: self.schedule.novig_markets(now_ms()),
                                             params=self.p, budget=budget, on_handshake_failure=diagnose,
-                                            dense_fn=lambda: self.schedule.dense_markets(now_ms()))
+                                            dense_fn=lambda: self.schedule.dense_markets(now_ms()),
+                                            on_lifecycle=lambda m: alert_books(self.novig, m))
                                 for ch in cfg.novig["channels"]]
         await asyncio.gather(*(s.run() for s in streams))
 

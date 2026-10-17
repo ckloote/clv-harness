@@ -157,6 +157,28 @@ def test_a_probe_showing_a_missed_transition_untrusts_the_book_from_its_last_obs
     assert check.status == "confirmed"
 
 
+def test_a_missed_transition_exposed_on_the_trades_connection_untrusts_the_book_on_its_own():
+    # Review of #28: the recorder streams book and trades on separate connections. A trades probe
+    # exposing a missed transition puts the book, on the other connection, in doubt too.
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000, conn="book"))
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o2", "reason": "cancel"}), recv=1100, conn="book"))
+    trades = {"ts": 999, "nonce": 1, "subscribed": {"markets": {M: "trades"}}, "snapshot": {
+        M: {"eventId": "ev", "trades": {"seq": 5, "trades": []}, "lifecycle": {"seq": 0, "status": "OPEN"}}}}
+    r.feed(frame(trades, recv=1001, conn="trades"))
+    probe = {"ts": 1500, "nonce": 2, "snapshot": {
+        M: {"eventId": "ev", "trades": {"seq": 5, "trades": []}, "lifecycle": {"seq": 1, "status": "OPEN"}}}}
+    outs = r.feed(frame(probe, recv=1600, conn="trades"))
+    (gap,) = [o for o in outs if isinstance(o, novig.SequenceGap)]
+    assert (gap.conn_id, gap.channel, gap.reason) == ("book", "book", "lifecycle_missed")
+    assert (gap.last_recv_ts_ms, gap.recv_ts_ms) == (1100, 1600)
+    # A later contiguous delta is not trusted; only a book snapshot taken after the reply is.
+    assert r.feed(frame(delta(12, {"kind": "remove", "orderId": "o3", "reason": "cancel"}, ts=1700), recv=1700,
+                        conn="book")) == []
+    outs = r.feed(frame(snapshot(12, ORDERS, nonce=3, subscribed=False, ts=1800), recv=1800, conn="book"))
+    assert [type(o).__name__ for o in outs] == ["Lifecycle", "Resync", "BinaryBook"]
+
+
 def test_a_missed_transition_reply_behind_the_book_does_not_roll_it_back():
     r = novig.StreamReplay()
     r.feed(frame(snapshot(10, ORDERS), recv=1000))

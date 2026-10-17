@@ -26,9 +26,10 @@ replayed across one would keep orders that no longer exist. A lifecycle
 status is judged by the lifecycle channel's own sequence, never the book's: one
 behind it is not emitted, even beside a current book. A probe reply whose
 lifecycle sequence is ahead of the last one seen on its connection shows a
-transition that never arrived, perhaps with unsequenced book changes: the book
-is untrusted from its last trustworthy observation (`lifecycle_missed`) and the
-reply re-establishes it, so an unchanged book sequence never vouches across it
+transition that never arrived, perhaps with unsequenced book changes: every book
+of the market, on any connection, is untrusted from its last trustworthy
+observation (`lifecycle_missed`) until a snapshot taken after the reply, so an
+unchanged book sequence never vouches across it
 (docs/decisions/2026-10-17-a1-probe-policy.md).
 
 A snapshot omits an outcome with no orders (849812, after UNLIVE), so a book's
@@ -404,21 +405,25 @@ class StreamReplay:
         return out
 
     def _lifecycle_missed(self, f: Frame, market: str, venue_ts: int) -> list:
-        """A probe reply shows a transition this connection never received. The book on this
-        connection was trustworthy only up to its last observation, which starts the gap; the
-        reply, taken after the transition, re-establishes it, unless it is behind the book's
-        sequence (then a later snapshot must)."""
+        """A probe reply shows a transition its connection never received. The venue makes a
+        transition market-wide, so every trusted book of the market is in doubt, whichever
+        connection exposed it (the recorder's `trades` connection, say, while the book streams on
+        another): each is untrusted from its own last trustworthy observation until a snapshot
+        taken after the reply. A reply carrying the book re-establishes it on its own connection,
+        unless it is behind that book's sequence (then a later snapshot must)."""
         self.transition_ts[market] = max(venue_ts, self.transition_ts.get(market, venue_ts))
-        ch = self.channels.get((f.conn_id, market, "book"))
-        if ch is None or ch.seq is None:
-            return []
-        gap = SequenceGap(f.conn_id, market, "book", ch.seq, None, ch.last_ref, ch.last_ts, f.ref, f.recv_ts_ms,
-                          "lifecycle_missed")
-        self.behind[(f.conn_id, market)] = ch.seq
-        ch.seq = None
-        self.seq_gaps.append(gap)
-        self.open_gaps.add((market, "book"))
-        return [gap]
+        out = []
+        for (conn, m, channel), ch in self.channels.items():
+            if m != market or channel != "book" or ch.seq is None:
+                continue
+            gap = SequenceGap(conn, market, "book", ch.seq, None, ch.last_ref, ch.last_ts, f.ref, f.recv_ts_ms,
+                              "lifecycle_missed")
+            self.behind[(conn, market)] = ch.seq
+            ch.seq = None
+            self.seq_gaps.append(gap)
+            self.open_gaps.add((market, "book"))
+            out.append(gap)
+        return out
 
     def _resync(self, f: Frame, market: str, channel: str, seq: int) -> list:
         """Trusted state for a market and channel with an open gap, on any connection."""

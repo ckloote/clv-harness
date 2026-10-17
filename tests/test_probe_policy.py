@@ -51,8 +51,10 @@ def golive(t):
     return {"ts": t, "delta": {M: {"eventId": E, "lifecycle": {"seq": 1, "deltas": [{"kind": "GOLIVE", "status": "OPEN"}]}}}}
 
 
-def record(root, after):
-    """The subscription and the change at T0 + 1 s, then `after`: (seconds after T0, dir, message)."""
+def record(root, after, trades=()):
+    """The subscription and the change at T0 + 1 s, then `after`: (seconds after T0, dir, message).
+    `trades`, if any, are frames on a second connection carrying the trades channel, as the
+    recorder runs it, after its own subscription at T0."""
     clock = Clock()
     clock.t = T0 - 60_000
     w = ArchiveWriter(root, session_id="s1", segment_max_s=86_400, fsync_interval_s=5, clock=clock)
@@ -72,15 +74,32 @@ def record(root, after):
     put(T0 + S, "in", add(T0 + S, 11, "x1", "0.50"))
     for s, d, obj in after:
         put(int(T0 + s * S), d, obj)
+    if trades:
+        tr = w.stream("novig", "c2")
+        lines = [(0, "out", {"nonce": 1, "subscribe": {"markets": {M: "trades"}}}),
+                 (0.005, "in", trades_msg(T0 + 5, nonce=1, subscribed=True)), *trades]
+        for s, d, obj in lines:
+            clock.t = int(T0 + s * S)
+            tr.write(d, "c2", json.dumps(obj), recv_ts_ms=clock.t)
+        clock.t = T0 + 3_500 * S
+        tr.event("c2", "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
     clock.t = T0 + 3_500 * S
     ws.event("c1", "ws_disconnected", reason="no_active_markets", close_code=1000, duration_s=1.0)
     clock.t = T0 + 4_000 * S                        # idle on: everything before this is sealed
     w.close()
 
 
-def close_at(tmp_path, after, as_of_s=300):
+def trades_msg(t, lc_seq=0, nonce=None, subscribed=False):
+    msg = {"ts": t, "nonce": nonce, "snapshot": {M: {"eventId": E, "trades": {"seq": 50, "trades": []},
+                                                    "lifecycle": {"seq": lc_seq, "status": "OPEN"}}}}
+    if subscribed:
+        msg["subscribed"] = {"markets": {M: "trades"}, "events": {}, "private": []}
+    return msg
+
+
+def close_at(tmp_path, after, as_of_s=300, trades=()):
     root = tmp_path / "archive"
-    record(root, after)
+    record(root, after, trades)
     c = db.connect(":memory:")
     db.migrate(c)
     ingest_league_event(c, root, E, now_ms=T0 + 5_000 * S, event=EVENT)
@@ -128,6 +147,14 @@ def test_a_resubscription_after_a_deliberate_end_never_brackets(tmp_path):
                             (500.005, "in", book_msg(T0 + 500_005, 11, nonce=3, subscribed=True)),
                             probe(600, 11, nonce=4)])
     assert p.reason == "feed_stalled" and p.bracket_ms is None
+
+
+def test_a_missed_transition_exposed_on_the_trades_connection_breaks_the_books_bracket(tmp_path):
+    # Review of #28: the trades probe at 200 s shows a transition neither connection received. The
+    # book's later contiguous delta must not vouch across it.
+    p = close_at(tmp_path, [(600, "in", add(T0 + 600 * S, 12, "x2", "0.51"))],
+                 trades=[(200, "in", trades_msg(T0 + 200 * S, lc_seq=1, nonce=2))])
+    assert p.reason == "collection_gap"
 
 
 def test_a_probe_showing_a_missed_transition_is_a_gap(tmp_path):

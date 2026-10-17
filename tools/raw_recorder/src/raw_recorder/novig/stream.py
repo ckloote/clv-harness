@@ -28,10 +28,14 @@ Per connection (new conn_id each time; stream_id == conn_id):
   (book 16, trades 4 per market; the `stream` bucket refills 4/s), so they
   never draw the shared bucket below `r0.stream_probe_reserve_fraction` of
   capacity; a probe that cannot be afforded is archived as `probe_skipped`.
-* Lifecycle probes: on a `book` connection, a lifecycle delta for a market
-  (e.g. GOLIVE) gets that market a probe on the next maintenance tick, busy or
-  not. The venue drops resting orders at GOLIVE without book deltas, so replay
-  distrusts the book from the transition until a snapshot taken after it.
+* Lifecycle probes: a lifecycle delta for a market (e.g. GOLIVE) on any
+  connection, or a snapshot reply whose lifecycle `seq` is ahead of the last one
+  that connection saw (a missed transition, archived as `lifecycle_missed_seen`),
+  gets the market a book probe on the next maintenance tick, busy or not. The
+  venue drops resting orders at a transition without book deltas, so replay
+  distrusts every book of the market from it until a snapshot taken after it;
+  `on_lifecycle` carries the news to the `book` connection, whichever connection
+  heard it (`alert_books`).
 * Resync (A1): a delta whose `seq` skips ahead of the last one seen for its
   market on this connection is archived as `sequence_gap_seen`, and the market
   gets a probe on the next tick, busy or not, repeated every
@@ -103,6 +107,14 @@ class TokenBudget:
         self._tokens -= cost
 
 
+def alert_books(streams: list[NovigStream], market: str) -> None:
+    """A market's lifecycle changed, or a connection missed a transition: every live `book`
+    connection carrying it probes its book on the next tick (`on_lifecycle` for each stream)."""
+    for s in streams:
+        if s.channel == "book" and s.conn is not None:
+            s.conn.transitioned.add(market)
+
+
 class NovigStream:
     def __init__(self, *, http: aiohttp.ClientSession, archive: ArchiveWriter,
                  signer: NovigSigner, ws_url: str, channel: str,
@@ -110,6 +122,7 @@ class NovigStream:
                  budget: TokenBudget,
                  on_handshake_failure: Callable[[], Awaitable[None]] | None = None,
                  dense_fn: Callable[[], frozenset[str]] | None = None,
+                 on_lifecycle: Callable[[str], None] | None = None,
                  mono: Callable[[], float] = time.monotonic):
         if channel not in CHANNEL_WEIGHT:
             raise ValueError(f"unknown public channel {channel!r}")
@@ -125,6 +138,7 @@ class NovigStream:
         self.budget = budget
         self.on_handshake_failure = on_handshake_failure
         self.dense_fn = dense_fn                # markets in their dense window; None: every market
+        self.on_lifecycle = on_lifecycle        # a market's lifecycle changed or was missed; None: this stream only
         self.mono = mono
         self.reserve = budget.capacity * params.stream_probe_reserve_fraction
         self.conn: _Connection | None = None    # the live connection, for the fault harness
@@ -237,6 +251,7 @@ class _Connection:
         self.last_probe: dict[str, float] = {}
         self.transitioned: set[str] = set()     # markets with a lifecycle delta awaiting a book probe
         self.seq: dict[str, int] = {}           # market -> the latest seq of this channel seen here
+        self.lifecycle_seq: dict[str, int] = {}  # market -> the latest lifecycle seq seen here
         self.resync: set[str] = set()           # markets whose seq skipped: probed until a snapshot catches up
         self.opened = owner.mono()
         self.close_reason: str | None = None
@@ -295,6 +310,7 @@ class _Connection:
         for m in markets:
             self.confirmed_at.pop(m, None)
             self.seq.pop(m, None)
+            self.lifecycle_seq.pop(m, None)
 
     def on_reply(self, obj: dict) -> None:
         """Settle the subscribe or status request a reply answers, by its nonce."""
@@ -371,8 +387,26 @@ class _Connection:
                         channel = payload[self.o.channel]
                         if isinstance(channel, dict):
                             self.note_seq(market_id, key, channel.get("seq"))
-                    if key == "delta" and "lifecycle" in payload and self.o.channel == "book":
-                        self.transitioned.add(market_id)
+                    lc = payload.get("lifecycle")
+                    if isinstance(lc, dict):
+                        self.note_lifecycle(market_id, key == "delta", "subscribed" in obj, lc.get("seq"))
+
+    def note_lifecycle(self, market: str, delta: bool, subscribed: bool, seq) -> None:
+        """A transition, or a reply showing one this connection missed: the market's book is untrusted
+        until a snapshot, on whichever connection carries it."""
+        last = self.lifecycle_seq.get(market)
+        changed = delta
+        if not delta and not subscribed and isinstance(seq, int) and last is not None and seq > last:
+            self.stream.event(self.conn_id, "lifecycle_missed_seen", channel=self.o.channel, market=market,
+                              last_seq=last, got_seq=seq)
+            changed = True
+        if isinstance(seq, int) and not isinstance(seq, bool) and (last is None or seq > last):
+            self.lifecycle_seq[market] = seq
+        if changed:
+            if self.o.on_lifecycle is not None:
+                self.o.on_lifecycle(market)
+            elif self.o.channel == "book":
+                self.transitioned.add(market)
 
     def note_seq(self, market: str, kind: str, seq) -> None:
         """Follow a market's channel seq: a delta past the next one asks for a resync; a snapshot
