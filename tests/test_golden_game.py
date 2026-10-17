@@ -12,6 +12,7 @@
   and that trace are present (neither is committed: vendor data).
 """
 import json
+import os
 from fractions import Fraction
 from pathlib import Path
 
@@ -112,12 +113,17 @@ def decimal_odds(american: str) -> Fraction:
     return 1 + (100 / -a if a < 0 else a / 100)
 
 
-@pytest.mark.skipif(not (golden.REPO / "archive").exists() or not (golden.GAME4 / "expected.json").exists(),
+# CLV_GOLDEN_ARCHIVE replays from another archive root: the A1 restore test (deploy/pi-host.md)
+# points it at a fresh copy of the recorder host's mirror.
+GAME4_ARCHIVE = Path(os.environ.get("CLV_GOLDEN_ARCHIVE") or golden.REPO / "archive")
+
+
+@pytest.mark.skipif(not GAME4_ARCHIVE.exists() or not (golden.GAME4 / "expected.json").exists(),
                     reason="the 849832 raw archive and its expected trace are local only "
                            "(write the trace with `uv run python tests/golden.py`)")
 def test_game_849832_replays_to_its_local_trace():
     from clv.games import GAMES
-    r = golden.replay(golden.REPO / "archive", GAMES, golden.GAME4, 849832, levels=False)
+    r = golden.replay(GAME4_ARCHIVE, GAMES, golden.GAME4, 849832, levels=False)
     assert golden.expected_text(r) == (golden.GAME4 / "expected.json").read_text()
     assert r["before_recomputed"] == r["before"]
     s = pick(r["before"], "close_live_mid_depth_500", "novig")

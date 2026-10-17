@@ -1,0 +1,33 @@
+# systemd *user* unit on the workstation: one run of deploy/archive-mirror.sh,
+# copying the recorder host's sealed archive into this checkout's archive/
+# (docs/decisions/2026-10-16-a1-host.md). Started by archive-mirror.timer.
+#
+# Install (deploy/pi-host.md, "The workstation mirror", sets up the ssh key first):
+#   mkdir -p ~/.config/systemd/user ~/.config/archive-mirror
+#   cp deploy/archive-mirror.service deploy/archive-mirror.timer ~/.config/systemd/user/
+#   printf 'ARCHIVE_MIRROR_SRC=pi-archive:\nARCHIVE_MIRROR_DST=%s/code/clv-harness/archive\n' "$HOME" \
+#       > ~/.config/archive-mirror/env
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now archive-mirror.timer
+#   systemctl --user start archive-mirror.service        # one run now
+#   journalctl --user -u archive-mirror
+#
+# `pi-archive` is an ~/.ssh/config host whose key the Pi restricts to
+# `rrsync -ro /mnt/ssd/archive`, so paths are relative to the archive root and the
+# workstation can read it but never write to it.
+#
+# A failed or killed run publishes no new watermark, so `clv ingest` never reads
+# past what the mirror holds; the next timer run picks up where it left off.
+
+[Unit]
+Description=Mirror the recorder host's sealed archive
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/archive-mirror/env
+# Never prompt for a passphrase or a host key: fail, and let the next run retry.
+Environment="RSYNC_RSH=ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30"
+ExecStart=/bin/sh %h/code/clv-harness/deploy/archive-mirror.sh
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=idle
