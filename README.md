@@ -224,7 +224,7 @@ uv run raw-recorder echo
 
 `echo` sends a signed `POST /v3/echo`, reads `/v3/limits`, and confirms the key is not a management key. Everything it does is archived. For the Paper key, add `--config tools/raw_recorder/config.paper.toml` (it goes before the subcommand).
 
-**Testing on Paper.** `--config tools/raw_recorder/config.paper.toml` switches every command to Paper. It uses Paper's host, `NOVIG_PAPER_READ_KEY_*`, and its own archive, `archive-paper/`, discovers Paper's markets itself, and records only Novig. Paper books are play money: they test the signer and stream against the real API, never the measurement. A Paper recorder can run alongside the Production one. It also discovers NBA (`[[league]]`), which Paper lists as Production does, so it rehearses the A1 path. `config.paper-rehearsal.toml` adds the Gate A1 fault harness, for the rehearsal on the Pi ([deploy/pi-host.md](deploy/pi-host.md) section 9).
+**Testing on Paper.** `--config tools/raw_recorder/config.paper.toml` switches every command to Paper. It uses Paper's host, `NOVIG_PAPER_READ_KEY_*`, and its own archive, `archive-paper/`, discovers Paper's markets itself, and records only Novig. Paper books are play money: they test the signer and stream against the real API, never the measurement. A Paper recorder can run alongside the Production one. It also discovers NBA (`[[league]]`), which Paper lists as Production does, so it rehearses the A1 path. `config.paper-rehearsal.toml` adds the Gate A1 fault harness and records NBA only (MLB discovery off), for the rehearsal on the Pi ([deploy/pi-host.md](deploy/pi-host.md) section 9).
 
 ```bash
 uv run raw-recorder --config tools/raw_recorder/config.paper.toml probe-subscriptions --market <paper market id>

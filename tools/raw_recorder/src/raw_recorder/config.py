@@ -269,6 +269,12 @@ def shadowed(manual: list[Game], discovered: list[Game]) -> list[str]:
     return out
 
 
+def discovered_games(cfg: Config) -> list[Game]:
+    """The discovered list, when this config discovers games. With `[discovery]` off only
+    games.toml is recorded, whatever a discovered list left in the archive root says."""
+    return load_games(cfg.discovered_path, "discovered") if cfg.discovery.get("enabled", False) else []
+
+
 def load_all_games(cfg: Config, games_path: Path | None = None) -> list[Game]:
     """The games the recorder records: games.toml (or `games_path`) over the discovered list."""
-    return combine(load_games(games_path or cfg.games_path), load_games(cfg.discovered_path, "discovered"))
+    return combine(load_games(games_path or cfg.games_path), discovered_games(cfg))

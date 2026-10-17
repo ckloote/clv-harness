@@ -268,11 +268,17 @@ def test_the_rehearsal_config_is_paper_with_the_fault_harness_on():
     assert listen.startswith("127.0.0.1:") and listen != load_config(DEFAULT_CONFIG).faults["relay_listen"]
     assert rehearsal["faults"]["enabled"] is True
     assert rehearsal["faults"]["relay_upstream"] == paper["novig"]["ws_url"].removesuffix("/v3/ws")
+    # Review of #30: NBA only. A fault that touched an MLB market would fail the gate, since the
+    # rehearsal ingests league events only.
+    assert rehearsal["discovery"]["enabled"] is False and paper["discovery"]["enabled"] is True
     for doc in (paper, rehearsal):
         del doc["novig"]["ws_url"], doc["faults"]["enabled"], doc["faults"]["relay_listen"]
+        del doc["discovery"]["enabled"]
     assert rehearsal == paper
     cfg = load_config(DEFAULT_DIR / "config.paper-rehearsal.toml")
     assert cfg.archive_root == load_config(DEFAULT_DIR / "config.paper.toml").archive_root
+    assert [lg["name"] for lg in cfg.enabled_leagues()] == ["NBA"]
+    assert not (DEFAULT_DIR / cfg.games_path.name).exists()          # no hand-listed MLB games either
 
 
 async def test_disabled_sources_do_not_run(tmp_path):

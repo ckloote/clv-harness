@@ -18,7 +18,7 @@ import aiohttp
 from . import RECORDER_VERSION, backfill, discovery, leagues, mlb
 from .archive import (ArchiveWriter, build_manifest, find_parts, iter_archive,
                       iter_file, now_ms, read_journal, recover_orphans, verify)
-from .config import Config, LeagueEvent, load_all_games, load_config, load_events, load_games, shadowed
+from .config import Config, LeagueEvent, discovered_games, load_all_games, load_config, load_events, load_games, shadowed
 from .novig.stream import CHANNEL_WEIGHT
 from .rest import RestRecorder
 from .runtime import Recorder, RecorderBusy, load_signer, signal_running_recorder
@@ -65,9 +65,9 @@ def cmd_run(args) -> int:
     cfg = load_config(args.config)
     games_path = Path(args.games or os.environ.get("RAW_RECORDER_GAMES") or cfg.games_path)
     games = load_games(games_path)
-    if not games and not cfg.discovery.get("enabled", False):
-        print(f"warning: no games in {games_path} and discovery is off; only housekeeping will run",
-              file=sys.stderr)
+    if not games and not cfg.discovery.get("enabled", False) and not cfg.enabled_leagues():
+        print(f"warning: no games in {games_path}, and discovery and every league are off; only housekeeping"
+              " will run", file=sys.stderr)
     asyncio.run(Recorder(cfg, games, games_path=games_path).run())
     return 0
 
@@ -257,7 +257,7 @@ def cmd_games(args) -> int:
             code = max(code, 1 if stale else 0)
         for n in notes:
             print(f"  note: {n}")
-    for message in shadowed(load_games(cfg.games_path), load_games(cfg.discovered_path, "discovered")):
+    for message in shadowed(load_games(cfg.games_path), discovered_games(cfg)):
         print(f"WARNING: {message}")
         code = max(code, 1)
     lo, hi = t - args.past_hours * 3_600_000, t + args.days * 86_400_000

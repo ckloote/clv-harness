@@ -358,7 +358,11 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    cd ~/clv-harness && C=tools/raw_recorder/config.paper-rehearsal.toml && .venv/bin/raw-recorder --config $C games && .venv/bin/raw-recorder --config $C status --event <Novig event ID>
    ```
 
-4. **Inject faults:** at least one of each kind, on markets of games that tip off tonight (`games` lists them). Put some inside a dense window, which runs from 15 minutes before a start to 30 minutes after it. **(Pi, recorder)**, with `C` as above:
+4. **Inject faults.** At least one of each kind. The gate needs every market a fault touched loaded, and a market loads only once its window has closed inside the run. So mind which markets each fault touches:
+   - **One market:** a sequence skip, channel stall or resubscribe touches only its market. Use markets of games that tip off tonight (`games` lists them). These can go inside a dense window, which runs from 15 minutes before a start to 30 minutes after it.
+   - **Every subscribed market:** a socket kill or process kill touches every market subscribed at that moment. Windows open 25 hours ahead, so tomorrow's games are subscribed from about this evening on. Do these two while `games` shows no window open yet for any game after tonight's. Otherwise the run must go on until those windows close too.
+
+   **(Pi, recorder)**, with `C` as above:
 
    ```bash
    .venv/bin/raw-recorder --config $C fault sequence-skip --market <id> --channel book
@@ -397,7 +401,8 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    RSYNC_RSH='ssh -o BatchMode=yes' ARCHIVE_MIRROR_SRC=pi-archive-paper: ARCHIVE_MIRROR_DST=$HOME/code/clv-harness/archive-rehearsal sh deploy/archive-mirror.sh
    ```
 
-8. **End** after the last of tonight's windows closes, 4 hours after the last tip-off. Write down the time in UTC: the gate's `--to`, which must be after the last fault's result. Stopping seals every segment. **(Pi, root):**
+8. **End** once every window a fault touched has closed. With the schedule above, that is 4 hours after tonight's last tip-off. Write down the time in UTC: the gate's `--to`, which must be after the last fault's result.
+   - **Stopping early can't be fixed afterwards.** A window still open when the recorder stops never passes the seal watermark, so its markets never load. Stopping seals every segment. **(Pi, root):**
 
    ```bash
    sudo systemctl disable --now raw-recorder-paper.service raw-recorder-paper-relay.service
@@ -415,5 +420,6 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    ```
 
    **Expected:** PASS. Every unattributed gap needs an explanation, such as the power cut or a Paper disconnect seen in the recorder's log.
+   - **`market not ingested`** names a market a fault touched whose window hadn't closed when the run ended (step 4). Rerun the rehearsal with the connection faults earlier.
 
 The Paper archive can stay on the SSD; it is a separate root. To rehearse again, start from step 3.

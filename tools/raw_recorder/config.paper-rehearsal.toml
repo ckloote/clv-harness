@@ -1,6 +1,8 @@
 # The A1 rehearsal on Paper (deploy/pi-host.md, "Rehearsal on Paper"): config.paper.toml with
 # the Gate A1 fault harness on and the stream through the relay. The relay listens on its own
-# port, so it never meets a Production gate run's. Everything else must equal config.paper.toml
+# port, so it never meets a Production gate run's. MLB discovery is off: `clv ingest
+# --league-events` loads league events only, and the gate needs every market a fault touched
+# loaded. Everything else must equal config.paper.toml
 # (tests enforce this): the same archive, archive-paper/, and the same Paper key.
 # Use:  raw-recorder --config tools/raw_recorder/config.paper-rehearsal.toml ...
 
@@ -64,8 +66,8 @@ key_env = "ODDS_API_KEY"
 enabled = false                             # recorded by the Production config
 base_url = "https://statsapi.mlb.com"
 
-[discovery]                                 # reads the schedule even with [mlb] off; Novig markets only
-enabled = true
+[discovery]                                 # MLB games: off, so the rehearsal records NBA only. Every
+enabled = false                             # market a fault touches must load with `clv ingest --league-events`
 interval_s = 3600
 days_ahead = 1
 game_types = ["F", "D", "L", "W"]
