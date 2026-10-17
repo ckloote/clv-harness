@@ -62,6 +62,9 @@ RELAY_KINDS = ("socket_kill", "channel_stall", "sequence_skip")
 SEQUENCED = tuple(ch for ch in CHANNEL_WEIGHT if ch != "lifecycle")
 FAULT_PATH = "/_relay/fault"
 SUN_PATH_MAX = 107                  # bytes in a Unix socket path, less the terminating NUL (Linux)
+# The longest control request or answer, one JSON line: a stall's result lists every dropped frame
+# (about 80 bytes each), so asyncio's 64 KiB default is a few seconds of a busy market.
+CONTROL_LINE_MAX = 64 * 1024 * 1024
 # Request headers that belong to the hop, not the request: the relay's own upgrade replaces them.
 HOP_HEADERS = frozenset({"host", "upgrade", "connection", "sec-websocket-key", "sec-websocket-version",
                          "sec-websocket-extensions", "sec-websocket-protocol", "sec-websocket-accept",
@@ -343,7 +346,7 @@ class Control:
             path.unlink()                           # left by a killed session
         elif path.exists():
             raise FaultError(f"{path} exists and is not a socket")
-        server = await asyncio.start_unix_server(self.handle, path=where)
+        server = await asyncio.start_unix_server(self.handle, path=where, limit=CONTROL_LINE_MAX)
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
         try:
             async with server:
@@ -398,7 +401,7 @@ class Control:
 # --------------------------------------------------------------------------
 
 async def control(path: Path, req: dict, timeout_s: float = 30) -> dict:
-    reader, writer = await asyncio.open_unix_connection(socket_path(path))
+    reader, writer = await asyncio.open_unix_connection(socket_path(path), limit=CONTROL_LINE_MAX)
     try:
         writer.write(json.dumps(req).encode() + b"\n")
         await writer.drain()
@@ -441,19 +444,22 @@ async def inject(kind: str, target: dict, *, control_path: Path, relay_url: str,
         rep = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     req = {"op": "result", "fault_id": fault_id, "kind": kind, "ok": bool(rep.get("ok")), "report": rep}
     if kind != "process_kill" or not rep.get("ok"):
-        await control(control_path, req)
+        ack = await control(control_path, req)
     else:
         deadline = asyncio.get_running_loop().time() + restart_wait_s
         while True:                                 # the killed session's socket refuses until replaced
             try:
-                await control(control_path, req)
+                ack = await control(control_path, req)
                 break
             except (ConnectionError, FileNotFoundError, FaultError, asyncio.TimeoutError):
                 if asyncio.get_running_loop().time() >= deadline:
-                    rep["error"] = (f"no recorder answered on {control_path} within {restart_wait_s:g} s: "
-                                    "the result is not archived, so clv gate a1 will fail this fault")
-                    rep["ok"] = False
+                    ack = {"ok": False, "error": f"no recorder answered on {control_path} within {restart_wait_s:g} s"}
                     break
                 await asyncio.sleep(1)
+    if not ack.get("ok"):
+        # The fault happened but its evidence did not reach the archive: never report success.
+        rep["ok"] = False
+        rep["error"] = (f"the result is not archived ({ack.get('error')}), so clv gate a1 will fail this fault"
+                        + (f"; the fault itself: {rep['error']}" if rep.get("error") else ""))
     rep["fault_id"] = fault_id
     return rep

@@ -197,6 +197,40 @@ async def test_a_process_kill_result_reaches_the_restarted_recorder(tmp_path, mo
     assert applied["kind"] == "process_kill" and applied["report"]["killed_ts_ms"] == rep["killed_ts_ms"]
 
 
+async def test_a_long_stalls_result_is_archived_whole(tmp_path, monkeypatch):
+    # A stall's result lists every dropped frame; a long one on a busy market runs past asyncio's
+    # 64 KiB line limit, and its result must still reach the archive.
+    dropped = [{"ts_ms": 1_000 + i, "markets": {MARKET: {"book": i}, "other-market": {"book": i}}}
+               for i in range(5_000)]
+
+    async def big_stall(url, req, timeout_s):
+        return {"ok": True, "start_ts_ms": 1, "end_ts_ms": 2, "dropped": dropped, "spared": 0}
+
+    monkeypatch.setattr(faults, "relay_fault", big_stall)
+    async with Rig(tmp_path, new_state(), busy_feed=False) as rig:
+        rep = await rig.inject("channel_stall", market=MARKET, channel="book", seconds=1)
+    assert len(json.dumps(rep)) > 4 * 65_536
+    assert rep["ok"]
+    (applied,) = recorder_events(rig.frames(), "fault_applied")
+    assert applied["report"]["dropped"] == dropped
+
+
+async def test_a_result_the_recorder_does_not_archive_is_never_reported_as_success(tmp_path, monkeypatch):
+    dispatch = faults.Control.dispatch
+
+    async def refuse_results(self, req):
+        if req.get("op") == "result":
+            raise OSError("No space left on device")
+        return await dispatch(self, req)
+
+    monkeypatch.setattr(faults.Control, "dispatch", refuse_results)
+    async with Rig(tmp_path, new_state(), channel_probe_interval_s=60) as rig:
+        rep = await rig.inject("sequence_skip", market=MARKET, channel="book", timeout_s=5)
+    assert rep["dropped"] and not rep["ok"]
+    assert "not archived" in rep["error"] and "No space left" in rep["error"]
+    assert not recorder_events(rig.frames(), "fault_applied")
+
+
 async def test_the_relay_spares_a_frame_carrying_a_lifecycle_delta():
     relay = faults.Relay("ws://unused")
     loop = asyncio.get_running_loop()

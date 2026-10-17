@@ -33,10 +33,16 @@ relay forwarded just before the fault may carry a stamp just after it. The slack
 excuses a misplaced boundary: inside a gap there is no trustworthy observation, so the last
 one before the gap's close, within the slack, must be exactly where it opens;
 - close at an authoritative snapshot of that market and channel received after the fault,
-  or stay open only if the market was never observed again (its capture had ended).
+  or stay open only if the market was never observed again (its capture had ended). On the
+  connection that lost a dropped delta, the snapshot must be at or past the dropped seq: one
+  behind it was taken before the delta and cannot hold it, however late it arrived. A seq
+  belongs to one connection and one subscription, so a snapshot on a new connection, or a
+  subscribe reply, is judged by its receive time alone.
 
 Beside the faults: every closed stream gap in the run, injected or not, must close at a
-snapshot, since a resync always starts from one; every gap no fault explains is listed, since
+snapshot, since a resync always starts from one, and a sequence gap closed on its own
+connection by a probe reply must close at a seq past the observation it opened at (the facts
+do not keep the seq that exposed it, so this is the tightest bound they allow); every gap no fault explains is listed, since
 a real outage during the gate is evidence too; and a fault whose injection failed (the relay
 found no delta to skip) is listed and not counted. Then the storage report (sealed bytes,
 frames and segments per day and source) and the depth report (how often a book snapshot's
@@ -285,7 +291,21 @@ def judge(facts: _Facts, f: Fault, g: Gap, t: int, seq: int | None, slack: int) 
         problems.append(f"closes at {ms_iso(g.end_ms)}, before the fault")
     elif g.end_ref is None or not is_snapshot(facts.frame(g.end_ref), market, channel):
         problems.append(f"closes at {g.end_ref}, which is not a snapshot of {market} {channel}")
+    elif seq is not None and (got := same_subscription_seq(facts, g, market, channel)) is not None and got < seq:
+        problems.append(f"closes at a snapshot at seq {got} ({g.end_ref}), behind the dropped seq {seq}")
     return problems
+
+
+def same_subscription_seq(facts: _Facts, g: Gap, market: str, channel: str) -> int | None:
+    """The closing snapshot's seq, when it is comparable with the seqs before the gap: a probe
+    reply on the connection where the gap opened. None for a new connection or a subscribe
+    reply, whose seq may start afresh."""
+    if g.start_ref is None or g.end_ref is None:
+        return None
+    start, end = facts.frame(g.start_ref), facts.frame(g.end_ref)
+    if start.conn_id != end.conn_id or "subscribed" in json.loads(end.frame):
+        return None
+    return frame_seq(end, market, channel)
 
 
 def covering(facts: _Facts, f: Fault, scope: str, t: int, seq: int | None, used: set[int]) -> tuple[Gap | None, str]:
@@ -421,6 +441,15 @@ def run(conn: sqlite3.Connection, root: Path, lo: int, hi: int, min_per_kind: in
                     g.end_ref and is_snapshot(facts.frame(g.end_ref), market, channel)):
                 rep.checks.append(Check(None, "resync", scope, False,
                                         f"{g.reason} gap closes at {g.end_ref}, which is not a snapshot"))
+            elif g.end_ms is not None and g.reason == "sequence_gap" and (
+                    got := same_subscription_seq(facts, g, market, channel)) is not None:
+                # A lifecycle reset may close at the seq it opened at (the venue drops orders without
+                # deltas); a sequence gap exists because a later seq was missed.
+                before = frame_seq(facts.frame(g.start_ref), market, channel)
+                if before is not None and got <= before:
+                    rep.checks.append(Check(None, "resync", scope, False,
+                                            f"sequence gap opened at seq {before} closes at a snapshot at seq {got} "
+                                            f"({g.end_ref}), which cannot hold what was missed"))
             if g.gap_id not in used:
                 rep.unattributed.append(g)
     rep.storage = storage(root, lo, hi)

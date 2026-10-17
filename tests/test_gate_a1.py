@@ -402,6 +402,50 @@ def test_a_gap_closed_without_a_snapshot_fails_the_resync_check(gate_run):
     assert bad.kind == "resync" and "not a snapshot" in bad.detail
 
 
+def test_a_recovery_snapshot_behind_the_dropped_seq_fails(gate_run):
+    # The skip's gap really closed at a probe reply on its own connection. Claim the dropped delta
+    # was past that reply's seq: the reply was taken before it, so it cannot have recovered it.
+    root, path, lo, hi, reports = gate_run
+    facts = gate._Facts(db.connect(path), root, lo, hi)
+    (drop,) = reports["sequence_skip"]["dropped"]
+    scope = f"novig:market:{MARKET}/book"
+    real = gate.Fault("x", "sequence_skip", {}, drop["ts_ms"], [], "ref", {"dropped": [drop]}, True)
+    assert gate.check_scope(facts, real, scope, gate.expectations(real)[scope], set()).ok
+    (g,) = [g for g in facts.gaps[scope] if g.start_ms <= drop["ts_ms"] <= (g.end_ms or 0)]
+    replied = gate.frame_seq(facts.frame(g.end_ref), MARKET, "book")
+    stale = {"ts_ms": drop["ts_ms"], "markets": {MARKET: {"book": replied + 1}}}
+    f = gate.Fault("x", "sequence_skip", {}, drop["ts_ms"], [], "ref", {"dropped": [stale]}, True)
+    check = gate.check_scope(facts, f, scope, gate.expectations(f)[scope], set())
+    assert not check.ok and f"behind the dropped seq {replied + 1}" in check.detail
+
+
+def test_a_sequence_gap_closed_at_a_seq_it_had_already_seen_fails_the_resync_check(gate_run):
+    root, path, lo, hi, reports = gate_run
+    c = copy_db(path)
+    facts = gate._Facts(c, root, lo, hi)
+    scope = f"novig:market:{MARKET}/book"
+    (drop,) = reports["sequence_skip"]["dropped"]
+    (g,) = [g for g in facts.gaps[scope] if g.start_ms <= drop["ts_ms"] <= (g.end_ms or 0)]
+    reply = facts.frame(g.end_ref)
+    # A later delta on the same connection, past the reply's seq: a gap opened there and closed by
+    # that earlier reply would be closed by a snapshot that cannot hold what it missed.
+    relpath, line = g.end_ref.split("#")
+    later = c.execute("SELECT t.raw_artifact_id, t.raw_line, t.observed_ts_ms FROM tick t JOIN raw_artifact a"
+                      " USING (raw_artifact_id) WHERE a.relpath = ? AND t.raw_line > ? AND t.seq > ?"
+                      " ORDER BY t.raw_line LIMIT 1",
+                      (relpath, int(line), gate.frame_seq(reply, MARKET, "book"))).fetchone()
+    aid = c.execute("SELECT raw_artifact_id FROM raw_artifact WHERE relpath = ?", (relpath,)).fetchone()[0]
+    opened = c.execute("INSERT INTO collection_gap (kind, source, scope, reason, boundary_ts_ms, observed_ts_ms,"
+                       " raw_artifact_id, raw_line) VALUES ('open', 'novig', ?, 'sequence_gap', ?, 0, ?, ?)",
+                       (scope, later[2], later[0], later[1])).lastrowid
+    c.execute("INSERT INTO collection_gap (kind, opens_gap_id, source, scope, reason, boundary_ts_ms, observed_ts_ms,"
+              " raw_artifact_id, raw_line) VALUES ('close', ?, 'novig', ?, 'sequence_gap', ?, 0, ?, ?)",
+              (opened, scope, later[2] + 1, aid, int(line)))
+    rep = gate.run(c, root, lo, hi, min_per_kind=1)
+    (bad,) = [x for x in rep.checks if not x.ok]
+    assert bad.kind == "resync" and "cannot hold what was missed" in bad.detail
+
+
 def test_a_fault_without_a_result_and_a_short_schedule_fail(gate_run):
     root, path, lo, hi, reports = gate_run
     # Cut the run before the process kill's result, which the restarted recorder archived.
