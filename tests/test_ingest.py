@@ -219,6 +219,7 @@ def write_archive(root: Path, games: Path, crossed_resync: str | None = None, la
     for ticker in TICKERS:
         rest(clock2, k2, f"k9{ticker}", T - 1_000_000, f"/trade-api/v2/markets/{ticker}/orderbook", "orderbook",
              kalshi_book([("0.5200", "100.50")], [("0.4700", "20.00")]), [f"kalshi:market:{ticker}"])
+    clock2.t = T + 3_700_000                # idle past the window's end: the archive is sealed past it
     w2.close()
     games.write_text(f'''[[game]]
 game_pk = {PK}
@@ -599,7 +600,9 @@ ARCHIVE = Path(__file__).resolve().parents[1] / "archive"
 def test_recorded_849832_ingests():
     c = db.connect(":memory:")
     db.migrate(c)
-    rep = ingest_game(c, ARCHIVE, PK, now_ms=NOW)
+    # Not required to be sealed: the local archive predates the seal watermark (as in tests/golden.py),
+    # and every count below is asserted exactly, so an incomplete archive fails here anyway.
+    rep = ingest_game(c, ARCHIVE, PK, now_ms=NOW, require_sealed=False)
     assert q(c, "PRAGMA foreign_key_check") == []
     assert rep.rows["venue_instrument"] == 12 and rep.rows["instrument_mapping_observation"] == 24
     assert rep.rows["off_observation"] == 14
@@ -664,3 +667,22 @@ def test_the_league_listing_is_catalog_evidence_when_the_market_fetch_failed(tmp
 def recorded_like(root):
     write_archive(root, root / "games.toml")
     return root, root / "games.toml"
+
+
+@pytest.mark.parametrize("watermark", ["short", "none"])
+def test_a_game_the_archive_is_not_sealed_past_is_refused_and_nothing_is_written(tmp_path, watermark):
+    # A game is loaded once, so loading part of its window would leave the rest out for good:
+    # like a league event, it waits for the seal watermark to pass its window's end.
+    root, games = tmp_path, tmp_path / "games.toml"
+    write_archive(root, games)
+    path = root / "sealed_through.json"
+    if watermark == "none":
+        path.unlink()
+    else:
+        path.write_text(json.dumps({"sealed_through_ms": T + 3_600_000, "session_id": "s2", "written_ts_ms": 0}))
+    c = db.connect(":memory:")
+    db.migrate(c)
+    match = "no seal watermark" if watermark == "none" else "not past its window's end 2026-10-09T01:00:00.000Z"
+    with pytest.raises(IngestError, match=f"gamePk {PK} is not settled: .*{match}"):
+        ingest_game(c, root, PK, games, now_ms=NOW)
+    assert c.execute("SELECT count(*) FROM raw_artifact").fetchone()[0] == 0

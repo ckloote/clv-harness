@@ -143,7 +143,7 @@ uv run clv inspect --game-pk 849832
 uv run clv ingest --game-pk 849832
 ```
 
-`ingest` creates or upgrades `data/clv.sqlite` (git-ignored; `--db` to change it) and loads the game's facts: identity and mappings, Novig and Kalshi book states, liveness evidence, collection gaps and off observations. Each row cites the sealed segment and line it came from. It refuses a game that is already loaded, since a clean database must reproduce it exactly. Game 4 takes about 15 s and makes a 24 MB database. `clv migrate` alone creates or upgrades the database.
+`ingest` creates or upgrades `data/clv.sqlite` (git-ignored; `--db` to change it) and loads the game's facts: identity and mappings, Novig and Kalshi book states, liveness evidence, collection gaps and off observations. Each row cites the sealed segment and line it came from. It refuses a game that is already loaded, since a clean database must reproduce it exactly. For the same reason it refuses a game until the archive's seal watermark is past the end of its capture window (see league events below). Loading part of a window would leave the rest out for good. An archive written only by a recorder older than the watermark has none, so its games load once a current recorder has run on it, or from a sealed mirror. Game 4 takes about 15 s and makes a 24 MB database. `clv migrate` alone creates or upgrades the database.
 
 **League events (A1).** A league event is loaded from the venue side only: its Novig instruments, books, liveness evidence and collection gaps, with no event, outcome, mapping or off observation. Which league game it is gets decided in A2.
 
