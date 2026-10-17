@@ -1,0 +1,57 @@
+# systemd *system* unit for the recorder on the A1 host, a Raspberry Pi
+# (docs/decisions/2026-10-16-a1-host.md; set up with deploy/pi-host.md).
+#
+# A system unit, not a user one: a user manager cannot order a unit after the
+# system's time-sync.target or a mount, and both are the point of this unit.
+#
+# Install (as root):
+#   cp deploy/raw-recorder-pi.service /etc/systemd/system/raw-recorder.service
+#   systemctl daemon-reload
+#   systemctl enable --now raw-recorder.service
+#   journalctl -u raw-recorder -f
+#
+# It assumes deploy/pi-host.md's layout: the account `recorder`, its checkout at
+# /home/recorder/clv-harness, uv at /home/recorder/.local/bin/uv, and the SSD at
+# /mnt/ssd with the archive root /mnt/ssd/archive, linked from <checkout>/archive so
+# config.toml's root ("../../archive") and every hand-run command land there.
+#
+# - No timestamp before the clock is synchronized: the unit starts only after
+#   time-sync.target, which systemd-time-wait-sync.service (enabled in
+#   deploy/pi-host.md) holds back until NTP has set the clock. Should the clock
+#   lose sync later, the recorder archives `clock_unsynced` and captures nothing
+#   until it is back.
+# - No write lands on the SD card: RequiresMountsFor keeps the recorder down until
+#   the SSD is mounted, and stops it if the SSD goes away.
+
+[Unit]
+Description=CLV harness raw recorder (A1 host)
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+RequiresMountsFor=/mnt/ssd/archive
+# During a Gate A1 run the stream goes through the relay; start it first if both are enabled.
+After=raw-recorder-relay.service
+# Never give up restarting: the host exists to record.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=recorder
+Group=recorder
+WorkingDirectory=/home/recorder/clv-harness
+EnvironmentFile=-/home/recorder/.config/raw-recorder/env
+# --frozen: install what uv.lock pins, never re-resolve at boot.
+ExecStartPre=/home/recorder/.local/bin/uv sync --frozen --package raw-recorder
+ExecStart=/home/recorder/clv-harness/.venv/bin/raw-recorder run
+# SIGTERM: the recorder emits process_stop and seals every active segment.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+ExecReload=/bin/kill -HUP $MAINPID
+# Also restarts after the gate harness's process-kill fault (a SIGKILL).
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

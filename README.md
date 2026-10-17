@@ -85,8 +85,10 @@ tools/raw_recorder/         R0 recorder: a standalone workspace member (aiohttp 
     status.py               `raw-recorder status`: is the current game being captured, source by source
   tests/                    archive, REST, WebSocket and runtime fixtures (local fakes, no network)
 tools/b0/                   P0 B0 research scripts that reproduce docs/feasibility.md (cache in b0-work/)
-deploy/raw-recorder.service systemd user unit
-deploy/archive-mirror.sh    the workstation's mirror of the recorder host's sealed archive
+deploy/raw-recorder.service systemd user unit (the workstation, R0)
+deploy/raw-recorder-pi.service, raw-recorder-relay.service   the A1 host's recorder and Gate A1 relay (system units)
+deploy/archive-mirror.*     the workstation's mirror of the recorder host's sealed archive: script, service, timer
+deploy/pi-host.md           runbook: setting up the Pi, the mirror and the cutover
 archive/                    raw evidence (git-ignored; back it up separately)
 ```
 
@@ -268,7 +270,7 @@ cp deploy/raw-recorder.service ~/.config/systemd/user/
 systemctl --user enable --now raw-recorder.service
 ```
 
-Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments in the unit file. New games and edits to `games.toml` need no restart. After changing the env file, the unit or the recorder's code, restart **between** capture windows: a restart mid-game is a recorded gap in every source.
+Put the secrets in `~/.config/raw-recorder/env` (`chmod 600`). See the comments in the unit file. That unit is the workstation's. The A1 host, a Raspberry Pi, runs `deploy/raw-recorder-pi.service` instead, and the workstation mirrors its archive. [deploy/pi-host.md](deploy/pi-host.md) sets up both and the cutover. New games and edits to `games.toml` need no restart. After changing the env file, the unit or the recorder's code, restart **between** capture windows: a restart mid-game is a recorded gap in every source.
 
 ```bash
 systemctl --user daemon-reload

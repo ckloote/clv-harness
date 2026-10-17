@@ -3,8 +3,9 @@ __pycache__/
 # Virtual environment managed by uv.
 .venv/
 # Raw evidence archive: large, backed up separately, never committed. Root only: the
-# synthetic golden game's archive under tests/fixtures/ is committed on purpose.
-/archive/
+# synthetic golden game's archive under tests/fixtures/ is committed on purpose. No trailing
+# slash: on the recorder host it is a link to the SSD (deploy/pi-host.md).
+/archive
 # Secrets must never be committed.
 *.pem
 .env
@@ -13,7 +14,7 @@ __pycache__/
 # B1 historical reference archive (raw-recorder backfill): vendor data, never committed.
 /archive-hist/
 # Novig Paper (play-money) test archive: never evidence, never committed.
-archive-paper/
+archive-paper
 # B0 feasibility inputs and caches (tools/b0): large, re-fetchable, never committed.
 b0-work/
 # Harness databases: rebuilt from the archive (clv migrate / clv ingest).

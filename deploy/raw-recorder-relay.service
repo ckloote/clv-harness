@@ -1,0 +1,40 @@
+# systemd *system* unit for the Gate A1 fault relay on the A1 host
+# (raw_recorder.faults; README "Gate A1: forced faults"; deploy/pi-host.md).
+#
+# Only for the gate run and its rehearsals. The relay forwards the recorder's
+# stream to Novig on loopback and drops frames only when the harness asks. With
+# it running, set [faults] enabled = true and point [novig] ws_url at
+# ws://127.0.0.1:8765/v3/ws; set both back afterwards and stop this unit.
+#
+# Install and run (as root):
+#   cp deploy/raw-recorder-relay.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now raw-recorder-relay.service   # enabled, so a reboot mid-run restores it
+#   systemctl restart raw-recorder.service              # between capture windows
+# Afterwards:
+#   systemctl disable --now raw-recorder-relay.service
+#
+# A relay restart closes the recorder's sockets: an unlabelled socket kill, which
+# `clv gate a1` reports as an unattributed gap.
+
+[Unit]
+Description=CLV harness Gate A1 fault relay
+Wants=network-online.target
+After=network-online.target
+Before=raw-recorder.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=recorder
+Group=recorder
+WorkingDirectory=/home/recorder/clv-harness
+ExecStart=/home/recorder/clv-harness/.venv/bin/raw-recorder relay
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

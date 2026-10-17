@@ -1,0 +1,13 @@
+# systemd *user* timer on the workstation: runs archive-mirror.service every 15
+# minutes (docs/decisions/2026-10-16-a1-host.md). Persistent: a run missed while the
+# workstation slept happens on wake. See archive-mirror.service to install.
+
+[Unit]
+Description=Mirror the recorder host's sealed archive every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target
