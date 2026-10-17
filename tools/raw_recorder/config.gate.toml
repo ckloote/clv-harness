@@ -1,0 +1,104 @@
+# The Gate A1 run on Production (docs/decisions/2026-10-17-a1-gate-plan.md; deploy/pi-host.md,
+# "The gate run"): config.toml with the fault harness on and the stream through the relay,
+# raw-recorder-relay.service. Everything else must equal config.toml (tests enforce this), so a
+# change there is made here too: the same archive, key, leagues and §10 values.
+
+games_file = "games.toml"         # relative to this file: hand-checked games, overriding discovery
+
+[archive]
+root = "../../archive"            # relative to this file: <repo>/archive
+
+[r0]
+kalshi_poll_interval_s = 10                 # r0.kalshi_poll_interval_s
+odds_poll_interval_s = 1200                 # r0.odds_poll_interval_s
+odds_quota_floor = 50                       # r0.odds_quota_floor
+capture_lead_s = 10800                      # r0.capture_lead_s
+capture_tail_s = 5400                       # r0.capture_tail_s
+odds_window_lead_s = 10800                  # r0.odds_window_lead_s
+segment_max_s = 3600                        # r0.segment_max_s
+fsync_interval_s = 5                        # r0.fsync_interval_s
+rest_timeout_s = 10                         # r0.rest_timeout_s
+min_free_disk_mb = 5000                     # r0.min_free_disk_mb
+stream_probe_reserve_fraction = 0.5         # r0.stream_probe_reserve_fraction
+novig_public_book_poll_interval_s = 10      # r0.novig_public_book_poll_interval_s
+
+[stream]
+channel_probe_interval_s = 15               # stream.channel_probe_interval_s
+quiet_probe_interval_s = 300                # stream.quiet_probe_interval_s: outside a dense window
+dense_probe_lead_s = 900                    # stream.dense_probe_lead_s: dense window from start - this
+dense_probe_tail_s = 1800                   # stream.dense_probe_tail_s: to start + this
+transport_liveness_max_s = 45               # stream.transport_liveness_max_s
+probe_timeout_s = 5                         # stream.probe_timeout_s: a probe or subscribe unanswered this long is retried
+subscription_check_interval_s = 60          # stream.subscription_check_interval_s
+reconnect_backoff_s = { initial = 1, max = 60 }   # stream.reconnect_backoff_s
+
+[a1]
+capture_lead_s = 90000                      # a1.capture_lead_s: 25 h, for the 24 h offset
+capture_tail_s = 14400                      # a1.capture_tail_s: 4 h after the scheduled start
+
+[novig]
+host = "https://api.novig.com"
+ws_url = "ws://127.0.0.1:8765/v3/ws"     # the relay ([faults] relay_listen), which forwards to Novig
+channels = ["book", "trades"]               # one connection per channel (a selection maps a subject to one channel)
+key_id_env = "NOVIG_READ_KEY_ID"            # trading::read key only
+key_path_env = "NOVIG_READ_KEY_PATH"        # PEM, chmod 600
+public_book_poll = "auto"                   # auto: poll the unsigned public book only when no key is configured; always | never
+public_book_depth = 20                      # the endpoint's maximum
+
+[kalshi]
+base_url = "https://external-api.kalshi.com/trade-api/v2"
+series_ticker = "KXMLBGAME"
+
+[odds_api]
+base_url = "https://api.the-odds-api.com"
+sport = "baseball_mlb"
+regions = "us"
+markets = "h2h"
+odds_format = "american"
+key_env = "ODDS_API_KEY"
+
+[mlb]
+base_url = "https://statsapi.mlb.com"
+refetch_after_s = [43200]                   # feeds again 12 h after each window ends: final data, scoring corrections
+
+# Which games to record (raw_recorder.discovery): the StatsAPI schedule and the Novig
+# and Kalshi catalogs, archived, matched and merged into <archive>/games.discovered.toml.
+[discovery]
+enabled = true
+interval_s = 3600                           # one round at startup, then hourly
+days_ahead = 1                              # today and tomorrow (US Eastern)
+game_types = ["F", "D", "L", "W"]           # StatsAPI gameType: the postseason rounds; add "R" for the regular season
+
+# B1 historical reference import (raw-recorder backfill; raw_recorder.backfill). Operational
+# values, not DESIGN.md §10 parameters. Its own archive root and lock: it runs beside `run`.
+[backfill]
+root = "../../archive-hist"                 # relative to this file: <repo>/archive-hist, never committed
+seasons = [2025, 2026]                      # StatsAPI schedule; Kalshi KXMLBGAME begins 2025-04-16
+game_types = "R,F,D,L,W"                    # regular season and every postseason round
+lookback_s = 115200                         # 32 h before close_time: the 24 h offset (controls.martingale_offsets), the game, a margin
+candles_per_request = 5000                  # 1-minute candles per Kalshi request
+trades_page_limit = 1000                    # Kalshi trades per page
+novig_first_day = "2026-08-03"              # Novig's first public trades file
+novig_data_url = "https://data.novig.com"
+novig_data_path = "/reporting/trade-data"
+rest_timeout_s = 180                        # a day's trades.csv is tens of MB
+segment_max_s = 300                         # seal every 5 min: at 10 requests/s of trade pages an hour is ~10 GB unpacked
+min_interval_s = { mlb = 0.2, kalshi = 0.1, novig_data = 0.5, novig_history = 0.3 }   # per host, between requests
+
+# Leagues other than MLB (A1; raw_recorder.leagues): found from the Novig catalog alone
+# every [discovery] interval, written to <archive>/events.discovered.toml, and recorded from
+# a1.capture_lead_s before each scheduled start. Enable at the A1 cutover
+# (docs/decisions/2026-10-16-a1-host.md), not beside the postseason recorder.
+[[league]]
+name = "NBA"                                # Novig's league code (docs/decisions/2026-10-16-a1-league.md)
+enabled = false
+days_ahead = 2                              # events starting within this many days are listed
+
+# Gate A1 fault injection (raw_recorder.faults): off except for the gate run and its
+# rehearsals. With it on, the recorder serves the fault harness's control socket, and
+# `raw-recorder relay` forwards the stream; point [novig] ws_url at ws://<relay_listen>/v3/ws.
+[faults]
+enabled = true
+control_socket = ".recorder.control"        # relative to the archive root; never mirrored
+relay_listen = "127.0.0.1:8765"             # loopback only
+relay_upstream = "wss://api.novig.com"

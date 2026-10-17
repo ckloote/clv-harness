@@ -111,3 +111,16 @@ def test_the_rehearsal_config_and_archive_exist_where_the_units_and_runbook_say(
     doc = (DEPLOY / "pi-host.md").read_text()
     assert "ln -s /mnt/ssd/archive-paper ~/clv-harness/archive-paper" in doc
     assert "rrsync -ro /mnt/ssd/archive-paper" in doc
+
+
+def test_the_gate_drop_in_runs_the_pi_recorder_on_the_gate_config_with_its_relay():
+    # docs/decisions/2026-10-17-a1-gate-plan.md: only the config changes; the unit keeps its clock
+    # wait, mount and restart policy, and pulls in the relay it is already ordered after.
+    gate, prod = unit("raw-recorder-gate.conf"), unit("raw-recorder-pi.service")
+    gate_cfg = "--config /home/recorder/clv-harness/tools/raw_recorder/config.gate.toml"
+    assert gate["Service.ExecStart"] == ["", prod["Service.ExecStart"][0].replace("raw-recorder run",
+                                                                                    f"raw-recorder {gate_cfg} run")]
+    assert set(gate) == {"Unit.Wants", "Service.ExecStart"}
+    assert gate["Unit.Wants"] == ["raw-recorder-relay.service"]
+    assert "raw-recorder-relay.service" in words(prod, "Unit.After")
+    assert (REPO / gate_cfg.split()[1].replace("/home/recorder/clv-harness/", "")).exists()

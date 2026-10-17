@@ -175,6 +175,16 @@ async def test_a_skip_that_finds_no_delta_is_recorded_as_failed(tmp_path):
     assert recorder_events(rig.frames(), "fault_failed")
 
 
+async def test_a_stall_that_drops_nothing_is_recorded_as_not_applied(tmp_path):
+    # docs/decisions/2026-10-17-a1-gate-plan.md: a stall on a quiet market touched nothing, so it
+    # is not counted and can be repeated, rather than failing the gate for touching no market.
+    async with Rig(tmp_path, new_state(), busy_feed=False) as rig:
+        rep = await rig.inject("channel_stall", market=MARKET, channel="book", seconds=0.5)
+    assert not rep["ok"] and rep["dropped"] == [] and "during the 0.5 s stall" in rep["error"]
+    (failed,) = recorder_events(rig.frames(), "fault_failed")
+    assert failed["fault_id"] == rep["fault_id"] and "touched_markets" not in rep
+
+
 async def test_a_process_kill_result_reaches_the_restarted_recorder(tmp_path, monkeypatch):
     killed = []
     async with Rig(tmp_path, new_state(), busy_feed=False) as rig:

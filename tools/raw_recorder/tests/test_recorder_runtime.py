@@ -281,6 +281,23 @@ def test_the_rehearsal_config_is_paper_with_the_fault_harness_on():
     assert not (DEFAULT_DIR / cfg.games_path.name).exists()          # no hand-listed MLB games either
 
 
+
+def test_the_gate_config_is_production_with_the_fault_harness_on():
+    # docs/decisions/2026-10-17-a1-gate-plan.md: the gate tests the collector as it runs, so only
+    # the stream route and the harness differ from config.toml.
+    import tomllib
+    from raw_recorder.config import DEFAULT_DIR
+    prod = tomllib.loads((DEFAULT_DIR / "config.toml").read_text())
+    gate = tomllib.loads((DEFAULT_DIR / "config.gate.toml").read_text())
+    listen = gate["faults"]["relay_listen"]
+    assert gate["novig"]["ws_url"] == f"ws://{listen}/v3/ws" and listen.startswith("127.0.0.1:")
+    assert gate["faults"]["enabled"] is True and prod["faults"]["enabled"] is False
+    assert gate["faults"]["relay_upstream"] == prod["novig"]["ws_url"].removesuffix("/v3/ws")
+    for doc in (prod, gate):
+        del doc["novig"]["ws_url"], doc["faults"]["enabled"]
+    assert gate == prod
+    assert load_config(DEFAULT_DIR / "config.gate.toml").archive_root == load_config(DEFAULT_CONFIG).archive_root
+
 async def test_disabled_sources_do_not_run(tmp_path):
     srv = TestServer(fake_vendors())
     await srv.start_server()
