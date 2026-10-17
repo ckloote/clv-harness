@@ -18,8 +18,13 @@ Per connection (new conn_id each time; stream_id == conn_id):
   Ping is archived, answered with a Pong, and the Pong archived. Transport
   health is not channel evidence.
 * Quiet-channel probes: a market whose channel has produced no message for
-  `stream.channel_probe_interval_s` gets an authoritative `snapshot` request
-  (the reply echoes our nonce). Probes cost the same tokens as a subscribe
+  `stream.channel_probe_interval_s` inside its dense window (around its scheduled
+  start, where every close cutoff falls), or `stream.quiet_probe_interval_s`
+  outside it, gets an authoritative `snapshot` request (the reply echoes our
+  nonce). A later unchanged probe vouches for the quiet interval before it, so
+  the slow cadence loses no coverage (docs/decisions/2026-10-17-a1-probe-policy.md);
+  `GOLIVE` breaks that bracket, hence the dense window. When the bucket is short,
+  resync and lifecycle probes go first, then dense ones. Probes cost the same tokens as a subscribe
   (book 16, trades 4 per market; the `stream` bucket refills 4/s), so they
   never draw the shared bucket below `r0.stream_probe_reserve_fraction` of
   capacity; a probe that cannot be afforded is archived as `probe_skipped`.
@@ -104,6 +109,7 @@ class NovigStream:
                  markets_fn: Callable[[], frozenset[str]], params: Params,
                  budget: TokenBudget,
                  on_handshake_failure: Callable[[], Awaitable[None]] | None = None,
+                 dense_fn: Callable[[], frozenset[str]] | None = None,
                  mono: Callable[[], float] = time.monotonic):
         if channel not in CHANNEL_WEIGHT:
             raise ValueError(f"unknown public channel {channel!r}")
@@ -118,6 +124,7 @@ class NovigStream:
         self.params = params
         self.budget = budget
         self.on_handshake_failure = on_handshake_failure
+        self.dense_fn = dense_fn                # markets in their dense window; None: every market
         self.mono = mono
         self.reserve = budget.capacity * params.stream_probe_reserve_fraction
         self.conn: _Connection | None = None    # the live connection, for the fault harness
@@ -451,7 +458,7 @@ class _Connection:
         """Once a second: follow the desired market set, settle unanswered requests, check
         the venue's subscriptions, and probe quiet channels and books after a lifecycle
         transition."""
-        interval = self.o.params.channel_probe_interval_s
+        dense_interval, quiet_interval = self.o.params.channel_probe_interval_s, self.o.params.quiet_probe_interval_s
         while True:
             await asyncio.sleep(1)
             desired = set(self.o.markets_fn())
@@ -466,11 +473,12 @@ class _Connection:
             await self.check_subscriptions(now)
 
             timeout = self.o.params.probe_timeout_s
+            dense = self.markets if self.o.dense_fn is None else self.o.dense_fn()
             due = sorted(m for m in self.markets
                          if m in self.transitioned
                          or (m in self.resync and now - self.last_probe.get(m, float("-inf")) >= timeout)
-                         or now - max(self.last_activity.get(m, float("-inf")),
-                                      self.last_probe.get(m, float("-inf"))) >= interval)
+                         or now - max(self.last_activity.get(m, float("-inf")), self.last_probe.get(m, float("-inf")))
+                         >= (dense_interval if m in dense else quiet_interval))
             if not due:
                 continue
             for m in due:
@@ -480,7 +488,7 @@ class _Connection:
             # After a transition or a skipped seq the channel is untrusted until a snapshot: those
             # go first, and one that cannot be afforded stays due and is retried next tick. A
             # resync stays pending until a snapshot catches up, so a lost reply is asked again.
-            due.sort(key=lambda m: m not in self.transitioned and m not in self.resync)
+            due.sort(key=lambda m: (m not in self.transitioned and m not in self.resync, m not in dense))
             send, skip = due[:affordable], due[affordable:]
             self.transitioned -= set(send)
             for m in skip:
@@ -490,11 +498,13 @@ class _Connection:
                 nonce = await self.send({"snapshot": {"markets": {m: self.o.channel for m in send}}})
                 self.o.budget.spend(self.o.weight * len(send))
                 self.stream.event(self.conn_id, "probe_sent", nonce=nonce, channel=self.o.channel,
-                                  markets=send, est_tokens_before=round(tokens, 1))
+                                  markets=send, est_tokens_before=round(tokens, 1),
+                                  outside_dense=[m for m in send if m not in dense])
             if skip:
                 self.stream.event(self.conn_id, "probe_skipped", reason="stream_budget",
                                   channel=self.o.channel, markets=skip,
-                                  est_tokens=round(tokens, 1), reserve=self.o.reserve)
+                                  est_tokens=round(tokens, 1), reserve=self.o.reserve,
+                                  outside_dense=[m for m in skip if m not in dense])
 
     async def close(self) -> None:
         if not self.ws.closed:

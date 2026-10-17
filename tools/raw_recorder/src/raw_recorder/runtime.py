@@ -493,7 +493,8 @@ class Recorder:
         streams = self.novig = [NovigStream(http=http, archive=self.archive, signer=signer,
                                             ws_url=cfg.novig["ws_url"], channel=ch,
                                             markets_fn=lambda: self.schedule.novig_markets(now_ms()),
-                                            params=self.p, budget=budget, on_handshake_failure=diagnose)
+                                            params=self.p, budget=budget, on_handshake_failure=diagnose,
+                                            dense_fn=lambda: self.schedule.dense_markets(now_ms()))
                                 for ch in cfg.novig["channels"]]
         await asyncio.gather(*(s.run() for s in streams))
 

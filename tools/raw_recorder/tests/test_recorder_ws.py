@@ -29,7 +29,8 @@ def params(**overrides):
                 capture_lead_s=10800, capture_tail_s=5400, odds_window_lead_s=10800,
                 segment_max_s=3600, fsync_interval_s=5, rest_timeout_s=2, min_free_disk_mb=1,
                 stream_probe_reserve_fraction=0.5, novig_public_book_poll_interval_s=10,
-                channel_probe_interval_s=1, transport_liveness_max_s=5, probe_timeout_s=1,
+                channel_probe_interval_s=1, quiet_probe_interval_s=1, dense_probe_lead_s=900,
+                dense_probe_tail_s=1800, transport_liveness_max_s=5, probe_timeout_s=1,
                 subscription_check_interval_s=60,
                 reconnect_backoff_initial_s=0.05, reconnect_backoff_max_s=0.2,
                 a1_capture_lead_s=90000, a1_capture_tail_s=14400)
@@ -141,7 +142,7 @@ def new_state(**venue):
 
 
 async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=False, golive_at_s=None,
-                 markets=frozenset({MARKET}), busy_feed=False, **param_overrides):
+                 markets=frozenset({MARKET}), busy_feed=False, dense=None, **param_overrides):
     srv = TestServer(make_app(state, close_after_subscribe, golive_at_s, busy_feed))
     await srv.start_server()
     archive = ArchiveWriter(tmp_path, session_id="w" * 32, segment_max_s=3600, fsync_interval_s=5)
@@ -150,7 +151,8 @@ async def record(tmp_path, state, seconds, budget=None, close_after_subscribe=Fa
             ws_url = str(srv.make_url("/v3/ws")).replace("http://", "ws://")
             rec = NovigStream(http=http, archive=archive, signer=SIGNER, ws_url=ws_url,
                               channel="book", markets_fn=lambda: frozenset(markets),
-                              params=params(**param_overrides), budget=budget or TokenBudget())
+                              params=params(**param_overrides), budget=budget or TokenBudget(),
+                              dense_fn=None if dense is None else (lambda: frozenset(dense)))
             task = asyncio.create_task(rec.run())
             await asyncio.sleep(seconds)
             task.cancel()
@@ -239,6 +241,32 @@ async def test_an_unanswered_resync_is_asked_again(tmp_path):
     assert len(events(frames, "sequence_gap_seen")) == 1
     (conn,) = ws_evidence(frames).values()
     assert len([e for e in conn.events if e["type"] == "probe_sent"]) >= 2
+
+
+async def test_a_quiet_market_outside_its_dense_window_is_probed_at_the_slow_interval(tmp_path):
+    # Probe policy (docs/decisions/2026-10-17-a1-probe-policy.md): near its start a quiet market is
+    # probed every stream.channel_probe_interval_s, elsewhere every stream.quiet_probe_interval_s.
+    other = "02b20979-c85a-7773-a716-87ee393b1156"
+    state = new_state()
+    frames = await record(tmp_path, state, seconds=3.2, markets=frozenset({MARKET, other}), dense={MARKET},
+                          channel_probe_interval_s=0.5, quiet_probe_interval_s=60)
+    probed = [m for e in events(frames, "probe_sent") for m in e["markets"]]
+    assert probed.count(MARKET) >= 2 and other not in probed
+    assert all(e["outside_dense"] == [] for e in events(frames, "probe_sent"))
+
+
+async def test_a_short_bucket_probes_dense_markets_before_quiet_ones(tmp_path):
+    # One probe affordable per tick, both markets due every tick: the dense one always goes first.
+    other = "02b20979-c85a-7773-a716-87ee393b1156"
+    state = new_state()
+    frames = await record(tmp_path, state, seconds=3.5, markets=frozenset({MARKET, other}), dense={MARKET},
+                          budget=TokenBudget(capacity=56, refill_per_s=40),
+                          channel_probe_interval_s=0.5, quiet_probe_interval_s=0.5)
+    sent = events(frames, "probe_sent")
+    assert sent and all(e["markets"] == [MARKET] for e in sent)
+    skipped = events(frames, "probe_skipped")            # the first tick, just after subscribing, affords none
+    assert sum(e["markets"] == [other] for e in skipped) >= 2
+    assert all(e["outside_dense"] == [m for m in e["markets"] if m == other] for e in skipped)
 
 
 async def test_disconnect_reconnects_with_new_conn_id_and_resubscribes(tmp_path):

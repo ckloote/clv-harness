@@ -48,6 +48,9 @@ class Params:
     stream_probe_reserve_fraction: float
     novig_public_book_poll_interval_s: float
     channel_probe_interval_s: float
+    quiet_probe_interval_s: float
+    dense_probe_lead_s: int
+    dense_probe_tail_s: int
     transport_liveness_max_s: float
     probe_timeout_s: float
     subscription_check_interval_s: float
@@ -166,6 +169,9 @@ def load_config(path: Path | None = None) -> Config:
         stream_probe_reserve_fraction=r0["stream_probe_reserve_fraction"],
         novig_public_book_poll_interval_s=r0["novig_public_book_poll_interval_s"],
         channel_probe_interval_s=stream["channel_probe_interval_s"],
+        quiet_probe_interval_s=stream["quiet_probe_interval_s"],
+        dense_probe_lead_s=stream["dense_probe_lead_s"],
+        dense_probe_tail_s=stream["dense_probe_tail_s"],
         transport_liveness_max_s=stream["transport_liveness_max_s"],
         probe_timeout_s=stream["probe_timeout_s"],
         subscription_check_interval_s=stream["subscription_check_interval_s"],

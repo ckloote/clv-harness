@@ -123,16 +123,49 @@ def test_lifecycle_status_is_judged_by_its_own_sequence():
     def probe(book_seq, lc_seq, status, nonce):
         msg = snapshot(book_seq, ORDERS, nonce=nonce, subscribed=False)
         msg["snapshot"][M]["lifecycle"] = {"seq": lc_seq, "status": status}
-        return [o for o in r.feed(frame(msg)) if not isinstance(o, novig.ProbeCheck) or o.status != "superseded"]
+        return [o for o in r.feed(frame(msg)) if isinstance(o, novig.Lifecycle)]
 
     (lc,) = probe(10, 1, "CLOSED", 2)
     assert isinstance(lc, novig.Lifecycle) and (lc.seq, lc.status) == (1, "CLOSED")
     assert probe(10, 0, "OPEN", 3) == []
     (same,) = probe(10, 1, "CLOSED", 4)                        # the same lifecycle seq is current
     assert (same.seq, same.status) == (1, "CLOSED")
-    golive, _reset = r.feed(frame(delta(2, {"kind": "GOLIVE", "status": "OPEN"}, channel="lifecycle")))
+    outs = r.feed(frame(delta(2, {"kind": "GOLIVE", "status": "OPEN"}, channel="lifecycle")))
+    (golive,) = [o for o in outs if isinstance(o, novig.Lifecycle)]
     assert golive.status == "OPEN"
     assert probe(10, 1, "CLOSED", 5) == []                     # behind the GOLIVE delta
+
+
+def lifecycle_probe(book_seq, lc_seq, nonce, recv, ts=1500):
+    msg = snapshot(book_seq, ORDERS, nonce=nonce, subscribed=False, ts=ts)
+    msg["snapshot"][M]["lifecycle"] = {"seq": lc_seq, "status": "OPEN"}
+    return frame(msg, recv=recv)
+
+
+def test_a_probe_showing_a_missed_transition_untrusts_the_book_from_its_last_observation():
+    # Probe policy: an unchanged book seq must not vouch across a transition that never arrived,
+    # since the venue may drop orders at one without deltas. The reply, taken after it, resyncs.
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000))
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o2", "reason": "cancel"}), recv=1100))
+    outs = r.feed(lifecycle_probe(11, 1, nonce=2, recv=1600))
+    assert [type(o).__name__ for o in outs] == ["Lifecycle", "SequenceGap", "Resync", "BinaryBook"]
+    gap = outs[1]
+    assert gap.reason == "lifecycle_missed" and (gap.last_recv_ts_ms, gap.recv_ts_ms) == (1100, 1600)
+    # The same lifecycle seq again is no transition: an ordinary confirmation.
+    (check,) = [o for o in r.feed(lifecycle_probe(11, 1, nonce=3, recv=1700)) if isinstance(o, novig.ProbeCheck)]
+    assert check.status == "confirmed"
+
+
+def test_a_missed_transition_reply_behind_the_book_does_not_roll_it_back():
+    r = novig.StreamReplay()
+    r.feed(frame(snapshot(10, ORDERS), recv=1000))
+    r.feed(frame(delta(11, {"kind": "remove", "orderId": "o2", "reason": "cancel"}), recv=1100))
+    outs = r.feed(lifecycle_probe(10, 1, nonce=2, recv=1600))
+    assert [type(o).__name__ for o in outs] == ["Lifecycle", "SequenceGap", "ProbeCheck"]
+    assert outs[2].status == "superseded" and not books(outs)
+    outs = r.feed(lifecycle_probe(12, 1, nonce=3, recv=1700))           # a later reply resyncs
+    assert [type(o).__name__ for o in outs] == ["Lifecycle", "Resync", "BinaryBook"]
 
 
 def test_sequence_gap_drops_state_until_a_snapshot():

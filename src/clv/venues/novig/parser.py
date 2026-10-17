@@ -24,7 +24,12 @@ lifecycle transition: at GOLIVE the venue drops its resting pregame orders
 without book deltas for them (849831, docs/vendor-capabilities.md), so a book
 replayed across one would keep orders that no longer exist. A lifecycle
 status is judged by the lifecycle channel's own sequence, never the book's: one
-behind it is not emitted, even beside a current book.
+behind it is not emitted, even beside a current book. A probe reply whose
+lifecycle sequence is ahead of the last one seen on its connection shows a
+transition that never arrived, perhaps with unsequenced book changes: the book
+is untrusted from its last trustworthy observation (`lifecycle_missed`) and the
+reply re-establishes it, so an unchanged book sequence never vouches across it
+(docs/decisions/2026-10-17-a1-probe-policy.md).
 
 A snapshot omits an outcome with no orders (849812, after UNLIVE), so a book's
 outcomes are every outcome it has shown, plus the market's two from the catalog
@@ -81,11 +86,13 @@ class ProbeCheck:
 class SequenceGap:
     """The channel's state is untrusted from here until a snapshot (a `Resync`).
 
-    reason: `sequence_gap` (deltas were missed), or `lifecycle_reset` (a lifecycle
+    reason: `sequence_gap` (deltas were missed), `lifecycle_reset` (a lifecycle
     transition, after which the venue may have dropped orders without deltas; the
     book was trustworthy up to the transition's frame, so that frame starts the gap
     and `got_seq` is None; only a snapshot the venue took after the transition, by
-    venue time, re-establishes the book).
+    venue time, re-establishes the book), or `lifecycle_missed` (a probe reply
+    showed a lifecycle sequence ahead of any transition received: the gap starts at
+    the book's last trustworthy observation, and the reply re-establishes it).
     """
     conn_id: str
     market: str
@@ -183,6 +190,8 @@ class StreamReplay:
         self.resyncs: list[Resync] = []
         self.open_gaps: set[tuple[str, str]] = set()             # (market, channel) awaiting a resync
         self.transition_ts: dict[str, int] = {}                   # market -> venue time of its last lifecycle transition
+        # (conn, market) -> the book seq a missed transition found: a reply behind it is stale, never a resync
+        self.behind: dict[tuple[str, str], int] = {}
 
     def feed(self, f: Frame) -> list:
         if f.dir != "in":
@@ -203,9 +212,14 @@ class StreamReplay:
         out: list = []
         if "lifecycle" in body:
             lc = body["lifecycle"]
+            seen = self._ch(f.conn_id, market, "lifecycle").seq
+            missed = ("subscribed" not in msg and seen is not None and isinstance(lc.get("seq"), int)
+                      and lc["seq"] > seen)
             if self._lifecycle_seq(f, market, lc.get("seq")):
                 out.append(Lifecycle(f.conn_id, market, lc.get("seq"), None, lc["status"], msg["ts"], f.recv_ts_ms,
                                      f.ref))
+            if missed:
+                out += self._lifecycle_missed(f, market, msg["ts"])
         if "book" in body:
             out += self._book_snapshot(f, msg, market, body["book"])
         if "trades" in body:
@@ -243,6 +257,12 @@ class StreamReplay:
         floors = _floors(book["orders"])
         outcomes = tuple(book["orders"])
         out: list = []
+        floor = self.behind.get((f.conn_id, market))
+        if not subscribed and floor is not None and book["seq"] < floor:
+            # Behind the book a missed transition untrusted: taken before deltas already seen.
+            out.append(ProbeCheck(f.conn_id, market, "book", msg.get("nonce"), ch.seq, book["seq"], "superseded",
+                                  f.recv_ts_ms, f.ref))
+            return out
         if msg["ts"] < self.transition_ts.get(market, msg["ts"]):
             # Taken before the market's last lifecycle transition, so it may list orders the
             # transition dropped; the sequence cannot tell, since the drop has no deltas.
@@ -272,6 +292,7 @@ class StreamReplay:
                 out.append(self._gap(ch, f, market, "book", book["seq"]))
             # A mismatch installs the authoritative snapshot; the ProbeCheck reports the defect.
         out += self._resync(f, market, "book", book["seq"])
+        self.behind.pop((f.conn_id, market), None)
         ch.seq, ch.orders, ch.floors, ch.snapshot_ref = book["seq"], orders, floors, f.ref
         ch.outcomes = tuple(dict.fromkeys(ch.outcomes + outcomes))
         self._evidence(ch, f, market, "book", new_span=subscribed)
@@ -381,6 +402,23 @@ class StreamReplay:
                 self.open_gaps.add((market, "book"))
                 out.append(gap)
         return out
+
+    def _lifecycle_missed(self, f: Frame, market: str, venue_ts: int) -> list:
+        """A probe reply shows a transition this connection never received. The book on this
+        connection was trustworthy only up to its last observation, which starts the gap; the
+        reply, taken after the transition, re-establishes it, unless it is behind the book's
+        sequence (then a later snapshot must)."""
+        self.transition_ts[market] = max(venue_ts, self.transition_ts.get(market, venue_ts))
+        ch = self.channels.get((f.conn_id, market, "book"))
+        if ch is None or ch.seq is None:
+            return []
+        gap = SequenceGap(f.conn_id, market, "book", ch.seq, None, ch.last_ref, ch.last_ts, f.ref, f.recv_ts_ms,
+                          "lifecycle_missed")
+        self.behind[(f.conn_id, market)] = ch.seq
+        ch.seq = None
+        self.seq_gaps.append(gap)
+        self.open_gaps.add((market, "book"))
+        return [gap]
 
     def _resync(self, f: Frame, market: str, channel: str, seq: int) -> list:
         """Trusted state for a market and channel with an open gap, on any connection."""

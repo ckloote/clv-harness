@@ -116,7 +116,7 @@
   "closes": [
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -148,7 +148,7 @@
    },
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -177,7 +177,7 @@
    },
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -209,7 +209,7 @@
    },
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -241,7 +241,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -270,7 +270,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -299,7 +299,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -328,7 +328,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -357,7 +357,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -389,7 +389,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -418,7 +418,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -450,7 +450,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -482,7 +482,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -514,7 +514,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -543,7 +543,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -575,7 +575,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1737,7 +1737,7 @@
   "closes": [
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1751,7 +1751,7 @@
    },
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1780,7 +1780,7 @@
    },
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1812,7 +1812,7 @@
    },
    {
     "definition": "close_live_mid_depth_100",
-    "definition_sha256": "37285563f7e26ba000864039a3cc266431b19e3d58c124476cdd0ee737d6ec4d",
+    "definition_sha256": "085e960b4a3a6aab0decbefa131ed39ade2fab827ee32795fd8431415bb1faa8",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1844,7 +1844,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1858,7 +1858,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1887,7 +1887,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1916,7 +1916,7 @@
    },
    {
     "definition": "close_live_mid_depth_1000",
-    "definition_sha256": "8c806f3e78068d8098c4be117fb05189288a29b2555c378033ee21c3562f6ef7",
+    "definition_sha256": "2cf4c51b8f9760f92abda53819ae44440006c206e93cba372d14c330495d4d4a",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1945,7 +1945,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1959,7 +1959,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -1988,7 +1988,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -2020,7 +2020,7 @@
    },
    {
     "definition": "close_live_mid_depth_500",
-    "definition_sha256": "9385787b078f7a5e059018a71e272bcfae21387356169a9e0d6d512e4f425670",
+    "definition_sha256": "e9ac56ccad22284cb7df3740235a105422008296b971167af58f3e3556387577",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -2052,7 +2052,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "kalshi",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -2066,7 +2066,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "kalshi",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -2095,7 +2095,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "novig",
     "outcome": "CLE",
     "cutoff": "2026-04-01T12:04:00.000Z",
@@ -2127,7 +2127,7 @@
    },
    {
     "definition": "close_live_mid_top",
-    "definition_sha256": "aac2f0a2b07b9c159321b326ed93c1f1275bd5436cd00849f8e673138b1a765c",
+    "definition_sha256": "ecd5f0054007abaf8a535cc6e4834b35b7f99d3de644f549deb6af76135da174",
     "venue": "novig",
     "outcome": "CWS",
     "cutoff": "2026-04-01T12:04:00.000Z",
