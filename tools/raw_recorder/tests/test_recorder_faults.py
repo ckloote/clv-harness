@@ -114,6 +114,7 @@ async def test_a_sequence_skip_drops_one_delta_and_the_recorder_resyncs(tmp_path
     assert label["kind"] == "sequence_skip" and label["target"] == {"market": MARKET, "channel": "book", "timeout_s": 5}
     assert label["subscriptions"] == [{"conn_id": cid, "channel": "book", "markets": [MARKET]}]
     assert applied["report"]["dropped"] == rep["dropped"]
+    assert rep["touched_markets"] == [MARKET] and "touched_markets" not in applied["report"]
 
 
 async def test_a_channel_stall_drops_deltas_for_its_duration_but_passes_replies(tmp_path):
@@ -144,6 +145,7 @@ async def test_a_socket_kill_aborts_the_connection_and_the_recorder_reconnects(t
     assert len(killed) == 1                                 # an outage, never a planned close
     (label,) = recorder_events(frames, "fault_injected")
     assert sorted(s["channel"] for s in label["subscriptions"]) == ["book", "trades"]
+    assert rep["touched_markets"] == [MARKET]
 
 
 async def test_a_resubscribe_goes_through_the_recorders_own_connection(tmp_path):
@@ -332,3 +334,63 @@ async def test_the_recorder_serves_the_control_socket_only_when_faults_are_enabl
             assert ("fault_control" in kinds) == enabled and ("fault_injected" in kinds) == enabled
     finally:
         await srv.close()
+
+
+SUBS = [{"conn_id": "c1", "channel": "book", "markets": ["tonight", "tomorrow"]},
+        {"conn_id": "c2", "channel": "trades", "markets": ["tonight", "trades-only"]}]
+
+
+@pytest.mark.parametrize(("kind", "target", "rep", "touched"), [
+    # Review of #30: a dropped frame counts whole, so a skip aimed at tonight's market touches
+    # tomorrow's too when one frame carries both.
+    ("sequence_skip", {"market": "tonight", "channel": "book"},
+     {"ok": True, "dropped": [{"markets": {"tonight": {"book": 10}, "tomorrow": {"book": 3}}}]}, ["tomorrow", "tonight"]),
+    ("channel_stall", {"market": "tonight", "channel": "book", "seconds": 5},
+     {"ok": True, "dropped": [{"markets": {"tonight": {"book": 1}}}, {"markets": {"later": {"book": 2}}}]},
+     ["later", "tonight"]),
+    ("socket_kill", {"channel": "book"}, {"ok": True}, ["tomorrow", "tonight"]),
+    ("socket_kill", {}, {"ok": True}, ["tomorrow", "tonight", "trades-only"]),
+    ("socket_kill", {}, {"ok": False}, []),
+    ("process_kill", {}, {"ok": True}, ["tomorrow", "tonight", "trades-only"]),
+    ("resubscribe", {"market": "tonight"}, {"ok": True}, ["tonight"]),
+])
+def test_every_market_a_fault_touched_is_named(kind, target, rep, touched):
+    assert faults.touched_markets(kind, target, SUBS, rep) == touched
+
+
+def test_the_run_must_outlast_the_last_window_a_fault_touched():
+    from raw_recorder.config import LeagueEvent
+    from raw_recorder.scheduler import capture_windows, last_window_end
+    p = params(a1_capture_lead_s=25 * 3600, a1_capture_tail_s=4 * 3600)
+    h = 3_600_000
+    tonight = LeagueEvent("NBA", "e1", 20 * h, "tonight", ("tonight",))
+    tomorrow = LeagueEvent("NBA", "e2", 44 * h, "tomorrow", ("tomorrow",))
+    windows = capture_windows([tonight, tomorrow], p)
+    assert last_window_end(windows, ["tonight"]) == (24 * h, [])
+    assert last_window_end(windows, ["tonight", "tomorrow", "gone"]) == (48 * h, ["gone"])
+    assert last_window_end(windows, []) == (None, [])
+
+
+def test_the_fault_command_says_how_long_to_keep_recording(tmp_path, monkeypatch, capsys):
+    from raw_recorder import cli, leagues
+    from raw_recorder.config import DEFAULT_CONFIG, LeagueEvent
+    text = DEFAULT_CONFIG.read_text().replace('root = "../../archive"', f'root = "{tmp_path / "archive"}"', 1)
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(text)
+    (tmp_path / "archive").mkdir()
+    h = 3_600_000
+    now = time.time_ns() // 1_000_000
+    tonight = LeagueEvent("NBA", "e1", now + 2 * h, "tonight", ("tonight",))
+    tomorrow = LeagueEvent("NBA", "e2", now + 20 * h, "tomorrow", ("tomorrow",))
+    (tmp_path / "archive" / "events.discovered.toml").write_text(leagues.render([tonight, tomorrow], now, []))
+
+    async def inject(kind, target, **kw):
+        return {"ok": True, "dropped": [{"markets": {"tonight": {"book": 4}, "tomorrow": {"book": 9}}}],
+                "fault_id": "f", "touched_markets": ["tomorrow", "tonight"]}
+    monkeypatch.setattr(faults, "inject", inject)
+    assert cli.main(["--config", str(cfg_path), "fault", "sequence-skip", "--market", "tonight", "--channel", "book"]) == 0
+    out = capsys.readouterr()
+    end = now + 24 * h                                       # tomorrow's start + a1.capture_tail_s
+    want = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(end / 1000))
+    assert json.loads(out.out)["keep_recording_until_utc"] == want
+    assert "Keep recording until then" in out.err

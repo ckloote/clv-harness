@@ -15,6 +15,8 @@ __pycache__/
 /archive-hist/
 # Novig Paper (play-money) test archive: never evidence, never committed.
 archive-paper
+# The workstation's mirror of the Pi's Paper rehearsal archive (deploy/pi-host.md section 9).
+/archive-rehearsal
 # B0 feasibility inputs and caches (tools/b0): large, re-fetchable, never committed.
 b0-work/
 # Harness databases: rebuilt from the archive (clv migrate / clv ingest).

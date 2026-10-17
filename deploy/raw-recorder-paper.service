@@ -1,0 +1,49 @@
+# systemd *system* unit: the A1 rehearsal's recorder on the Pi, on Novig Paper with the
+# Gate A1 fault harness on (deploy/pi-host.md, "Rehearsal on Paper").
+#
+# raw-recorder-pi.service with config.paper-rehearsal.toml: its own Paper key, its own
+# archive (/mnt/ssd/archive-paper, linked from <checkout>/archive-paper), and its own relay,
+# raw-recorder-paper-relay.service. It never touches the Production key or archive, so it
+# can run before the cutover, beside the workstation's R0 recorder. Tests hold it equal to
+# raw-recorder-pi.service apart from those lines.
+#
+# Install (as root):
+#   cp deploy/raw-recorder-paper.service deploy/raw-recorder-paper-relay.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now raw-recorder-paper-relay.service raw-recorder-paper.service
+#   journalctl -u raw-recorder-paper -f
+# Afterwards:
+#   systemctl disable --now raw-recorder-paper.service raw-recorder-paper-relay.service
+
+[Unit]
+Description=CLV harness raw recorder, A1 rehearsal on Paper
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+RequiresMountsFor=/mnt/ssd/archive-paper
+# The stream goes through the rehearsal's relay; start it first.
+After=raw-recorder-paper-relay.service
+# Never give up restarting: the host exists to record.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=recorder
+Group=recorder
+WorkingDirectory=/home/recorder/clv-harness
+EnvironmentFile=-/home/recorder/.config/raw-recorder/env
+# --frozen: install what uv.lock pins, never re-resolve at boot.
+ExecStartPre=/home/recorder/.local/bin/uv sync --frozen --package raw-recorder
+ExecStart=/home/recorder/clv-harness/.venv/bin/raw-recorder --config /home/recorder/clv-harness/tools/raw_recorder/config.paper-rehearsal.toml run
+# SIGTERM: the recorder emits process_stop and seals every active segment.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+ExecReload=/bin/kill -HUP $MAINPID
+# Also restarts after the gate harness's process-kill fault (a SIGKILL).
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

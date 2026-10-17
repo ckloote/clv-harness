@@ -15,7 +15,7 @@ import aiohttp
 
 from . import RECORDER_VERSION, discovery, faults, kalshi, leagues, mlb, redact
 from .archive import ArchiveWriter, Stream, find_parts, iter_file, now_ms, recover_orphans
-from .config import Config, Game, LeagueEvent, combine, load_events, load_games, shadowed
+from .config import Config, Game, LeagueEvent, combine, discovered_games, load_events, load_games, shadowed
 from .novig import public as novig_public
 from .novig.signing import NovigSigner
 from .novig.stream import NovigStream, TokenBudget, alert_books
@@ -77,7 +77,7 @@ class Recorder:
         self.cfg = cfg
         self.p = cfg.params
         self.manual, self.games_path = games, games_path
-        self.games = combine(games, load_games(cfg.discovered_path, "discovered"))
+        self.games = combine(games, discovered_games(cfg))
         self.events = load_events(cfg.events_discovered_path)
         self.schedule = Schedule(self.games, cfg.params, self.events)
         self.game_files_stamp = self._game_files_stamp()
@@ -163,7 +163,7 @@ class Recorder:
         self.game_files_stamp = self._game_files_stamp()
         try:
             manual = load_games(self.games_path) if self.games_path else self.manual
-            found = load_games(self.cfg.discovered_path, "discovered")
+            found = discovered_games(self.cfg)
             games = combine(manual, found)
             events = load_events(self.cfg.events_discovered_path)
         except (ValueError, KeyError, OSError) as exc:

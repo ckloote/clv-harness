@@ -70,6 +70,13 @@ interval_s = 3600
 days_ahead = 1
 game_types = ["F", "D", "L", "W"]
 
+# Leagues other than MLB (A1; raw_recorder.leagues), as in config.toml. On here: Paper lists the
+# same NBA moneylines as Production, so a Paper recorder rehearses the A1 path with its own key.
+[[league]]
+name = "NBA"
+enabled = true
+days_ahead = 2
+
 # Gate A1 fault injection (raw_recorder.faults): off except for the gate run and its
 # rehearsals. With it on, the recorder serves the fault harness's control socket, and
 # `raw-recorder relay` forwards the stream; point [novig] ws_url at ws://<relay_listen>/v3/ws.

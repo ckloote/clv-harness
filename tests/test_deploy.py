@@ -76,7 +76,38 @@ def test_the_workstation_mirror_runs_the_script_every_15_minutes_without_prompti
 
 def test_git_ignores_the_archive_even_as_a_link():
     # On the Pi the checkout's archive/ is a symlink to the SSD; git sees a link as a file.
-    for path in ("archive", "archive-paper"):
+    for path in ("archive", "archive-paper", "archive-rehearsal"):
         r = subprocess.run(["git", "check-ignore", "-q", "--no-index", path], cwd=REPO, check=False)
         assert r.returncode == 0, path
 
+
+
+REHEARSAL = "--config /home/recorder/clv-harness/tools/raw_recorder/config.paper-rehearsal.toml"
+
+
+def differences(a: dict, b: dict) -> set[str]:
+    return {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)}
+
+
+def test_the_rehearsal_recorder_is_the_pi_recorder_on_the_paper_rehearsal_config():
+    # deploy/pi-host.md section 9: everything that protects the Production run protects the rehearsal.
+    prod, paper = unit("raw-recorder-pi.service"), unit("raw-recorder-paper.service")
+    assert differences(prod, paper) == {"Unit.Description", "Unit.After", "Unit.RequiresMountsFor", "Service.ExecStart"}
+    assert paper["Service.ExecStart"] == [prod["Service.ExecStart"][0].replace("raw-recorder run", f"raw-recorder {REHEARSAL} run")]
+    assert paper["Unit.RequiresMountsFor"] == ["/mnt/ssd/archive-paper"]
+    assert words(paper, "Unit.After") == [w.replace("raw-recorder-relay", "raw-recorder-paper-relay")
+                                          for w in words(prod, "Unit.After")]
+
+
+def test_the_rehearsal_relay_is_the_pi_relay_on_the_paper_rehearsal_config():
+    prod, paper = unit("raw-recorder-relay.service"), unit("raw-recorder-paper-relay.service")
+    assert differences(prod, paper) == {"Unit.Description", "Unit.Before", "Service.ExecStart"}
+    assert paper["Service.ExecStart"] == [prod["Service.ExecStart"][0].replace("raw-recorder relay", f"raw-recorder {REHEARSAL} relay")]
+    assert paper["Unit.Before"] == ["raw-recorder-paper.service"]
+
+
+def test_the_rehearsal_config_and_archive_exist_where_the_units_and_runbook_say():
+    assert (REPO / REHEARSAL.split()[1].replace("/home/recorder/clv-harness/", "")).exists()
+    doc = (DEPLOY / "pi-host.md").read_text()
+    assert "ln -s /mnt/ssd/archive-paper ~/clv-harness/archive-paper" in doc
+    assert "rrsync -ro /mnt/ssd/archive-paper" in doc

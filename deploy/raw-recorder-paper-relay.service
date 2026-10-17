@@ -1,0 +1,26 @@
+# systemd *system* unit: the A1 rehearsal's fault relay on the Pi (deploy/pi-host.md,
+# "Rehearsal on Paper"). raw-recorder-relay.service with config.paper-rehearsal.toml: it
+# listens on that config's relay_listen (127.0.0.1:8766, not Production's 8765) and forwards
+# to Paper. See raw-recorder-paper.service to install.
+
+[Unit]
+Description=CLV harness Gate A1 fault relay, A1 rehearsal on Paper
+Wants=network-online.target
+After=network-online.target
+Before=raw-recorder-paper.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=recorder
+Group=recorder
+WorkingDirectory=/home/recorder/clv-harness
+ExecStart=/home/recorder/clv-harness/.venv/bin/raw-recorder --config /home/recorder/clv-harness/tools/raw_recorder/config.paper-rehearsal.toml relay
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

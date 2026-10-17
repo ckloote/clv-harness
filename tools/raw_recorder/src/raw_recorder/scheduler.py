@@ -50,6 +50,13 @@ def capture_windows(games: list[Game | LeagueEvent], params: Params) -> list[Win
     return sorted((Window(g, *bounds(g, params)) for g in games), key=lambda w: w.start_ms)
 
 
+def last_window_end(windows: list[Window], markets: list[str]) -> tuple[int | None, list[str]]:
+    """When the last capture window holding any of `markets` closes, and the markets in none."""
+    ends = [w.end_ms for w in windows if set(w.game.novig_markets) & set(markets)]
+    held = {m for w in windows for m in w.game.novig_markets}
+    return (max(ends) if ends else None), sorted(set(markets) - held)
+
+
 def odds_windows(games: list[Game], params: Params) -> list[Window]:
     return sorted((Window(g, g.scheduled_start_ms - params.odds_window_lead_s * 1000,
                           g.scheduled_start_ms) for g in games), key=lambda w: w.start_ms)

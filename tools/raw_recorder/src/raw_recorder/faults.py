@@ -419,10 +419,27 @@ async def relay_fault(relay_url: str, req: dict, timeout_s: float) -> dict:
         return await r.json()
 
 
+def touched_markets(kind: str, target: dict, subscriptions: list[dict], rep: dict) -> list[str]:
+    """Every Novig market a fault touched, as clv gate a1 checks them (its `expectations`, and a
+    resubscribe's target). The gate needs each one ingested, so each one's capture window must
+    close inside the run. A dropped frame counts whole: it may carry markets besides the target."""
+    out: set[str] = set()
+    if kind == "process_kill" or (kind == "socket_kill" and rep.get("ok")):
+        channel = target.get("channel") if kind == "socket_kill" else None
+        out.update(m for s in subscriptions if channel is None or s.get("channel") == channel
+                   for m in s.get("markets", ()))
+    elif kind in ("channel_stall", "sequence_skip"):
+        out.update(m for d in rep.get("dropped", []) for m in d.get("markets", {}))
+    elif kind == "resubscribe":
+        out.add(target["market"])
+    return sorted(out)
+
+
 async def inject(kind: str, target: dict, *, control_path: Path, relay_url: str,
                  restart_wait_s: float = 180, log: Callable[[str], None] = lambda s: None) -> dict:
     """Label one fault in the running recorder, cause it, and archive what happened.
-    Returns the report (`ok`, and what the fault touched)."""
+    Returns the report (`ok`, and what the fault touched), with `touched_markets` added after
+    the result is archived."""
     if kind not in KINDS:
         raise FaultError(f"unknown fault {kind!r}")
     fault_id = uuid.uuid4().hex
@@ -462,4 +479,6 @@ async def inject(kind: str, target: dict, *, control_path: Path, relay_url: str,
         rep["error"] = (f"the result is not archived ({ack.get('error')}), so clv gate a1 will fail this fault"
                         + (f"; the fault itself: {rep['error']}" if rep.get("error") else ""))
     rep["fault_id"] = fault_id
+    if rep.get("ok"):
+        rep["touched_markets"] = touched_markets(kind, target, label.get("subscriptions") or [], rep)
     return rep

@@ -147,6 +147,25 @@ def league_config(tmp_path, base):
     return cfg
 
 
+
+def test_a_config_records_only_what_it_discovers(tmp_path):
+    # Review of #30: the rehearsal turns MLB discovery off, and shares its archive root with
+    # plain Paper, whose discovered games may be there. They are not recorded; its league
+    # events still are.
+    from raw_recorder import discovery
+    from raw_recorder.config import discovered_games, load_all_games
+    cfg = league_config(tmp_path, "http://127.0.0.1:9")                    # NBA on, discovery off
+    cfg.archive_root.mkdir(parents=True)
+    mlb = dataclasses.replace(game(7, NOW + H), source="discovered")
+    discovery.write(cfg.discovered_path, discovery.render([mlb], NOW, []))
+    nba = LeagueEvent("NBA", "e-nba", NOW + 2 * H, "nba", ("m-nba",))
+    cfg.events_discovered_path.write_text(leagues.render([nba], NOW, []))
+    rec = Recorder(cfg, [], inhibitor=FakeInhibitor())
+    assert rec.games == [] == discovered_games(cfg) == load_all_games(cfg, tmp_path / "none.toml")
+    assert rec.events == [nba]
+    on = dataclasses.replace(cfg, discovery={"enabled": True, "interval_s": 3600})
+    assert [g.game_pk for g in load_all_games(on, tmp_path / "none.toml")] == [7]
+
 async def test_the_recorder_finds_and_records_a_league_event(tmp_path):
     now = time.time_ns() // 1_000_000
     app, seen = novig_catalog(now + 20 * H)                     # inside the 25 h lead already
