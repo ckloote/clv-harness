@@ -4,6 +4,8 @@ This is the runbook for `docs/decisions/2026-10-16-a1-host.md`:
 - **The Pi** (a Raspberry Pi 5 with a Samsung T5 SSD) runs the recorder and nothing else.
 - **The workstation** mirrors its sealed archive every 15 minutes and does all derived work from that mirror.
 
+Section 9 rehearses all of it on Novig Paper before the cutover, without touching the Production key or archive.
+
 Commands marked **(Pi, root)** run as the Pi's administrator with `sudo`. Commands marked **(Pi, recorder)** run as the `recorder` account (`sudo -iu recorder`). Unmarked commands run on the workstation.
 
 **One key, one process.** Novig throttles per key. Until the cutover (step 8) the workstation's recorder holds the Production key. Until then the Pi may run only short commands that don't take the stream budget (`echo`), or the Paper configuration.
@@ -305,3 +307,113 @@ R0 records the postseason on the workstation until the last game's window closes
    It must pass, not skip. Then delete `/tmp/restore-test`.
 
 **The workstation's `archive/` is now the mirror.** It is written only by `archive-mirror.sh`. Never run the recorder or a writing `raw-recorder` command (`echo`, `catalog`, `mlb-feed`, `seal`) there again: those belong on the Pi.
+
+## 9. Rehearsal on Paper, before the cutover
+
+A day of the whole A1 stack on the Pi, on Novig Paper: hardware, clock, SSD, the units, the relay and fault harness, a process kill under systemd, the mirror, then ingest and `clv gate a1` on the workstation. Paper lists the same NBA moneylines as Production, so the recorder discovers and subscribes as it will after the cutover, with a separate key, archive and relay:
+
+| | Rehearsal | Production |
+|---|---|---|
+| Config | `config.paper-rehearsal.toml` | `config.toml` |
+| Key | `NOVIG_PAPER_READ_KEY_*` | `NOVIG_READ_KEY_*` |
+| Pi archive | `/mnt/ssd/archive-paper` | `/mnt/ssd/archive` |
+| Units | `raw-recorder-paper{,-relay}.service` | `raw-recorder{,-relay}.service` |
+| Relay port | 8766 | 8765 |
+| Workstation copy | `archive-rehearsal/`, `data/rehearsal.sqlite` | `archive/`, `data/clv.sqlite` |
+
+So it can run while R0 still records on the workstation. **Paper books are play money:** the rehearsal tests the collector, never the measurement. Its data never goes into the real archive or database.
+
+It needs sections 1–7, including the Paper archive directory from section 4. The Production recorder and mirror stay installed but not enabled.
+
+1. **The Paper key.** Copy `novig-paper-read.pem` to the Pi as in section 5, into the same directory. Add its lines to `~/.config/raw-recorder/env`:
+
+   ```text
+   NOVIG_PAPER_READ_KEY_ID=<Paper read key UUID>
+   NOVIG_PAPER_READ_KEY_PATH=/home/recorder/.config/raw-recorder/novig-paper-read.pem
+   ```
+
+   Check it. This writes to `archive-paper/`, Paper's own archive, which nothing seeds. **(Pi, recorder):**
+
+   ```bash
+   cd ~/clv-harness && set -a && . ~/.config/raw-recorder/env && set +a && .venv/bin/raw-recorder --config tools/raw_recorder/config.paper.toml echo
+   ```
+
+2. **A read-only key for the Paper archive.** `rrsync` restricts a key to one directory, so the Paper archive needs a second key. Set it up as in section 7, steps 1–4:
+   - the key is `~/.ssh/pi-archive-paper`;
+   - its forced command is `rrsync -ro /mnt/ssd/archive-paper`;
+   - its alias is `pi-archive-paper`.
+3. **Start in the morning, US Eastern, on a day with NBA games.** The 2026–27 regular season starts on 2026-10-20. Each event's window opens 25 hours before its start, so tonight's games are subscribed from the first minute, and their windows close 4 hours after tip-off, inside the run. Write down the start time in UTC; it is the gate's `--from`. **(Pi, root):**
+
+   ```bash
+   sudo cp /home/recorder/clv-harness/deploy/raw-recorder-paper.service /home/recorder/clv-harness/deploy/raw-recorder-paper-relay.service /etc/systemd/system/
+   ```
+
+   ```bash
+   sudo systemctl daemon-reload && sudo systemctl enable --now raw-recorder-paper-relay.service raw-recorder-paper.service
+   ```
+
+   Then, **(Pi, recorder)**, check the stream is up and tonight's events are listed:
+
+   ```bash
+   cd ~/clv-harness && C=tools/raw_recorder/config.paper-rehearsal.toml && .venv/bin/raw-recorder --config $C games && .venv/bin/raw-recorder --config $C status --event <Novig event ID>
+   ```
+
+4. **Inject faults:** at least one of each kind, on markets of games that tip off tonight (`games` lists them). Put some inside a dense window, which runs from 15 minutes before a start to 30 minutes after it. **(Pi, recorder)**, with `C` as above:
+
+   ```bash
+   .venv/bin/raw-recorder --config $C fault sequence-skip --market <id> --channel book
+   ```
+
+   ```bash
+   .venv/bin/raw-recorder --config $C fault channel-stall --market <id> --channel book --seconds 30
+   ```
+
+   ```bash
+   .venv/bin/raw-recorder --config $C fault socket-kill
+   ```
+
+   ```bash
+   .venv/bin/raw-recorder --config $C fault resubscribe --market <id>
+   ```
+
+   ```bash
+   .venv/bin/raw-recorder --config $C fault process-kill
+   ```
+
+   Each prints its report and exits 1 if the fault did not happen. After `process-kill`, systemd restarts the recorder, and the harness reads the result from the new session.
+5. **Watch the hardware** during the run:
+   - `vcgencmd get_throttled` should print `throttled=0x0`. Anything else means under-voltage or heat.
+   - `vcgencmd measure_temp` shows the temperature.
+   - `sudo dmesg | grep -iE 'uas|reset|I/O error'` shows USB resets (section 3).
+   - `df -h /mnt/ssd` shows the free space.
+6. **Optionally, a power cut.** Pull the power for a minute, outside any dense window, and note the time. On boot:
+   - the recorder waits for the clock (`journalctl -b -u systemd-time-wait-sync`);
+   - it then starts and archives `previous_session_unclean`.
+
+   The gate lists the outage as unattributed gaps. It is not a labelled fault, so it doesn't fail the gate.
+7. **Mirror** a few times during the run, and once after the end:
+
+   ```bash
+   RSYNC_RSH='ssh -o BatchMode=yes' ARCHIVE_MIRROR_SRC=pi-archive-paper: ARCHIVE_MIRROR_DST=$HOME/code/clv-harness/archive-rehearsal sh deploy/archive-mirror.sh
+   ```
+
+8. **End** after the last of tonight's windows closes, 4 hours after the last tip-off. Write down the time in UTC: the gate's `--to`, which must be after the last fault's result. Stopping seals every segment. **(Pi, root):**
+
+   ```bash
+   sudo systemctl disable --now raw-recorder-paper.service raw-recorder-paper-relay.service
+   ```
+
+   Then mirror once more (step 7).
+9. **Ingest and gate on the workstation,** into the rehearsal's own database:
+
+   ```bash
+   uv run clv ingest --league-events --archive archive-rehearsal --db data/rehearsal.sqlite
+   ```
+
+   ```bash
+   uv run clv gate a1 --archive archive-rehearsal --db data/rehearsal.sqlite --from <start> --to <end> --min-per-kind 1 --out data/rehearsal-gate.md
+   ```
+
+   **Expected:** PASS. Every unattributed gap needs an explanation, such as the power cut or a Paper disconnect seen in the recorder's log.
+
+The Paper archive can stay on the SSD; it is a separate root. To rehearse again, start from step 3.

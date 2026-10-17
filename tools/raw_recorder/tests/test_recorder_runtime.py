@@ -254,6 +254,26 @@ def test_paper_config_differs_only_where_it_must():
     assert cfg.discovery["enabled"] and cfg.discovered_path.parent.name == "archive-paper"
     assert cfg.games_path != load_config(DEFAULT_CONFIG).games_path
 
+    assert [lg["name"] for lg in cfg.enabled_leagues()] == ["NBA"]     # rehearses the A1 path on Paper
+
+
+def test_the_rehearsal_config_is_paper_with_the_fault_harness_on():
+    # deploy/pi-host.md, "Rehearsal on Paper": only the stream route and the harness differ.
+    import tomllib
+    from raw_recorder.config import DEFAULT_DIR
+    paper = tomllib.loads((DEFAULT_DIR / "config.paper.toml").read_text())
+    rehearsal = tomllib.loads((DEFAULT_DIR / "config.paper-rehearsal.toml").read_text())
+    listen = rehearsal["faults"]["relay_listen"]
+    assert rehearsal["novig"]["ws_url"] == f"ws://{listen}/v3/ws"
+    assert listen.startswith("127.0.0.1:") and listen != load_config(DEFAULT_CONFIG).faults["relay_listen"]
+    assert rehearsal["faults"]["enabled"] is True
+    assert rehearsal["faults"]["relay_upstream"] == paper["novig"]["ws_url"].removesuffix("/v3/ws")
+    for doc in (paper, rehearsal):
+        del doc["novig"]["ws_url"], doc["faults"]["enabled"], doc["faults"]["relay_listen"]
+    assert rehearsal == paper
+    cfg = load_config(DEFAULT_DIR / "config.paper-rehearsal.toml")
+    assert cfg.archive_root == load_config(DEFAULT_DIR / "config.paper.toml").archive_root
+
 
 async def test_disabled_sources_do_not_run(tmp_path):
     srv = TestServer(fake_vendors())
