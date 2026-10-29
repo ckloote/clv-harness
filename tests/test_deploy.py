@@ -63,6 +63,8 @@ def test_the_relay_runs_before_the_recorder_and_is_not_part_of_the_recorder_unit
     assert "raw-recorder.service" in words(relay, "Unit.Before")
     assert "raw-recorder-relay.service" in words(rec, "Unit.After")
     assert "raw-recorder-relay.service" not in words(rec, "Unit.Wants") + words(rec, "Unit.Requires")
+    # Ready once listening, so After= holds the recorder back until the port is open.
+    assert relay["Service.Type"] == ["notify"] and relay["Service.NotifyAccess"] == ["main"]
 
 
 def test_the_workstation_mirror_runs_the_script_every_15_minutes_without_prompting():

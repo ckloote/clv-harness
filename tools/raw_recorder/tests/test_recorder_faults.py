@@ -31,11 +31,13 @@ class Rig:
         self.tmp_path, self.state, self.busy_feed = tmp_path, state, busy_feed
         self.channels, self.overrides = channels, param_overrides
         self.control_path = tmp_path / "ctl.sock"
+        self.log: list[str] = []                # the relay's log lines
 
     async def __aenter__(self):
         self.venue = TestServer(make_app(self.state, busy_feed=self.busy_feed))
         await self.venue.start_server()
-        self.relay = faults.Relay(str(self.venue.make_url("")).rstrip("/").replace("http://", "ws://"))
+        self.relay = faults.Relay(str(self.venue.make_url("")).rstrip("/").replace("http://", "ws://"),
+                                  log=self.log.append)
         self.relay_srv = TestServer(self.relay.app())
         await self.relay_srv.start_server()
         self.relay_url = str(self.relay_srv.make_url("")).rstrip("/")
@@ -96,6 +98,36 @@ async def test_the_relay_forwards_the_signed_upgrade_and_every_frame_unchanged(t
     assert conn.probes and all(p.reply is not None for p in conn.probes.values())
 
 
+async def test_the_relay_logs_which_side_ended_a_connection(tmp_path):
+    # The rehearsal (2026-10-28): three closes and a 45 s silence that the relay could not attribute.
+    lines = []
+    venue = TestServer(make_app(new_state(), close_after_subscribe=True))
+    await venue.start_server()
+    relay = faults.Relay(str(venue.make_url("")).rstrip("/").replace("http://", "ws://"), log=lines.append)
+    relay_srv = TestServer(relay.app())
+    await relay_srv.start_server()
+    try:
+        async with aiohttp.ClientSession() as http:
+            url = str(relay_srv.make_url("/v3/ws")).replace("http://", "ws://")
+            async with http.ws_connect(url, autoclose=False) as ws:      # the venue closes it
+                await ws.send_str(json.dumps({"nonce": 1, "subscribe": {"markets": {MARKET: "book"}}}))
+                ended = (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR)
+                while (await ws.receive(timeout=5)).type not in ended:
+                    pass
+            async with http.ws_connect(url, autoping=False) as ws:       # the recorder closes it
+                await ws.receive(timeout=5)                              # the venue's first Ping
+                await ws.close()
+            await asyncio.sleep(0.2)
+    finally:
+        await relay_srv.close()
+        await venue.close()
+    assert lines[0] == "link 1 open"
+    venue_end = next(line for line in lines if line.startswith("link 1 (book) ended"))
+    assert "venue closed it, code 1000" in venue_end and "venue's last frame 0.0 s before" in venue_end
+    recorder_end = next(line for line in lines if line.startswith("link 2 (no channel) ended"))
+    assert "recorder closed it, code 1000" in recorder_end
+
+
 async def test_a_sequence_skip_drops_one_delta_and_the_recorder_resyncs(tmp_path):
     async with Rig(tmp_path, new_state(), channel_probe_interval_s=60) as rig:
         cid = rig.streams[0].conn.conn_id
@@ -140,6 +172,9 @@ async def test_a_socket_kill_aborts_the_connection_and_the_recorder_reconnects(t
                         and rig.streams[0].conn.conn_id != first["book"])
         assert rig.streams[1].conn.conn_id == first["trades"]          # the other channel was spared
     assert rep["ok"] and [c["channel"] for c in rep["connections"]] == ["book"]
+    (ended,) = [line for line in rig.log if "socket_kill" in line]
+    assert ended.startswith(f"link {rep['connections'][0]['link']} (book) ended")
+    assert "socket_kill aborted the recorder's socket" in ended
     frames = rig.frames()
     killed = [e for e in events(frames, "ws_disconnected") if e["reason"] not in ("recorder_stop", "no_active_markets")]
     assert len(killed) == 1                                 # an outage, never a planned close
@@ -293,6 +328,31 @@ def test_the_relay_listens_on_loopback_only():
     assert faults.split_listen("[::1]:8765") == ("::1", 8765)
     with pytest.raises(faults.FaultError):
         faults.split_listen("0.0.0.0:8765")
+
+
+async def test_the_relay_tells_systemd_it_is_ready_only_once_it_listens(tmp_path, monkeypatch):
+    # The rehearsal (2026-10-27): the recorder, ordered after a Type=simple relay, connected before
+    # the relay listened and was refused twice per channel. Type=notify waits for READY=1.
+    import socket as sock
+    assert not faults.notify_ready()                    # outside systemd: nothing to tell
+    notify = sock.socket(sock.AF_UNIX, sock.SOCK_DGRAM)
+    notify.bind(str(tmp_path / "notify"))
+    notify.setblocking(False)
+    monkeypatch.setenv("NOTIFY_SOCKET", str(tmp_path / "notify"))
+    with sock.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]                   # free now; the relay takes it
+    stop = asyncio.Event()
+    task = asyncio.create_task(faults.run_relay(f"127.0.0.1:{port}", "ws://127.0.0.1:9", stop))
+    try:
+        loop = asyncio.get_running_loop()
+        assert await asyncio.wait_for(loop.sock_recv(notify, 64), 5) == b"READY=1"
+        _, writer = await asyncio.open_connection("127.0.0.1", port)     # listening by then
+        writer.close()
+    finally:
+        stop.set()
+        await task
+        notify.close()
 
 
 async def test_the_control_socket_answers_a_bad_request_and_keeps_serving(tmp_path):

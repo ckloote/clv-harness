@@ -20,6 +20,11 @@ Three parts, each in its own process, so killing one never takes another with it
   requests (they carry its nonce) always pass, so a stalled channel's probes still
   answer, as they would if only the venue's delta feed had stalled.
 
+  It logs each connection to stderr (the journal under systemd): when it opens, and
+  how it ended, which side ended it, with what close code, and how long before the
+  venue had last sent anything. That attributes an outage the recorder only saw as a
+  close or a silence, whether the venue's or the relay's.
+
 * **The recorder's control socket** (`[faults] enabled`): a Unix socket, by default
   `<archive>/.recorder.control`, that only the recorder's user can open. It takes one
   JSON request per connection:
@@ -43,7 +48,9 @@ import ipaddress
 import json
 import os
 import signal
+import socket
 import stat
+import sys
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -122,14 +129,22 @@ class _Link:
     client: web.WebSocketResponse
     upstream: aiohttp.ClientWebSocketResponse
     channel: str | None = None          # from the recorder's first subscribe: one channel per connection
+    opened: float = 0.0                 # loop time
+    last_venue: float | None = None     # loop time of the venue's last frame
+    ending: str = "relay stopping"      # which side ended it and how, once one has
+
+
+def _stderr(line: str) -> None:
+    print(f"raw-recorder relay: {line}", file=sys.stderr, flush=True)
 
 
 class Relay:
-    def __init__(self, upstream: str):
+    def __init__(self, upstream: str, log: Callable[[str], None] = _stderr):
         self.upstream = upstream.rstrip("/")
         self.links: dict[int, _Link] = {}
         self.drops: list[_Drop] = []
         self.http: aiohttp.ClientSession | None = None
+        self.log = log
         self._n = 0
 
     def app(self) -> web.Application:
@@ -155,17 +170,25 @@ class Relay:
                                             autoping=False, autoclose=False, max_msg_size=0, compress=0)
         except aiohttp.WSServerHandshakeError as exc:
             # The venue's refusal goes back to the recorder as its own handshake failure.
+            self.log(f"venue refused the upgrade: {exc.status}")
             return web.Response(status=exc.status, text=str(exc.message))
         except IO_ERRORS as exc:
+            self.log(f"venue unreachable: {type(exc).__name__}: {exc}")
             return web.Response(status=502, text=f"relay: upstream unreachable: {type(exc).__name__}: {exc}")
         client = web.WebSocketResponse(autoping=False, autoclose=False, max_msg_size=0, compress=False)
         await client.prepare(request)
         self._n += 1
-        link = self.links[self._n] = _Link(self._n, request, client, up)
+        loop = asyncio.get_running_loop()
+        link = self.links[self._n] = _Link(self._n, request, client, up, opened=loop.time())
+        self.log(f"link {link.n} open")
         try:
             await self._pump(link)
         finally:
             del self.links[link.n]
+            now = loop.time()
+            quiet = "never" if link.last_venue is None else f"{now - link.last_venue:.1f} s before"
+            self.log(f"link {link.n} ({link.channel or 'no channel'}) ended after {now - link.opened:.0f} s: "
+                     f"{link.ending}; venue's last frame {quiet}")
             for ws in (up, client):
                 if not ws.closed:
                     try:
@@ -175,13 +198,26 @@ class Relay:
         return client
 
     async def _pump(self, link: _Link) -> None:
+        """Forward both ways until either side ends, noting on the link which side and how. The
+        note is made before a Close is passed on: the server may cancel this handler once the
+        close handshake completes."""
+        loop = asyncio.get_running_loop()
+
+        def ended(side: str, msg: aiohttp.WSMessage, ws) -> None:
+            if link.ending == "relay stopping":         # the first side to end is the cause
+                link.ending = f"{side} {_ending(msg, ws)}"
+
         async def down() -> None:                   # venue -> recorder
             while True:
                 msg = await link.upstream.receive()
+                link.last_venue = loop.time()
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     if not self._dropped(msg.data):
                         await link.client.send_str(msg.data)
-                elif not await _forward(msg, link.client):
+                    continue
+                if msg.type not in _PASSED:
+                    ended("venue", msg, link.upstream)
+                if not await _forward(msg, link.client):
                     return
 
         async def up() -> None:                     # recorder -> venue
@@ -191,16 +227,22 @@ class Relay:
                     if link.channel is None:
                         link.channel = _subscribed_channel(msg.data)
                     await link.upstream.send_str(msg.data)
-                elif not await _forward(msg, link.upstream):
+                    continue
+                if msg.type not in _PASSED:
+                    ended("recorder", msg, link.client)
+                if not await _forward(msg, link.upstream):
                     return
 
         tasks = {asyncio.create_task(down()), asyncio.create_task(up())}
         try:
-            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+        for t in done:
+            if not t.cancelled() and t.exception() is not None and link.ending == "relay stopping":
+                link.ending = f"forwarding failed: {type(t.exception()).__name__}: {t.exception()}"
 
     def _dropped(self, text: str) -> bool:
         """Whether an armed drop takes this frame; recorded in the drop's report if so."""
@@ -232,6 +274,7 @@ class Relay:
                 continue
             transport = link.request.transport
             if transport is not None:
+                link.ending = "socket_kill aborted the recorder's socket"
                 transport.abort()
                 killed.append({"link": link.n, "channel": link.channel})
         return killed
@@ -280,6 +323,9 @@ class Relay:
         return web.json_response(rep)
 
 
+_PASSED = (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG, aiohttp.WSMsgType.BINARY)   # forwarded; not an ending
+
+
 async def _forward(msg: aiohttp.WSMessage, to) -> bool:
     """Forward one non-text frame; False once the connection is over."""
     t = msg.type
@@ -295,6 +341,15 @@ async def _forward(msg: aiohttp.WSMessage, to) -> bool:
     else:                                           # CLOSING, CLOSED, ERROR
         return False
     return True
+
+
+def _ending(msg: aiohttp.WSMessage, ws) -> str:
+    """How a side's connection ended, from the frame that ended it."""
+    if msg.type == aiohttp.WSMsgType.CLOSE:
+        return f"closed it, code {msg.data}" + (f" ({msg.extra})" if msg.extra else "")
+    if msg.type == aiohttp.WSMsgType.ERROR:
+        return f"connection failed: {ws.exception()!r}"
+    return f"connection lost (code {ws.close_code})"
 
 
 def _subscribed_channel(text: str) -> str | None:
@@ -320,11 +375,25 @@ def split_listen(listen: str) -> tuple[str, int]:
     return host, int(port)
 
 
+def notify_ready() -> bool:
+    """Tell systemd the relay is listening (a `Type=notify` unit), so a recorder ordered after
+    it never connects before the port is open; False outside systemd."""
+    where = os.environ.get("NOTIFY_SOCKET")
+    if not where:
+        return False
+    if where.startswith("@"):
+        where = "\0" + where[1:]            # an abstract socket
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+        s.sendto(b"READY=1", where)
+    return True
+
+
 async def run_relay(listen: str, upstream: str, stop: asyncio.Event | None = None) -> None:
     host, port = split_listen(listen)
     runner = web.AppRunner(Relay(upstream).app())
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
+    notify_ready()
     try:
         await (stop or asyncio.Event()).wait()
     finally:
