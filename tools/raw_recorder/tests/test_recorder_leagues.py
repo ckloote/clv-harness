@@ -100,9 +100,10 @@ def test_the_events_file_round_trips_and_merging_never_loses_capture(tmp_path):
     assert leagues.merge_events([over], [dataclasses.replace(over, novig_markets=("x",))], NOW, P) == [over]
 
 
-def test_committed_config_lists_nba_disabled_and_rejects_bad_leagues(tmp_path):
+def test_committed_config_records_nba_and_rejects_bad_leagues(tmp_path):
+    # Enabled at the A1 cutover (deploy/pi-host.md section 8, step 5), on the Pi's recorder only.
     cfg = load_config(DEFAULT_CONFIG)
-    assert [lg["name"] for lg in cfg.leagues] == ["NBA"] and cfg.enabled_leagues() == []
+    assert [lg["name"] for lg in cfg.enabled_leagues()] == ["NBA"]
     assert (cfg.params.a1_capture_lead_s, cfg.params.a1_capture_tail_s) == (90000, 14400)
     base = DEFAULT_CONFIG.read_text().split("[[league]]")[0]
     for bad in ('[[league]]\nname = "MLB"\n', '[[league]]\ndays_ahead = 2\n'):
