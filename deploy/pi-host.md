@@ -449,7 +449,19 @@ Gate A1 runs on Production after the storage pilot and its record. `docs/decisio
    ```
 
    The drop-in pulls in the relay. Check that both units are active, then write down the time in UTC. It is `T0`, the gate's `--from`.
-2. **Inject the record's schedule.** **(Pi, recorder)**, with `C=tools/raw_recorder/config.gate.toml`, as in section 9, step 4: `.venv/bin/raw-recorder --config $C fault …`. Keep each report: the results need its time, target and outcome. The latest `keep_recording_until_utc` among them sets the end.
+2. **Inject the record's schedule.** **(Pi, recorder)**, with `C=tools/raw_recorder/config.gate.toml`, as in section 9, step 4: `.venv/bin/raw-recorder --config $C fault …`. Keep each report: the results need its time, target and outcome. The latest `keep_recording_until_utc` among them sets the end. Run `games` before each fault (the record says why).
+
+   **The close-window group, as one script.** Start it in `tmux` (or another shell that survives a dropped SSH session) at least 10 minutes before the game's start. Set the start, and three markets of that game, or of games starting at the same time, before you paste. **(Pi, recorder):**
+
+   ```bash
+   cd ~/clv-harness && C=tools/raw_recorder/config.gate.toml && START="<YYYY-MM-DD HH:MM, the start in Pi local time>" && M1=<market> && M2=<market> && M3=<market>
+   ```
+
+   ```bash
+   S=$(date -d "$START" +%s); at() { t=$(( S - $1 - $(date +%s) )); [ "$t" -gt 0 ] && sleep "$t"; date; }; F=~/gate-faults.json; at 540; .venv/bin/raw-recorder --config $C fault sequence-skip --market $M1 --channel book --timeout 150 | tee -a $F; at 360; .venv/bin/raw-recorder --config $C fault channel-stall --market $M2 --channel book --seconds 60 | tee -a $F; at 180; .venv/bin/raw-recorder --config $C fault resubscribe --market $M3 | tee -a $F
+   ```
+
+   It runs the skip at start − 9 min, the stall at start − 6 min and the resubscribe at start − 3 min, printing the time before each. If a step starts late, the `date` line shows it; note it for the results.
 3. **After the end**, switch back to Production, again away from a dense window. **(Pi, root):**
 
    ```bash
