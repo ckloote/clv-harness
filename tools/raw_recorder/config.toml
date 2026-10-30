@@ -86,11 +86,11 @@ min_interval_s = { mlb = 0.2, kalshi = 0.1, novig_data = 0.5, novig_history = 0.
 
 # Leagues other than MLB (A1; raw_recorder.leagues): found from the Novig catalog alone
 # every [discovery] interval, written to <archive>/events.discovered.toml, and recorded from
-# a1.capture_lead_s before each scheduled start. Enable at the A1 cutover
-# (docs/decisions/2026-10-16-a1-host.md), not beside the postseason recorder.
+# a1.capture_lead_s before each scheduled start. Enabled at the A1 cutover, 2026-10-29, once the
+# postseason recorder had stopped (docs/decisions/2026-10-16-a1-host.md).
 [[league]]
 name = "NBA"                                # Novig's league code (docs/decisions/2026-10-16-a1-league.md)
-enabled = false
+enabled = true
 days_ahead = 2                              # events starting within this many days are listed
 
 # Gate A1 fault injection (raw_recorder.faults): off except for the gate run and its
