@@ -235,7 +235,7 @@ sudo systemctl daemon-reload
 5. **Install the units, but don't enable or start them yet.** Copy the files and write the env file as `deploy/archive-mirror.service`'s comments say, with `ARCHIVE_MIRROR_SRC=pi-archive:`. Stop before its `enable` and `start` lines: those wait for the cutover (step 8.7).
    - **Why wait:** until then the workstation's `archive/` is R0's live archive, not a mirror. A run would publish the Pi's watermark over an archive still being written, and could vouch for windows the workstation hasn't sealed.
    - **The guard:** the mirror refuses, and copies nothing, if a Pi journal does not extend the workstation's for the same day.
-   - **Logged out:** the timer runs while you are logged out only with lingering enabled (`loginctl enable-linger "$USER"`, already on for R0). A run missed while the workstation slept runs on wake.
+   - **Logged out:** the timer runs while you are logged out only with lingering enabled (`loginctl enable-linger "$USER"`; check with `loginctl show-user "$USER" -p Linger`). Without it, runs wait for your next login. A run missed while the workstation slept or you were logged out runs on wake or login.
 
 **Check the mirror.** Each run's log is in `journalctl --user -u archive-mirror`. Its watermark shows how far it vouches:
 
@@ -268,11 +268,19 @@ R0 records the postseason on the workstation until the last game's window closes
    ```
 
 3. **Finish the seed.** Run the same rsync again without `--exclude 'sealed_through.json'`. Everything is sealed now, so any watermark it copies is complete.
-   The postseason recorder predates the watermark, so its archive may have no `sealed_through.json`. The Pi's recorder writes one when it starts, and the mirror needs it to run.
+   - **It copies what the stop wrote:** each source's final segment, its journal line, and the closed days' `manifest.json`. Skipped, the mirror later refuses that day: the Pi's journal won't extend the workstation's.
+   - **It must run before step 6.** Once the Pi's recorder runs, it owns `sealed_through.json` and appends to today's journals, and this rsync would replace both. If it was missed, run step 1's command instead (it leaves the watermark alone), before the Pi's first hourly seal. First check that the Pi's journals for today are still a prefix of the workstation's.
+   - The postseason recorder predates the watermark, so its archive may have no `sealed_through.json`. The Pi's recorder writes one when it starts, and the mirror needs it to run.
 4. **Verify the Pi's copy.** **(Pi, recorder):** this rechecks every sealed file against its journal:
 
    ```bash
    cd ~/clv-harness && .venv/bin/raw-recorder verify
+   ```
+
+   That checks the Pi's files against the Pi's own journals, so it passes with the stop's seals missing too. Also check that nothing is left to copy. **(Workstation):** this dry run must list no files:
+
+   ```bash
+   rsync -rtn --itemize-changes --rsync-path='sudo -u recorder rsync' --exclude '*.part' --exclude '.recorder.lock' --exclude '.recorder.control' --exclude '*.tmp' ~/code/clv-harness/archive/ <admin>@<pi>:/mnt/ssd/archive/
    ```
 
 5. **Enable NBA** with a commit that sets `[[league]] enabled = true` in `config.toml` and in `config.gate.toml` (tests hold the two equal), then `git pull` on the Pi as `recorder`. Doing this after step 2 keeps it out of the workstation recorder, which a crash restart would otherwise reload with NBA on.
