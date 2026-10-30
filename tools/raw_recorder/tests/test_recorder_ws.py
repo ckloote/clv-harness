@@ -104,7 +104,11 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None, busy_feed=Fal
                         else:
                             await ws.send_str(json.dumps({"ts": 1, "nonce": req["nonce"], "subscribed": {
                                 "markets": {}, "events": {}, "private": []}, "snapshot": {}}))
-                    if "snapshot" in req:
+                    if "snapshot" in req and state["not_found"] & set(req["snapshot"]["markets"]):
+                        # As Paper after a game settles: one unknown market refuses the whole probe.
+                        await ws.send_str(json.dumps({"nonce": req["nonce"], "code": "MARKET_NOT_FOUND",
+                                                      "message": "Market not found"}))
+                    elif "snapshot" in req:
                         sel = req["snapshot"]["markets"]
                         await ws.send_str(snapshot_reply(req["nonce"], sel, next(iter(sel.values())),
                                                          seq=7 if state["stale_replies"] else state.get("seq", 7),
@@ -136,9 +140,10 @@ def make_app(state, close_after_subscribe=False, golive_at_s=None, busy_feed=Fal
 def new_state(**venue):
     """`venue` sets the fake's behaviour: `on_subscribe(req)` returns a reply that replaces the
     subscribe (nothing is subscribed), `unlisted_once` markets are left out of the first reply
-    that asks for them, and `forget` markets are dropped before the next status reply."""
+    that asks for them, `forget` markets are dropped before the next status reply, and a probe
+    naming a `not_found` market is refused whole."""
     return {"upgrades": [], "requests": [], "pongs": [], "pings_sent": 0,
-            "on_subscribe": None, "unlisted_once": set(), "forget": set(), "skip": set(),
+            "on_subscribe": None, "unlisted_once": set(), "forget": set(), "skip": set(), "not_found": set(),
             "stale_replies": False, "probe_lifecycle_seq": 1, **venue}
 
 
@@ -397,6 +402,26 @@ def events(frames, kind):
 
 def requests(state, verb):
     return [r for r in state["requests"] if verb in r]
+
+
+async def test_a_market_the_venue_no_longer_knows_does_not_cost_the_others_their_probes(tmp_path):
+    # The rehearsal (2026-10-28): after a game settled, Paper refused every probe naming its market,
+    # and the live markets batched with it lost those probes, two inside a close window.
+    settled = "02b20979-c85a-7773-a716-87ee393b1156"
+    state = new_state(not_found={settled})
+    frames = await record(tmp_path, state, seconds=4.6, markets=frozenset({MARKET, settled}),
+                          channel_probe_interval_s=0.5)
+    probes = [sorted(r["snapshot"]["markets"]) for r in requests(state, "snapshot")]
+    assert probes[0] == sorted([MARKET, settled])         # both due together: one request
+    refused = events(frames, "ws_error_reply")
+    assert refused[0]["code"] == "MARKET_NOT_FOUND" and refused[0]["markets"] == sorted([MARKET, settled])
+    assert sorted(probes[1:3]) == [[MARKET], [settled]]   # asked again at once, one market each
+    (gone,) = events(frames, "probe_market_gone")
+    assert gone["markets"] == [settled] and gone["channel"] == "book"
+    assert all(p == [MARKET] for p in probes[3:]) and len(probes) >= 5     # the live market keeps its cadence
+    (conn,) = ws_evidence(frames).values()
+    answered = [p for p in conn.probes.values() if p.markets == [MARKET] and "snapshot" in json.loads(p.reply)]
+    assert len(answered) == len(probes) - 2
 
 
 async def test_subscribes_are_batched_to_what_the_bucket_affords(tmp_path):

@@ -28,6 +28,10 @@ Per connection (new conn_id each time; stream_id == conn_id):
   (book 16, trades 4 per market; the `stream` bucket refills 4/s), so they
   never draw the shared bucket below `r0.stream_probe_reserve_fraction` of
   capacity; a probe that cannot be afforded is archived as `probe_skipped`.
+  The venue refuses a whole probe if one of its markets is unknown (a settled
+  market, until its capture window ends): the markets of a refused multi-market
+  probe are asked again one per request, and a market refused alone as
+  `MARKET_NOT_FOUND` is archived as `probe_market_gone` and no longer probed.
 * Lifecycle probes: a lifecycle delta for a market (e.g. GOLIVE) on any
   connection, or a snapshot reply whose lifecycle `seq` is ahead of the last one
   that connection saw (a missed transition, archived as `lifecycle_missed_seen`),
@@ -253,6 +257,9 @@ class _Connection:
         self.seq: dict[str, int] = {}           # market -> the latest seq of this channel seen here
         self.lifecycle_seq: dict[str, int] = {}  # market -> the latest lifecycle seq seen here
         self.resync: set[str] = set()           # markets whose seq skipped: probed until a snapshot catches up
+        self.probes: dict[int, tuple[frozenset[str], float]] = {}   # probe nonce -> (markets, sent)
+        self.solo: set[str] = set()             # in a refused multi-market probe: next asked one per request
+        self.gone: set[str] = set()             # the venue answers MARKET_NOT_FOUND: no longer probed
         self.opened = owner.mono()
         self.close_reason: str | None = None
 
@@ -293,6 +300,20 @@ class _Connection:
             self.retry_at[m] = now + delay
             self.retry_delay[m] = min(delay * 2, p.reconnect_backoff_max_s)
 
+    def probe_failed(self, markets: set[str], code) -> None:
+        """The venue refuses a whole probe for one bad market: after a game settles, Paper answers
+        MARKET_NOT_FOUND for its market until the capture window ends. A refused probe of several
+        markets is asked again at once, one market per request, so the live ones lose no evidence;
+        a market refused alone as not found is archived as `probe_market_gone` and probed no more."""
+        if len(markets) > 1:
+            self.solo |= markets
+            for m in markets:
+                self.last_probe.pop(m, None)    # due at once
+        elif code == "MARKET_NOT_FOUND":
+            self.gone |= markets
+            self.solo -= markets
+            self.stream.event(self.conn_id, "probe_market_gone", channel=self.o.channel, markets=sorted(markets))
+
     async def unsubscribe(self, markets: set[str]) -> None:
         if markets:
             await self.send({"unsubscribe": [f"market:{m}" for m in sorted(markets)]})
@@ -307,6 +328,8 @@ class _Connection:
         """A subscription ended: its sequence and pending probes go with it."""
         self.transitioned -= markets
         self.resync -= markets
+        self.solo -= markets
+        self.gone -= markets
         for m in markets:
             self.confirmed_at.pop(m, None)
             self.seq.pop(m, None)
@@ -320,12 +343,16 @@ class _Connection:
             # An error reply. Without a nonce (a throttled or unparsable request) it names no
             # request: an unanswered subscribe then times out and is retried.
             asked = self.pending.pop(nonce, (None, None))[0] if nonce is not None else None
+            probed = self.probes.pop(nonce, (None, None))[0] if nonce is not None else None
             self.status_pending.pop(nonce, None)
             ev(cid, "ws_error_reply", code=obj.get("code"), message=redact.scrub(str(obj.get("message"))),
-               nonce=nonce, channel=ch, markets=sorted(asked) if asked else None)
+               nonce=nonce, channel=ch, markets=sorted(asked or probed) if asked or probed else None)
             if asked:
                 self.subscribe_failed(set(asked), now)
+            elif probed:
+                self.probe_failed(set(probed), obj.get("code"))
             return
+        self.probes.pop(nonce, None)
         if nonce in self.pending:
             asked, _ = self.pending.pop(nonce)
             listed = (obj.get("subscribed") or {}).get("markets") or {}
@@ -366,6 +393,9 @@ class _Connection:
             if now - sent >= timeout:
                 del self.status_pending[nonce]
                 self.stream.event(self.conn_id, "status_timeout", nonce=nonce, channel=self.o.channel)
+        for nonce, (_, sent) in list(self.probes.items()):
+            if now - sent >= timeout:
+                del self.probes[nonce]          # replay reads an unanswered probe from the archive
 
     async def check_subscriptions(self, now: float) -> None:
         if self.markets and now - self.last_status >= self.o.params.subscription_check_interval_s:
@@ -384,6 +414,7 @@ class _Connection:
                         continue
                     if self.o.channel in payload:
                         self.last_activity[market_id] = now
+                        self.gone.discard(market_id)    # the venue knows it again
                         channel = payload[self.o.channel]
                         if isinstance(channel, dict):
                             self.note_seq(market_id, key, channel.get("seq"))
@@ -508,7 +539,7 @@ class _Connection:
 
             timeout = self.o.params.probe_timeout_s
             dense = self.markets if self.o.dense_fn is None else self.o.dense_fn()
-            due = sorted(m for m in self.markets
+            due = sorted(m for m in self.markets - self.gone
                          if m in self.transitioned
                          or (m in self.resync and now - self.last_probe.get(m, float("-inf")) >= timeout)
                          or now - max(self.last_activity.get(m, float("-inf")), self.last_probe.get(m, float("-inf")))
@@ -528,12 +559,18 @@ class _Connection:
             for m in skip:
                 if m in self.resync:
                     self.last_probe.pop(m, None)        # still due next tick
-            if send:
-                nonce = await self.send({"snapshot": {"markets": {m: self.o.channel for m in send}}})
-                self.o.budget.spend(self.o.weight * len(send))
+            # A market from a refused multi-market probe goes alone, so one the venue no longer
+            # knows cannot take the others' replies with it.
+            batches = [[m] for m in send if m in self.solo] + [[m for m in send if m not in self.solo]]
+            self.solo -= set(send)
+            for batch in filter(None, batches):
+                nonce = await self.send({"snapshot": {"markets": {m: self.o.channel for m in batch}}})
+                self.o.budget.spend(self.o.weight * len(batch))
+                self.probes[nonce] = (frozenset(batch), now)
                 self.stream.event(self.conn_id, "probe_sent", nonce=nonce, channel=self.o.channel,
-                                  markets=send, est_tokens_before=round(tokens, 1),
-                                  outside_dense=[m for m in send if m not in dense])
+                                  markets=batch, est_tokens_before=round(tokens, 1),
+                                  outside_dense=[m for m in batch if m not in dense])
+                tokens -= self.o.weight * len(batch)
             if skip:
                 self.stream.event(self.conn_id, "probe_skipped", reason="stream_budget",
                                   channel=self.o.channel, markets=skip,

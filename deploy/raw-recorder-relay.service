@@ -25,7 +25,10 @@ Before=raw-recorder.service
 StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+# Ready once it listens (sd_notify), not once it starts: the recorder, ordered after it,
+# then never connects to a closed port.
+Type=notify
+NotifyAccess=main
 User=recorder
 Group=recorder
 WorkingDirectory=/home/recorder/clv-harness

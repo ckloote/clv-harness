@@ -6,7 +6,7 @@ This is the runbook for `docs/decisions/2026-10-16-a1-host.md`:
 
 Section 9 rehearses all of it on Novig Paper before the cutover, without touching the Production key or archive. Section 10 runs Gate A1 itself.
 
-Commands marked **(Pi, root)** run as the Pi's administrator with `sudo`. Commands marked **(Pi, recorder)** run as the `recorder` account (`sudo -iu recorder`). Unmarked commands run on the workstation.
+Commands marked **(Pi, root)** run as the Pi's administrator with `sudo`. Commands marked **(Pi, recorder)** run as the `recorder` account (`sudo -iu recorder`). Never ssh in as `recorder`: its authorized keys are the mirror's restricted keys (section 7), and an SSH agent holding them gets `rrsync`, not a shell. Unmarked commands run on the workstation.
 
 **One key, one process.** Novig throttles per key. Until the cutover (step 8) the workstation's recorder holds the Production key. Until then the Pi may run only short commands that don't take the stream budget (`echo`), or the Paper configuration.
 
@@ -210,7 +210,7 @@ sudo systemctl daemon-reload
    ssh-keygen -t ed25519 -N '' -C archive-mirror -f ~/.ssh/pi-archive
    ```
 
-2. **(Pi, recorder):** add one line to `~/.ssh/authorized_keys` (mode 600, in a mode 700 `~/.ssh`):
+2. **(Pi, recorder):** add one line to `recorder`'s `~/.ssh/authorized_keys` (mode 600, in a mode 700 `~/.ssh`), and to no other account's. Your SSH agent offers every key it holds, the mirror's included, and the Pi takes the first one an account lists: in the administrator's file, it would turn your own logins into `rrsync`.
 
    ```text
    command="rrsync -ro /mnt/ssd/archive",restrict ssh-ed25519 AAAA… archive-mirror
@@ -364,7 +364,7 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    - **A sequence skip or channel stall** drops whole frames, and a frame can carry other markets besides the target, tomorrow's included. Its report names them all. If its time to keep recording falls tomorrow, the run has to last until then.
    - **A socket kill or process kill** touches every market subscribed at that moment. Windows open 25 hours ahead, so tomorrow's games are subscribed from about this evening on. To end tonight, do these two while `games` shows no window open yet for any game after tonight's.
 
-   **(Pi, recorder)**, with `C` as above:
+   **(Pi, recorder)**, with `C` as above. A new shell needs the `cd … && C=…` line again: without it, `--config $C status` reads `status` as the config's path. Call `.venv/bin/raw-recorder`, never `uv run` (section 6):
 
    ```bash
    .venv/bin/raw-recorder --config $C fault sequence-skip --market <id> --channel book
@@ -387,9 +387,9 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    ```
 
    Each prints its report and exits 1 if the fault did not happen. After `process-kill`, systemd restarts the recorder, and the harness reads the result from the new session.
-5. **Watch the hardware** during the run:
-   - `vcgencmd get_throttled` should print `throttled=0x0`. Anything else means under-voltage or heat.
-   - `vcgencmd measure_temp` shows the temperature.
+5. **Watch the hardware** during the run, **(Pi, root)**: `recorder` isn't in the `video` group that `vcgencmd` needs, and needn't be.
+   - `sudo vcgencmd get_throttled` should print `throttled=0x0`. Anything else means under-voltage or heat.
+   - `sudo vcgencmd measure_temp` shows the temperature.
    - `sudo dmesg | grep -iE 'uas|reset|I/O error'` shows USB resets (section 3).
    - `df -h /mnt/ssd` shows the free space.
 6. **Optionally, a power cut.** Pull the power for a minute, outside any dense window, and note the time. On boot:
@@ -397,6 +397,14 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    - it then starts and archives `previous_session_unclean`.
 
    The gate lists the outage as unattributed gaps. It is not a labelled fault, so it doesn't fail the gate.
+
+   **Explaining an unattributed reconnect.** The relay logs each connection's end: which side ended it, the close code, and how long before the venue had last sent anything. A close by the venue, or the recorder closing after a long silence from it, is the venue's or the network's. **(Pi, root):**
+
+   ```bash
+   journalctl -u raw-recorder-paper-relay --utc --since "<gap start> UTC" --until "<gap end> UTC"
+   ```
+
+   Write the gate's times as `2026-10-28 09:13:00 UTC`: without the `UTC`, `--since` and `--until` read them in the Pi's local time. `--utc` shows the log's own times in UTC too.
 7. **Mirror** a few times during the run, and once after the end:
 
    ```bash
@@ -465,5 +473,5 @@ Gate A1 runs on Production after the storage pilot and its record. `docs/decisio
    uv run clv pilot --from <T0> --to <end> --out data/gate-a1-pilot.md
    ```
 
-   The results go in the record's results section, without prices or raw frames.
+   The results go in the record's results section, without prices or raw frames. Explain each unattributed reconnect from the relay's log, as in section 9, step 6, with `-u raw-recorder-relay`.
 
