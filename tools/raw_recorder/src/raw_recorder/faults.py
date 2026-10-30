@@ -210,7 +210,8 @@ class Relay:
         async def down() -> None:                   # venue -> recorder
             while True:
                 msg = await link.upstream.receive()
-                link.last_venue = loop.time()
+                if msg.type in _FRAMES:                 # not CLOSED or ERROR: those are the connection ending
+                    link.last_venue = loop.time()
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     if not self._dropped(msg.data):
                         await link.client.send_str(msg.data)
@@ -324,6 +325,7 @@ class Relay:
 
 
 _PASSED = (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG, aiohttp.WSMsgType.BINARY)   # forwarded; not an ending
+_FRAMES = (aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.CLOSE, *_PASSED)                   # what the venue actually sent
 
 
 async def _forward(msg: aiohttp.WSMessage, to) -> bool:

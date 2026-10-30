@@ -128,6 +128,44 @@ async def test_the_relay_logs_which_side_ended_a_connection(tmp_path):
     assert "recorder closed it, code 1000" in recorder_end
 
 
+async def test_the_relay_log_keeps_the_venues_silence_when_its_connection_drops(tmp_path):
+    # The venue answers once, goes silent, then its TCP connection dies without a Close frame:
+    # the log must say how long it had been silent, not 0 s.
+    async def silent_then_gone(request):
+        ws = web.WebSocketResponse(autoping=False)
+        await ws.prepare(request)
+        await ws.receive()
+        await ws.send_str(json.dumps({"nonce": 1, "snapshot": {}}))
+        await asyncio.sleep(1.0)
+        request.transport.abort()
+        return ws
+
+    app = web.Application()
+    app.router.add_get("/v3/ws", silent_then_gone)
+    venue = TestServer(app)
+    await venue.start_server()
+    lines = []
+    relay = faults.Relay(str(venue.make_url("")).rstrip("/").replace("http://", "ws://"), log=lines.append)
+    relay_srv = TestServer(relay.app())
+    await relay_srv.start_server()
+    try:
+        async with aiohttp.ClientSession() as http:
+            url = str(relay_srv.make_url("/v3/ws")).replace("http://", "ws://")
+            async with http.ws_connect(url, autoclose=False, autoping=False) as ws:
+                await ws.send_str(json.dumps({"nonce": 1, "snapshot": {"markets": {MARKET: "book"}}}))
+                ended = (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR)
+                while (await ws.receive(timeout=5)).type not in ended:
+                    pass
+            await asyncio.sleep(0.2)
+    finally:
+        await relay_srv.close()
+        await venue.close()
+    end = next(line for line in lines if line.startswith("link 1 ") and "ended" in line)
+    assert "venue connection" in end
+    silent = float(end.rsplit("venue's last frame ", 1)[1].split(" s before")[0])
+    assert silent >= 0.9
+
+
 async def test_a_sequence_skip_drops_one_delta_and_the_recorder_resyncs(tmp_path):
     async with Rig(tmp_path, new_state(), channel_probe_interval_s=60) as rig:
         cid = rig.streams[0].conn.conn_id

@@ -401,10 +401,10 @@ It needs sections 1–7, including the Paper archive directory from section 4. T
    **Explaining an unattributed reconnect.** The relay logs each connection's end: which side ended it, the close code, and how long before the venue had last sent anything. A close by the venue, or the recorder closing after a long silence from it, is the venue's or the network's. **(Pi, root):**
 
    ```bash
-   journalctl -u raw-recorder-paper-relay --utc --since "<gap start, UTC>" --until "<gap end, UTC>"
+   journalctl -u raw-recorder-paper-relay --utc --since "<gap start> UTC" --until "<gap end> UTC"
    ```
 
-   `--utc` matches the gate's times; without it, `--since` reads the Pi's local time.
+   Write the gate's times as `2026-10-28 09:13:00 UTC`: without the `UTC`, `--since` and `--until` read them in the Pi's local time. `--utc` shows the log's own times in UTC too.
 7. **Mirror** a few times during the run, and once after the end:
 
    ```bash
