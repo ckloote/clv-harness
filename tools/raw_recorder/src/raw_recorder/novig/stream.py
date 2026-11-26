@@ -314,13 +314,14 @@ class _Connection:
 
     def subscribe_refused(self, markets: set[str], code, now: float) -> None:
         """The venue refuses a whole subscribe for one bad market. A refused subscribe of several
-        markets is asked again at once, one market per request; a market refused alone backs off on
-        its own, archived once as `subscribe_market_gone` if the venue does not know it."""
+        markets is asked again at once, one market per request; a market refused alone stays alone and
+        backs off on its own, archived once as `subscribe_market_gone` if the venue does not know it."""
         if len(markets) > 1:
             self.sub_solo |= markets
             for m in markets:
                 self.retry_at.pop(m, None)      # due at once; each keeps its backoff delay
             return
+        self.sub_solo |= markets                # its retry must not take a newly wanted market down with it
         self.subscribe_failed(markets, now)
         if code == "MARKET_NOT_FOUND" and not markets <= self.sub_gone:
             self.sub_gone |= markets
