@@ -424,6 +424,32 @@ async def test_a_market_the_venue_no_longer_knows_does_not_cost_the_others_their
     assert len(answered) == len(probes) - 2
 
 
+async def test_a_market_the_venue_no_longer_knows_does_not_keep_the_others_unsubscribed(tmp_path):
+    # The pilot (2026-11-14): a reconnect after a game settled resubscribed all 9 markets in one
+    # request, the venue refused it whole as MARKET_NOT_FOUND, and the same batch was retried
+    # once a minute for hours, two closes among the markets it kept unsubscribed.
+    settled = "02b20979-c85a-7773-a716-87ee393b1156"
+
+    def refuse_settled(req):
+        if settled in req["subscribe"]["markets"]:
+            return {"nonce": req["nonce"], "code": "MARKET_NOT_FOUND", "message": "Market not found"}
+        return None
+
+    state = new_state(on_subscribe=refuse_settled)
+    frames = await record(tmp_path, state, seconds=4.5, markets=frozenset({MARKET, settled}),
+                          channel_probe_interval_s=1, reconnect_backoff_initial_s=2, reconnect_backoff_max_s=2)
+    subs = [sorted(r["subscribe"]["markets"]) for r in requests(state, "subscribe")]
+    assert subs[0] == sorted([MARKET, settled])           # both wanted together: one request
+    assert sorted(subs[1:3]) == [[MARKET], [settled]]     # asked again at once, one market each
+    assert all(s == [settled] for s in subs[3:])          # only the unknown market is retried
+    assert 3 <= len(subs) <= 4                            # on its own 2 s backoff, not every tick
+    (gone,) = events(frames, "subscribe_market_gone")     # archived once, not on every retry
+    assert gone["markets"] == [settled] and gone["channel"] == "book"
+    assert not events(frames, "subscribe_unconfirmed")
+    probes = [sorted(r["snapshot"]["markets"]) for r in requests(state, "snapshot")]
+    assert probes and all(p == [MARKET] for p in probes)  # confirmed and probed; the unknown one never
+
+
 async def test_subscribes_are_batched_to_what_the_bucket_affords(tmp_path):
     markets = frozenset(f"m{i:02d}" for i in range(10))
     # 64 tokens, 32 spent on the upgrade: room for 2 book markets now, then 1 a second.
