@@ -10,7 +10,12 @@ Per connection (new conn_id each time; stream_id == conn_id):
   the rest wait, archived once as `subscribe_deferred`. A market counts as
   subscribed only when the reply to its own nonce lists it on this channel
   with a snapshot. An unanswered, refused or unconfirmed subscribe is
-  archived and retried on the reconnect backoff schedule, per market.
+  archived and retried on the reconnect backoff schedule, per market. As with
+  probes, the venue refuses a whole subscribe if one of its markets is unknown
+  (a settled market, still inside its capture window, on a reconnect): the
+  markets of a refused multi-market subscribe are asked again at once, one per
+  request, until confirmed, and a market refused alone as `MARKET_NOT_FOUND` is
+  archived once as `subscribe_market_gone` and keeps its own backoff.
 * Every `stream.subscription_check_interval_s` a `status` request lists the
   venue's subscriptions; a market the venue no longer lists is archived as
   `subscription_lost` and resubscribed (DESIGN.md §7.2).
@@ -260,6 +265,8 @@ class _Connection:
         self.probes: dict[int, tuple[frozenset[str], float]] = {}   # probe nonce -> (markets, sent)
         self.solo: set[str] = set()             # in a refused multi-market probe: next asked one per request
         self.gone: set[str] = set()             # the venue answers MARKET_NOT_FOUND: no longer probed
+        self.sub_solo: set[str] = set()         # in a refused multi-market subscribe: asked alone until confirmed
+        self.sub_gone: set[str] = set()         # refused alone as not found: archived once, retried alone
         self.opened = owner.mono()
         self.close_reason: str | None = None
 
@@ -282,10 +289,15 @@ class _Connection:
         tokens = self.o.budget.available()
         n = min(len(todo), max(0, int(tokens // w)), int(self.o.budget.capacity // w))
         send, wait = todo[:n], frozenset(todo[n:])
-        if send:
-            nonce = await self.send({"subscribe": {"markets": {m: self.o.channel for m in send}}})
-            self.o.budget.spend(w * len(send))
-            self.pending[nonce] = (frozenset(send), now)
+        self.sub_solo &= wanted
+        self.sub_gone &= wanted
+        # A market from a refused multi-market subscribe goes alone, so one the venue no longer
+        # knows cannot keep the others unsubscribed (the pilot, 2026-11-14: hours, two closes).
+        batches = [[m] for m in send if m in self.sub_solo] + [[m for m in send if m not in self.sub_solo]]
+        for batch in filter(None, batches):
+            nonce = await self.send({"subscribe": {"markets": {m: self.o.channel for m in batch}}})
+            self.o.budget.spend(w * len(batch))
+            self.pending[nonce] = (frozenset(batch), now)
         if wait and wait != self.deferred:
             self.stream.event(self.conn_id, "subscribe_deferred", reason="stream_budget",
                               channel=self.o.channel, markets=sorted(wait), est_tokens=round(tokens, 1))
@@ -299,6 +311,22 @@ class _Connection:
             delay = self.retry_delay.get(m, p.reconnect_backoff_initial_s)
             self.retry_at[m] = now + delay
             self.retry_delay[m] = min(delay * 2, p.reconnect_backoff_max_s)
+
+    def subscribe_refused(self, markets: set[str], code, now: float) -> None:
+        """The venue refuses a whole subscribe for one bad market. A refused subscribe of several
+        markets is asked again at once, one market per request; a market refused alone stays alone and
+        backs off on its own, archived once as `subscribe_market_gone` if the venue does not know it."""
+        if len(markets) > 1:
+            self.sub_solo |= markets
+            for m in markets:
+                self.retry_at.pop(m, None)      # due at once; each keeps its backoff delay
+            return
+        self.sub_solo |= markets                # its retry must not take a newly wanted market down with it
+        self.subscribe_failed(markets, now)
+        if code == "MARKET_NOT_FOUND" and not markets <= self.sub_gone:
+            self.sub_gone |= markets
+            self.stream.event(self.conn_id, "subscribe_market_gone", channel=self.o.channel,
+                              markets=sorted(markets))
 
     def probe_failed(self, markets: set[str], code) -> None:
         """The venue refuses a whole probe for one bad market: after a game settles, Paper answers
@@ -348,7 +376,7 @@ class _Connection:
             ev(cid, "ws_error_reply", code=obj.get("code"), message=redact.scrub(str(obj.get("message"))),
                nonce=nonce, channel=ch, markets=sorted(asked or probed) if asked or probed else None)
             if asked:
-                self.subscribe_failed(set(asked), now)
+                self.subscribe_refused(set(asked), obj.get("code"), now)
             elif probed:
                 self.probe_failed(set(probed), obj.get("code"))
             return
@@ -364,6 +392,8 @@ class _Connection:
                 self.retry_at.pop(m, None)
                 self.retry_delay.pop(m, None)
             self.markets |= ok
+            self.sub_solo -= ok
+            self.sub_gone -= ok
             if missing := set(asked) - ok:
                 ev(cid, "subscribe_unconfirmed", nonce=nonce, channel=ch, markets=sorted(missing))
                 self.subscribe_failed(missing, now)
