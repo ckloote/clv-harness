@@ -21,7 +21,9 @@ Append every fault report to the run's file: `| tee -a ~/gate-faults.json`.
 
 ### Tue 12-01: the pilot record
 
-Ask Claude: "pick up the A1 gate: the pilot report and the probe-interval record". That record sets the probe intervals before the run. The gate plan is accepted once it exists. If the quiet probe interval changes, the quiet stall below changes with it: it is that interval plus 60 s, 360 s today.
+**Done early, on 2026-11-25.** The pilot report and the probe-interval record (`docs/decisions/2026-11-25-a1-probe-intervals.md`) are written, and the gate plan is accepted. The probe intervals are unchanged, so the quiet stall below stays 360 s. Nothing to do until 12-10.
+
+The pilot found a resubscribe bug, fixed by PR #36 (merged). Step 2 of the 12-10 preparation deploys it to the Pi, if it isn't there already.
 
 ### Thu 12-10: preparation
 
